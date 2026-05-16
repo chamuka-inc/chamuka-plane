@@ -615,7 +615,7 @@ type RenewKeyRequest = {
 
 #### Heartbeat cadence
 
-Plane's heartbeat interval is a controller constant (`HEARTBEAT_INTERVAL` in `plane/src/heartbeat_consts.rs`; check the value for your release — typically 10 s). The controller treats a drone as offline if heartbeats lapse past `last_heartbeat + N * interval`.
+Plane's heartbeat interval is **7 seconds** (`HEARTBEAT_INTERVAL` in `plane/src/heartbeat_consts.rs`). The controller treats a drone as unhealthy after **45 seconds** without a heartbeat (`UNHEALTHY_SECONDS`), soft-terminates lock-holding backends after **60 seconds** (`SOFT_TERMINATE_DEADLINE_SECONDS`), hard-terminates after **90 seconds**, and considers the drone lost (removing its locks) after **120 seconds** (`ASSUME_LOST_SECONDS`).
 
 ### 5.3 `MessageToDrone` (controller → drone) — Plane + our extensions
 
@@ -1334,9 +1334,9 @@ Plaintext never persists outside the controller's memory. The controller-to-dron
 
 Plane implements pub/sub on top of the `event` table plus Postgres LISTEN/NOTIFY. The mechanism (verified at `plane/src/database/subscribe.rs`):
 
-1. Publisher inserts a row into `event` with `(kind, key, data)`.
-2. Trigger emits a NOTIFY on a fixed channel with payload `{event_id, kind, key}`.
-3. Subscribers LISTEN, then on each notification, fetch the `event` row by id and deserialize `data`.
+1. Publisher executes a CTE that inserts a row into `event` with `(kind, key, data)` and calls `pg_notify()` in the same statement — **not** via a database trigger. The NOTIFY payload is JSON: `{"payload": <T>, "timestamp": <datetime>, "id": <serial>, "kind": <string>, "key": <string|null>}`.
+2. Subscribers LISTEN on channel `"plane_events"`, then on each notification, check the embedded `id` against a local watermark to deduplicate. On reconnect, they catch up by querying `event` rows with `id > last_seen` (batch of 100).
+3. **Metrics are ephemeral:** `BackendMetricsMessage` is sent via a separate channel `"plane_backend_metrics"` with direct NOTIFY only (no event table persistence).
 
 The `kind` strings are defined by the `NotificationPayload` trait. Verified kinds from upstream:
 
@@ -1712,6 +1712,13 @@ The platform's database has two parts:
 
 - **Plane's schema** (unchanged from upstream). This is the source of truth for backends, drones, proxies, keys, tokens, ACME state, and event log.
 - **Our extensions**, added in a separate migration. These tables reference Plane's `backend` and `node` tables by foreign key.
+
+**Operational parameters (verified from source):**
+
+- **Connection pool:** `max_connections = 20` (hardcoded in `PlaneDatabase::connect()`). No explicit idle timeout, acquire timeout, or statement cache size.
+- **Transaction isolation:** Not explicitly configured — uses PostgreSQL's default of `READ COMMITTED`.
+- **No foreign keys use CASCADE:** All FKs in Plane's schema are implicit `NO ACTION`. Cleanup must delete children first, in reverse dependency order. This is why our extension tables that reference `backend(id)` use `ON DELETE CASCADE` — Plane's cleanup already handles the deletion order for its own tables, and our rows cascade automatically when `backend` is finally deleted.
+- **Cleanup order (verified in `backend.rs`):** Within a single transaction per batch: `token` → `backend_action` → `backend_key` (only if `expires_at < now()`) → `backend_state` → `backend`. Our `sandbox` row cascades from the `backend` delete; everything under `sandbox` cascades from there.
 
 ### 15.1 Plane's schema (inherited)
 
