@@ -3,14 +3,18 @@ use axum::response::IntoResponse;
 use axum::Json;
 use common::ext::agentd::{ExecRequest, ExecSyncResponse};
 use std::process::Stdio;
-use std::time::Instant;
-use tokio::io::AsyncWriteExt;
+use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use uuid::Uuid;
+
+const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
 pub async fn post(Json(req): Json<ExecRequest>) -> impl IntoResponse {
     let start = Instant::now();
     let cmd_id = Uuid::new_v4().to_string();
+    let timeout = Duration::from_millis(req.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
 
     let mut command = Command::new(&req.cmd);
     command.args(&req.args);
@@ -31,6 +35,7 @@ pub async fn post(Json(req): Json<ExecRequest>) -> impl IntoResponse {
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    command.kill_on_drop(true);
 
     let mut child = match command.spawn() {
         Ok(c) => c,
@@ -49,36 +54,65 @@ pub async fn post(Json(req): Json<ExecRequest>) -> impl IntoResponse {
         }
     }
 
-    let output = match child.wait_with_output().await {
-        Ok(o) => o,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("wait failed: {e}")})),
-            )
-                .into_response();
+    let mut stdout_handle = child.stdout.take();
+    let mut stderr_handle = child.stderr.take();
+
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(ref mut out) = stdout_handle {
+            let _ = out.read_to_end(&mut buf).await;
         }
-    };
+        buf
+    });
 
-    let duration_ms = start.elapsed().as_millis() as u64;
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(ref mut err) = stderr_handle {
+            let _ = err.read_to_end(&mut buf).await;
+        }
+        buf
+    });
 
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => {
+            let stdout_buf = stdout_task.await.unwrap_or_default();
+            let stderr_buf = stderr_task.await.unwrap_or_default();
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let truncated = if stdout_buf.len() > MAX_OUTPUT_BYTES {
+                Some(true)
+            } else {
+                None
+            };
 
-    let truncated = if stdout.len() > 10 * 1024 * 1024 {
-        Some(true)
-    } else {
-        None
-    };
-
-    let resp = ExecSyncResponse {
-        cmd_id,
-        exit_code: output.status.code().unwrap_or(-1),
-        stdout,
-        stderr,
-        duration_ms,
-        truncated,
-    };
-
-    (StatusCode::OK, Json(resp)).into_response()
+            let resp = ExecSyncResponse {
+                cmd_id,
+                exit_code: status.code().unwrap_or(-1),
+                stdout: String::from_utf8_lossy(&stdout_buf).into_owned(),
+                stderr: String::from_utf8_lossy(&stderr_buf).into_owned(),
+                duration_ms,
+                truncated,
+            };
+            (StatusCode::OK, Json(resp)).into_response()
+        }
+        Ok(Err(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("wait failed: {e}")})),
+        )
+            .into_response(),
+        Err(_elapsed) => {
+            let _ = child.kill().await;
+            stdout_task.abort();
+            stderr_task.abort();
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let resp = ExecSyncResponse {
+                cmd_id,
+                exit_code: -1,
+                stdout: String::new(),
+                stderr: "process killed: timeout exceeded".to_string(),
+                duration_ms,
+                truncated: None,
+            };
+            (StatusCode::OK, Json(resp)).into_response()
+        }
+    }
 }

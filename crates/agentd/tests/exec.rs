@@ -3,6 +3,7 @@
 use common::ext::agentd::{ExecRequest, ExecSyncResponse};
 use reqwest::StatusCode;
 use std::collections::HashMap;
+use std::time::Instant;
 
 #[tokio::test]
 async fn exec_sync_echo() {
@@ -134,4 +135,41 @@ async fn exec_sync_with_stdin() {
     let body: ExecSyncResponse = resp.json().await.expect("json parse failed");
     assert_eq!(body.exit_code, 0);
     assert_eq!(body.stdout, "piped input");
+}
+
+#[tokio::test]
+async fn exec_sync_timeout_kills_process() {
+    let addr = agentd::serve_on_ephemeral().await;
+    let url = format!("http://{addr}/v1/exec");
+
+    let req = ExecRequest {
+        cmd: "sleep".to_string(),
+        args: vec!["60".to_string()],
+        env: HashMap::new(),
+        cwd: None,
+        stdin: None,
+        timeout_ms: Some(200),
+        detached: false,
+        pty: false,
+        pty_size: None,
+        user: None,
+    };
+
+    let start = Instant::now();
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .json(&req)
+        .send()
+        .await
+        .expect("request failed");
+
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_millis() < 2000,
+        "timeout took too long: {elapsed:?}"
+    );
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: ExecSyncResponse = resp.json().await.expect("json parse failed");
+    assert_ne!(body.exit_code, 0, "process should have been killed");
 }
