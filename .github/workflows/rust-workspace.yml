@@ -1,0 +1,56 @@
+name: Rust Workspace
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (workspace)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace --all-features
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+  check-plane:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/plane
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/plane
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Test (unit only, skipping integration)
+        run: cargo test --workspace --exclude plane-tests

@@ -1,0 +1,59 @@
+name: Contracts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/common/src/ext/**"
+      - "crates/tools/generate-schemas/**"
+      - "contracts/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/common/src/ext/**"
+      - "crates/tools/generate-schemas/**"
+      - "contracts/**"
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+
+jobs:
+  schema-freshness:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Regenerate schemas
+        run: cargo run --bin generate-schemas
+
+      - name: Check schemas are up to date
+        run: |
+          if ! git diff --quiet contracts/schemas/; then
+            echo "ERROR: contracts/schemas/ is stale."
+            echo "Run 'cargo run --bin generate-schemas' and commit."
+            git diff contracts/schemas/
+            exit 1
+          fi
+
+  fixture-validation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Validate fixtures against types
+        run: cargo test -p common --test fixtures

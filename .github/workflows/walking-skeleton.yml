@@ -1,0 +1,29 @@
+name: Walking Skeleton
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+
+jobs:
+  skeleton:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Walking skeleton check
+        run: |
+          echo "Walking skeleton not yet runnable (requires binary implementations)."
+          echo "This job will fail once binaries exist but skeleton test doesn't pass."
+          # Placeholder: will be replaced with actual walking-skeleton script
+          # once Phase 1 (agentd) delivers a working binary.
+          exit 0
