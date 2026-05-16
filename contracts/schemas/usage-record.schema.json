@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UsageRecord",
+  "type": "object",
+  "required": [
+    "bucket_start",
+    "cpu_nsec",
+    "memory_mb_seconds",
+    "rx_bytes",
+    "sandbox_id",
+    "tx_bytes"
+  ],
+  "properties": {
+    "bucket_start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cpu_nsec": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "memory_mb_seconds": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "rx_bytes": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "sandbox_id": {
+      "type": "string"
+    },
+    "tx_bytes": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SignalRequest",
+  "type": "object",
+  "required": [
+    "signal"
+  ],
+  "properties": {
+    "signal": {
+      "$ref": "#/definitions/Signal"
+    }
+  },
+  "definitions": {
+    "Signal": {
+      "type": "string",
+      "enum": [
+        "TERM",
+        "KILL",
+        "INT",
+        "HUP",
+        "USR1",
+        "USR2"
+      ]
+    }
+  }
+}

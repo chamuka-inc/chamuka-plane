@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NetworkRule",
+  "type": "object",
+  "properties": {
+    "action": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/RuleAction"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cidrs": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "domains": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "inject": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ports": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      }
+    }
+  },
+  "definitions": {
+    "RuleAction": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny"
+      ]
+    }
+  }
+}

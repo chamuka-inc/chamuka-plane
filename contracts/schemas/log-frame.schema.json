@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LogFrame",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "data",
+        "stream"
+      ],
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "string",
+          "enum": [
+            "stdout"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "data",
+        "stream"
+      ],
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "string",
+          "enum": [
+            "stderr"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "code",
+        "stream"
+      ],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "signal": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "stream": {
+          "type": "string",
+          "enum": [
+            "exit"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "code",
+        "stream"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/LogErrorCode"
+        },
+        "stream": {
+          "type": "string",
+          "enum": [
+            "error"
+          ]
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "LogErrorCode": {
+      "type": "string",
+      "enum": [
+        "BACKPRESSURE",
+        "TIMEOUT"
+      ]
+    }
+  }
+}

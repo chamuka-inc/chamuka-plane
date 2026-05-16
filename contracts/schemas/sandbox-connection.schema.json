@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SandboxConnection",
+  "type": "object",
+  "required": [
+    "status_url",
+    "token",
+    "url"
+  ],
+  "properties": {
+    "secret_token": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status_url": {
+      "type": "string"
+    },
+    "token": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    }
+  }
+}

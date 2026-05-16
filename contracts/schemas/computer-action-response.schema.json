@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ComputerActionResponse",
+  "type": "object",
+  "required": [
+    "output"
+  ],
+  "properties": {
+    "output": {
+      "$ref": "#/definitions/ComputerOutput"
+    }
+  },
+  "definitions": {
+    "ComputerOutput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "base64",
+            "media_type",
+            "type"
+          ],
+          "properties": {
+            "base64": {
+              "type": "string"
+            },
+            "media_type": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "image"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "text",
+            "type"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "text"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "ok"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

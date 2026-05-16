@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FsEvent",
+  "type": "object",
+  "required": [
+    "at",
+    "event",
+    "is_dir",
+    "path"
+  ],
+  "properties": {
+    "at": {
+      "type": "string"
+    },
+    "event": {
+      "$ref": "#/definitions/FsEventKind"
+    },
+    "is_dir": {
+      "type": "boolean"
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "FsEventKind": {
+      "type": "string",
+      "enum": [
+        "create",
+        "modify",
+        "delete",
+        "rename",
+        "attrib"
+      ]
+    }
+  }
+}

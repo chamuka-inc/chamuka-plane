@@ -1,0 +1,295 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CreateSandboxRequest",
+  "type": "object",
+  "required": [
+    "resources",
+    "runtime"
+  ],
+  "properties": {
+    "arch": {
+      "default": "amd64",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Arch"
+        }
+      ]
+    },
+    "env": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "image": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "initial_network_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/NetworkPolicy"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "persistent": {
+      "default": false,
+      "type": "boolean"
+    },
+    "ports": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      }
+    },
+    "resources": {
+      "$ref": "#/definitions/SandboxResources"
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SandboxSource"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tags": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "timeout_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "trust": {
+      "default": "untrusted",
+      "allOf": [
+        {
+          "$ref": "#/definitions/TrustLevel"
+        }
+      ]
+    },
+    "use_static_token": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "definitions": {
+    "Arch": {
+      "type": "string",
+      "enum": [
+        "amd64",
+        "arm64"
+      ]
+    },
+    "NetworkPolicy": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/NetworkPolicyMode"
+        },
+        "rules": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/NetworkRule"
+          }
+        }
+      }
+    },
+    "NetworkPolicyMode": {
+      "type": "string",
+      "enum": [
+        "allow-all",
+        "deny-all",
+        "rules"
+      ]
+    },
+    "NetworkRule": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RuleAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cidrs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "domains": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "inject": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ports": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          }
+        }
+      }
+    },
+    "RuleAction": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny"
+      ]
+    },
+    "SandboxResources": {
+      "type": "object",
+      "required": [
+        "memory_mb",
+        "vcpus"
+      ],
+      "properties": {
+        "memory_mb": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "vcpus": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "SandboxSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "repo",
+            "type"
+          ],
+          "properties": {
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "commit": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "git"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "snapshot_id",
+            "type"
+          ],
+          "properties": {
+            "snapshot_id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "snapshot"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "image",
+            "type"
+          ],
+          "properties": {
+            "image": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "image"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "TrustLevel": {
+      "type": "string",
+      "enum": [
+        "trusted",
+        "untrusted",
+        "paranoid"
+      ]
+    }
+  }
+}

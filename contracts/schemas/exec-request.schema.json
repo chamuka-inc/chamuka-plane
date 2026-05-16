@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecRequest",
+  "type": "object",
+  "required": [
+    "cmd"
+  ],
+  "properties": {
+    "args": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cmd": {
+      "type": "string"
+    },
+    "cwd": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "detached": {
+      "default": false,
+      "type": "boolean"
+    },
+    "env": {
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "pty": {
+      "default": false,
+      "type": "boolean"
+    },
+    "pty_size": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PtySize"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stdin": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timeout_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "user": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "definitions": {
+    "PtySize": {
+      "type": "object",
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        }
+      }
+    }
+  }
+}

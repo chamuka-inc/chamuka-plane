@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecSyncResponse",
+  "type": "object",
+  "required": [
+    "cmd_id",
+    "duration_ms",
+    "exit_code",
+    "stderr",
+    "stdout"
+  ],
+  "properties": {
+    "cmd_id": {
+      "type": "string"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "exit_code": {
+      "type": "integer",
+      "format": "int32"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "stdout": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  }
+}

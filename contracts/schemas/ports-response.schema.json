@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PortsResponse",
+  "type": "object",
+  "required": [
+    "listening"
+  ],
+  "properties": {
+    "listening": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ListeningPort"
+      }
+    }
+  },
+  "definitions": {
+    "ListeningPort": {
+      "type": "object",
+      "required": [
+        "port",
+        "protocol"
+      ],
+      "properties": {
+        "port": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "process_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "process_pid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "protocol": {
+          "$ref": "#/definitions/PortProtocol"
+        }
+      }
+    },
+    "PortProtocol": {
+      "type": "string",
+      "enum": [
+        "tcp",
+        "udp"
+      ]
+    }
+  }
+}

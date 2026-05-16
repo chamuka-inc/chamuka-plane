@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NetworkPolicy",
+  "type": "object",
+  "required": [
+    "mode"
+  ],
+  "properties": {
+    "mode": {
+      "$ref": "#/definitions/NetworkPolicyMode"
+    },
+    "rules": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/definitions/NetworkRule"
+      }
+    }
+  },
+  "definitions": {
+    "NetworkPolicyMode": {
+      "type": "string",
+      "enum": [
+        "allow-all",
+        "deny-all",
+        "rules"
+      ]
+    },
+    "NetworkRule": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RuleAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cidrs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "domains": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "inject": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ports": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          }
+        }
+      }
+    },
+    "RuleAction": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny"
+      ]
+    }
+  }
+}

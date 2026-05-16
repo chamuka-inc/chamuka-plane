@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ListResponse",
+  "type": "object",
+  "required": [
+    "entries",
+    "path"
+  ],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/DirEntry"
+      }
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "DirEntry": {
+      "type": "object",
+      "required": [
+        "mode",
+        "modified_at",
+        "name",
+        "type"
+      ],
+      "properties": {
+        "mode": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "modified_at": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "type": {
+          "$ref": "#/definitions/EntryType"
+        }
+      }
+    },
+    "EntryType": {
+      "type": "string",
+      "enum": [
+        "file",
+        "dir",
+        "symlink",
+        "other"
+      ]
+    }
+  }
+}

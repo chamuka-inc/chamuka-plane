@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MkdirRequest",
+  "type": "object",
+  "required": [
+    "path"
+  ],
+  "properties": {
+    "mode": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "path": {
+      "type": "string"
+    },
+    "recursive": {
+      "default": false,
+      "type": "boolean"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecDetachedResponse",
+  "type": "object",
+  "required": [
+    "cmd_id",
+    "status"
+  ],
+  "properties": {
+    "cmd_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  }
+}
