@@ -1,0 +1,68 @@
+name: d3-walking-skeleton
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: d3-postgres
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:25432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+
+  controller:
+    image: plane/plane:latest
+    container_name: d3-controller
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - controller
+      - --db
+      - postgres://postgres@postgres
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --default-cluster
+      - "localhost:9090"
+    ports:
+      - "127.0.0.1:28080:8080"
+
+  drone:
+    image: plane/plane:latest
+    container_name: d3-drone
+    depends_on:
+      - controller
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - drone
+      - --controller-url
+      - "ws://controller:8080"
+      - --cluster
+      - "localhost:9090"
+      - --ip
+      - "host.docker.internal"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  proxy:
+    image: plane/plane:latest
+    container_name: d3-proxy
+    depends_on:
+      - controller
+    command:
+      - proxy
+      - --controller-url
+      - "ws://controller:8080"
+      - --cluster
+      - "localhost:9090"
+      - --http-port
+      - "9090"
+    ports:
+      - "127.0.0.1:9090:9090"

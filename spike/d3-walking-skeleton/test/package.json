@@ -1,0 +1,12 @@
+{
+  "name": "d3-walking-skeleton-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npx tsx test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
