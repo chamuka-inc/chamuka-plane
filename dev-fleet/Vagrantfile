@@ -1,0 +1,79 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Drone fleet definition for the local dev cluster.
+#
+# Each VM:
+#   - joins the host-only network at 192.168.56.10+i
+#   - reaches the host (controller, proxy, registry) at 192.168.56.1
+#   - runs a Plane drone container that advertises its host-only IP
+#
+# Plane cluster name format verified from the upstream dev compose:
+#   "<host>:<proxy-port>"  — including the port marks it as a dev
+#   cluster, so the proxy serves HTTP (no ACME / TLS).
+
+DRONE_COUNT     = (ENV['DRONE_COUNT']     || '3').to_i
+DRONE_VCPUS     = (ENV['DRONE_VCPUS']     || '2').to_i
+DRONE_MEM_MB    = (ENV['DRONE_MEM_MB']    || '4096').to_i
+NESTED_VIRT     = (ENV['NESTED_VIRT']     || 'on') == 'on'
+HOST_ONLY_IP    = ENV['HOST_ONLY_IP']     || '192.168.56.1'
+CONTROLLER_PORT = ENV['CONTROLLER_PORT']  || '8080'
+PROXY_PORT      = ENV['PROXY_PORT']       || '9090'
+CLUSTER_NAME    = ENV['CLUSTER_NAME']     || "#{HOST_ONLY_IP}:#{PROXY_PORT}"
+
+# First drone is 'trusted' (runc), rest are 'untrusted' (runsc), by default.
+TRUST_TIERS = (ENV['TRUST_TIERS'] || 'trusted,untrusted').split(',')
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-24.04"
+  config.vm.box_check_update = false
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  (1..DRONE_COUNT).each do |i|
+    trust = TRUST_TIERS[(i - 1) % TRUST_TIERS.length]
+
+    config.vm.define "drone-#{i}" do |drone|
+      drone.vm.hostname = "drone-#{i}"
+      drone.vm.network "private_network", ip: "192.168.56.#{9 + i}"
+
+      drone.vm.synced_folder "./provision", "/provision",
+        type: "rsync",
+        rsync__exclude: [".git/", "*.swp"]
+
+      drone.vm.provider "virtualbox" do |vb|
+        vb.name   = "sandbox-drone-#{i}"
+        vb.cpus   = DRONE_VCPUS
+        vb.memory = DRONE_MEM_MB
+        vb.linked_clone = true
+        vb.gui = false
+
+        vb.customize ["modifyvm", :id, "--nested-hw-virt", NESTED_VIRT ? "on" : "off"]
+        vb.customize ["modifyvm", :id, "--nictype1", "virtio"]
+        vb.customize ["modifyvm", :id, "--nictype2", "virtio"]
+        vb.customize ["modifyvm", :id, "--uart1", "off"]
+      end
+
+      drone_env = {
+        "CONTROLLER_HOST" => HOST_ONLY_IP,
+        "CONTROLLER_PORT" => CONTROLLER_PORT,
+        "CLUSTER_NAME"    => CLUSTER_NAME,
+        "DRONE_NUMBER"    => i.to_s,
+        "TRUST_TIER"      => trust
+      }
+
+      drone.vm.provision "shell",
+        path: "provision/00-common.sh",
+        env: drone_env
+
+      # gVisor only on untrusted-tier drones (runs before the drone
+      # service starts, so the runsc runtime is registered first).
+      if trust == "untrusted"
+        drone.vm.provision "shell", path: "provision/20-runsc.sh"
+      end
+
+      drone.vm.provision "shell",
+        path: "provision/10-drone.sh",
+        env: drone_env
+    end
+  end
+end

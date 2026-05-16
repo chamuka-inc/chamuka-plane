@@ -1,0 +1,65 @@
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+
+# Node / TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.pnpm-store/
+.npm/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.tox/
+
+# Secrets / env
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.kubeconfig
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# Vagrant / dev-fleet
+.vagrant/
+*.box
+
+# Logs
+*.log
+logs/
+
+# Coverage / profiling
+*.profraw
+*.profdata
+coverage/
+lcov.info
+
+# Misc local
+.local/
+tmp/

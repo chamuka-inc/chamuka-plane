@@ -1,0 +1,140 @@
+# Sandbox Platform — local dev fleet
+#
+# Bring up host services (Postgres, Plane controller, proxy, registry)
+# in containers on the host, plus N VirtualBox VMs that each run a
+# Plane drone connected to the controller.
+#
+# All Plane API endpoints used here verified against
+# github.com/jamsocket/plane source.
+
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
+
+DRONE_COUNT     ?= 3
+DRONE_VCPUS     ?= 2
+DRONE_MEM_MB    ?= 4096
+CONTROLLER_PORT ?= 8080
+PROXY_PORT      ?= 9090
+HOST_ONLY_IP    ?= 192.168.56.1
+CLUSTER_NAME    ?= $(HOST_ONLY_IP):$(PROXY_PORT)
+
+export DRONE_COUNT DRONE_VCPUS DRONE_MEM_MB CONTROLLER_PORT PROXY_PORT \
+       HOST_ONLY_IP CLUSTER_NAME
+
+# Cluster name URL-encoded (colon → %3A) for path segments.
+CLUSTER_ENC := $(subst :,%3A,$(CLUSTER_NAME))
+
+##@ General
+
+.PHONY: help
+help: ## Show this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m\n"} \
+		/^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } \
+		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+
+##@ Lifecycle
+
+.PHONY: check
+check: ## Verify prerequisites.
+	@bash scripts/check-prereqs.sh
+
+.PHONY: up
+up: check host-up drones-up ## Start host services and all drones.
+	@echo ""
+	@echo "Fleet is up."
+	@echo "Controller:  http://$(HOST_ONLY_IP):$(CONTROLLER_PORT)"
+	@echo "Proxy:       http://$(HOST_ONLY_IP):$(PROXY_PORT)"
+	@echo "Cluster:     $(CLUSTER_NAME)"
+	@echo ""
+	@echo "Run 'make smoke' to verify end-to-end."
+
+.PHONY: down
+down: drones-down ## Stop drones. Host services keep running.
+
+.PHONY: nuke
+nuke: drones-destroy host-down ## Destroy VMs and stop host services.
+	@docker volume rm -f sandbox-platform-dev_pgdata 2>/dev/null || true
+	@docker volume rm -f sandbox-platform-dev_registry 2>/dev/null || true
+	@echo "All state nuked."
+
+.PHONY: status
+status: ## Show what's running.
+	@echo "=== Host services ==="
+	@cd host && docker compose ps 2>/dev/null || echo "(host services not running)"
+	@echo ""
+	@echo "=== Drones (Vagrant) ==="
+	@vagrant status 2>/dev/null || echo "(no drones managed)"
+
+##@ Host (control plane)
+
+.PHONY: host-up
+host-up: ## Start Postgres, controller, proxy, registry.
+	@echo "Starting host services..."
+	@cd host && docker compose up -d
+	@echo "Waiting for controller /pub/health..."
+	@for i in $$(seq 1 60); do \
+		if curl -sf http://127.0.0.1:$(CONTROLLER_PORT)/pub/health >/dev/null 2>&1; then \
+			echo "Controller is healthy."; \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "Controller not healthy after 60s. Run 'make logs' for details."; \
+	exit 1
+
+.PHONY: host-down
+host-down: ## Stop host services (preserves volumes).
+	@cd host && docker compose down
+
+.PHONY: logs
+logs: ## Tail controller logs.
+	@cd host && docker compose logs -f controller
+
+.PHONY: logs-all
+logs-all: ## Tail all host service logs.
+	@cd host && docker compose logs -f
+
+##@ Drones (VMs)
+
+.PHONY: drones-up
+drones-up: ## Start all drone VMs.
+	@vagrant up --parallel
+
+.PHONY: drones-down
+drones-down: ## Halt all drone VMs (preserves disk).
+	@vagrant halt
+
+.PHONY: drones-destroy
+drones-destroy: ## Destroy all drone VMs.
+	@vagrant destroy -f
+
+.PHONY: drones-reload
+drones-reload: ## Reload all drones (re-run provisioning).
+	@vagrant reload --provision
+
+ssh-%: ## ssh into drone-N, e.g. make ssh-1.
+	@vagrant ssh drone-$*
+
+##@ Verification
+
+.PHONY: smoke
+smoke: ## End-to-end test: spawn demo backend, verify routing.
+	@bash scripts/smoke-test.sh
+
+.PHONY: cluster-state
+cluster-state: ## Show drones and proxies registered with the controller.
+	@curl -sf "http://127.0.0.1:$(CONTROLLER_PORT)/ctrl/c/$(CLUSTER_ENC)/state" \
+		| jq . 2>/dev/null \
+		|| curl -sf "http://127.0.0.1:$(CONTROLLER_PORT)/ctrl/c/$(CLUSTER_ENC)/state"
+
+##@ Convenience
+
+.PHONY: env
+env: ## Print effective config.
+	@echo "DRONE_COUNT     = $(DRONE_COUNT)"
+	@echo "DRONE_VCPUS     = $(DRONE_VCPUS)"
+	@echo "DRONE_MEM_MB    = $(DRONE_MEM_MB)"
+	@echo "CONTROLLER_PORT = $(CONTROLLER_PORT)"
+	@echo "PROXY_PORT      = $(PROXY_PORT)"
+	@echo "HOST_ONLY_IP    = $(HOST_ONLY_IP)"
+	@echo "CLUSTER_NAME    = $(CLUSTER_NAME)"
