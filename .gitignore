@@ -63,3 +63,4 @@ lcov.info
 # Misc local
 .local/
 tmp/
+test-scratch/

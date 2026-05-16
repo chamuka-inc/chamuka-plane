@@ -6,6 +6,27 @@ Solo implementer (me). Five mutually-consistent design docs + git history are th
 
 ---
 
+## Autonomous operation mode
+
+This project runs autonomously. Execute the build plan phase by phase (Phase 0 → Phase 1 → ... → completion) without waiting for human approval between steps. Follow the discipline doc, TDD layers, and propagation rule as written — they are the guardrails.
+
+**Only ask for human input when:**
+- A critical blocker that cannot be resolved from the docs, code, or upstream source (e.g., upstream Plane has a breaking change that invalidates our architecture)
+- A design decision not covered by the spec/interfaces/SAD that would be expensive to reverse
+- Infrastructure access or credentials are required that you don't have
+- The walking skeleton is red for reasons traceable to a fundamental design flaw rather than an implementation bug
+
+**At the end of each coding phase**, run `/simplify` to review changed code for reuse, quality, and efficiency before tagging the phase complete.
+
+**Do not ask for human input for:**
+- Routine TDD cycles, refactoring, or phase transitions
+- Choosing between implementation alternatives when both satisfy the spec
+- Resolving merge conflicts with upstream Plane (follow the fork management strategy in build plan §9)
+- Fixing failing tests or CI — just fix them
+- Any decision the design docs already answer
+
+---
+
 ## Engineering discipline (imported every session)
 
 The rules below govern how code arrives in this tree. TDD, code quality, source control, session handoff. Read every session, follow without exception.
@@ -41,7 +62,7 @@ If `scripts/status.sh` doesn't exist yet, we're before Phase 0.1 (workspace scaf
 2. **Red before green.** Every feature begins with a failing test. No exceptions.
 3. **Propagation rule.** interfaces.md → Rust type → schema → fixture → test → code. Never code-first.
 4. **One source of truth.** Types live in `common`. Schemas are generated from types. Fixtures are pinned wire examples. If two of these disagree, fix all of them — never paper over.
-5. **`ext/` only.** Inside `crates/plane/`, modifications happen only in `plane/src/ext/` and date-prefixed migrations. Anywhere else is a rebase landmine.
+5. **Hard fork.** `crates/plane/` is a hard fork of jamsocket/plane. Modify anything freely — no upstream tracking, no ext/ restriction.
 6. **End every session with a commit.** That commit's body carries `Phase:` and `Next:` trailers. No separate STATUS.md file.
 
 Full versions of every rule above are in the [discipline doc](./docs/sandbox-platform-discipline.md).

@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            select\n                backend_key.id as id,\n                backend_key.tag as tag,\n                backend_key.expires_at as expires_at,\n                backend_key.fencing_token as token,\n                backend_key.key_name as name,\n                backend.last_status as status,\n                backend.cluster as cluster,\n                backend.subdomain as subdomain,\n                backend.static_token as static_connection_token,\n                now() as \"as_of!\"\n            from backend_key\n            left join backend on backend_key.id = backend.id\n            where backend_key.key_name = $1\n            and backend_key.namespace = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "tag",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "token",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "cluster",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "subdomain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "static_connection_token",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "as_of!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "265426d4b2605fa1289943c85b8abf1f0004754330a427eadbebb45eafa349ca"
+}

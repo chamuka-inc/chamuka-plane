@@ -7,6 +7,9 @@ members = [
     "ops-cli",
     "tools/generate-schemas",
 ]
+exclude = [
+    "plane",
+]
 
 [workspace.package]
 edition = "2021"
@@ -41,3 +44,5 @@ serde_json = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 schemars = "0.8"
+plane = { path = "plane/plane" }
+plane-common = { path = "plane/common" }
