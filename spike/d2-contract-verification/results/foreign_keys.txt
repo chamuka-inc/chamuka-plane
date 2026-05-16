@@ -1,0 +1,9 @@
+acme_txt_entries|leased_by|node
+backend|drone_id|drone
+backend_action|backend_id|backend
+backend_action|drone_id|drone
+backend_key|id|backend
+backend_state|backend_id|backend
+drone|id|node
+node|controller|controller
+token|backend_id|backend

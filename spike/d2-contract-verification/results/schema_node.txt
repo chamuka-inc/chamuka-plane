@@ -1,0 +1,21 @@
+                                               Table "public.node"
+           Column           |           Type           | Collation | Nullable |             Default              
+----------------------------+--------------------------+-----------+----------+----------------------------------
+ id                         | integer                  |           | not null | nextval('node_id_seq'::regclass)
+ kind                       | character varying(255)   |           | not null | 
+ name                       | character varying(255)   |           | not null | 
+ cluster                    | character varying(255)   |           |          | 
+ plane_version              | character varying(255)   |           | not null | 
+ plane_hash                 | character varying(255)   |           | not null | 
+ controller                 | character varying(255)   |           |          | 
+ ip                         | inet                     |           | not null | 
+ last_connection_start_time | timestamp with time zone |           |          | 
+Indexes:
+    "node_pkey" PRIMARY KEY, btree (id)
+    "idx_cluster_name" UNIQUE, btree (cluster, name)
+Foreign-key constraints:
+    "node_controller_fkey" FOREIGN KEY (controller) REFERENCES controller(id)
+Referenced by:
+    TABLE "acme_txt_entries" CONSTRAINT "acme_txt_entries_leased_by_fkey" FOREIGN KEY (leased_by) REFERENCES node(id)
+    TABLE "drone" CONSTRAINT "drone_id_fkey" FOREIGN KEY (id) REFERENCES node(id)
+

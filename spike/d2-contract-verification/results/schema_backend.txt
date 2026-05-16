@@ -1,0 +1,28 @@
+                              Table "public.backend"
+        Column        |           Type           | Collation | Nullable | Default 
+----------------------+--------------------------+-----------+----------+---------
+ id                   | character varying(255)   |           | not null | 
+ cluster              | character varying(255)   |           | not null | 
+ last_status          | character varying(255)   |           | not null | 
+ last_status_time     | timestamp with time zone |           | not null | 
+ cluster_address      | character varying(255)   |           |          | 
+ drone_id             | integer                  |           | not null | 
+ expiration_time      | timestamp with time zone |           |          | 
+ last_keepalive       | timestamp with time zone |           | not null | 
+ allowed_idle_seconds | integer                  |           |          | 
+ state                | jsonb                    |           | not null | 
+ static_token         | character varying(256)   |           |          | 
+ subdomain            | character varying(255)   |           |          | 
+ last_status_number   | integer                  |           |          | 
+Indexes:
+    "backend_pkey" PRIMARY KEY, btree (id)
+    "idx_backend_drone_id" btree (drone_id) WHERE last_status::text <> 'terminated'::text
+    "idx_backend_static_token" btree (static_token)
+Foreign-key constraints:
+    "backend_drone_id_fkey" FOREIGN KEY (drone_id) REFERENCES drone(id)
+Referenced by:
+    TABLE "backend_action" CONSTRAINT "backend_action_backend_id_fkey" FOREIGN KEY (backend_id) REFERENCES backend(id)
+    TABLE "backend_key" CONSTRAINT "backend_key_id_fkey" FOREIGN KEY (id) REFERENCES backend(id)
+    TABLE "backend_state" CONSTRAINT "backend_state_backend_id_fkey" FOREIGN KEY (backend_id) REFERENCES backend(id)
+    TABLE "token" CONSTRAINT "token_backend_id_fkey" FOREIGN KEY (backend_id) REFERENCES backend(id)
+

@@ -1,0 +1,16 @@
+                        Table "public.backend_key"
+    Column     |           Type           | Collation | Nullable | Default 
+---------------+--------------------------+-----------+----------+---------
+ id            | character varying(255)   |           | not null | 
+ namespace     | character varying(255)   |           | not null | 
+ key_name      | character varying(255)   |           | not null | 
+ tag           | character varying(255)   |           | not null | 
+ expires_at    | timestamp with time zone |           | not null | 
+ fencing_token | bigint                   |           | not null | 
+ allow_renew   | boolean                  |           | not null | true
+Indexes:
+    "backend_key_pkey" PRIMARY KEY, btree (id)
+    "idx_namespace_name" UNIQUE, btree (namespace, key_name)
+Foreign-key constraints:
+    "backend_key_id_fkey" FOREIGN KEY (id) REFERENCES backend(id)
+

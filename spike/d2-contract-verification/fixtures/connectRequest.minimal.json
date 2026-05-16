@@ -1,0 +1,7 @@
+{
+  "spawn_config": {
+    "executable": {
+      "image": "ghcr.io/jamsocket/demo-image-drop-four"
+    }
+  }
+}

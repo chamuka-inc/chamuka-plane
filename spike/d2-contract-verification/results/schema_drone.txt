@@ -1,0 +1,18 @@
+                                         Table "public.drone"
+     Column      |           Type           | Collation | Nullable |              Default              
+-----------------+--------------------------+-----------+----------+-----------------------------------
+ id              | integer                  |           | not null | nextval('drone_id_seq'::regclass)
+ ready           | boolean                  |           | not null | 
+ draining        | boolean                  |           | not null | false
+ last_heartbeat  | timestamp with time zone |           |          | 
+ last_local_time | timestamp with time zone |           |          | 
+ pool            | character varying(255)   |           | not null | ''::character varying
+Indexes:
+    "drone_pkey" PRIMARY KEY, btree (id)
+    "idx_drone_last_heartbeat" btree (last_heartbeat)
+Foreign-key constraints:
+    "drone_id_fkey" FOREIGN KEY (id) REFERENCES node(id)
+Referenced by:
+    TABLE "backend_action" CONSTRAINT "backend_action_drone_id_fkey" FOREIGN KEY (drone_id) REFERENCES drone(id)
+    TABLE "backend" CONSTRAINT "backend_drone_id_fkey" FOREIGN KEY (drone_id) REFERENCES drone(id)
+
