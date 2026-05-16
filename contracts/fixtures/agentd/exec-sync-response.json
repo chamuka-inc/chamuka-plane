@@ -1,0 +1,7 @@
+{
+  "cmd_id": "cmd-abc123",
+  "exit_code": 0,
+  "stdout": "3.13.0 (default, Oct 2025)\n",
+  "stderr": "",
+  "duration_ms": 87
+}

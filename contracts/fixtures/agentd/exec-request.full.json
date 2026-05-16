@@ -1,0 +1,12 @@
+{
+  "cmd": "python3",
+  "args": ["-c", "import sys; print(sys.version)"],
+  "env": { "PYTHONPATH": "/app/lib" },
+  "cwd": "/app",
+  "stdin": "input data",
+  "timeout_ms": 30000,
+  "detached": false,
+  "pty": true,
+  "pty_size": { "rows": 24, "cols": 80 },
+  "user": "sandbox"
+}

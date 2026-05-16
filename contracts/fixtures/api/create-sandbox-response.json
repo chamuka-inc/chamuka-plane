@@ -1,0 +1,26 @@
+{
+  "sandbox": {
+    "id": "sb-new001",
+    "backend_id": "bk-gen789",
+    "tenant": "t-acme-corp",
+    "status": "scheduled",
+    "runtime": "node24",
+    "trust": "untrusted",
+    "arch": "amd64",
+    "image": "node:24-slim",
+    "resources": { "vcpus": 1, "memory_mb": 256 },
+    "ports": [3000],
+    "tags": {},
+    "persistent": false,
+    "created_at": "2026-03-10T14:30:00Z",
+    "updated_at": "2026-03-10T14:30:00Z",
+    "expires_at": "2026-03-10T15:30:00Z",
+    "cluster": "us-east-1"
+  },
+  "connection": {
+    "token": "tk-a1b2c3d4e5f6",
+    "url": "https://us-east-1/tk-a1b2c3d4e5f6/",
+    "secret_token": "st-secret123",
+    "status_url": "https://us-east-1/pub/b/bk-gen789/status"
+  }
+}

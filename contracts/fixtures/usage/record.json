@@ -1,0 +1,8 @@
+{
+  "sandbox_id": "sb-full789",
+  "bucket_start": "2026-03-10T14:00:00Z",
+  "cpu_nsec": 45000000000,
+  "memory_mb_seconds": 30720,
+  "rx_bytes": 1048576,
+  "tx_bytes": 524288
+}

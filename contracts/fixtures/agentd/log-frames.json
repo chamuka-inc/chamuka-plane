@@ -1,0 +1,6 @@
+[
+  { "stream": "stdout", "data": "Starting server...\n" },
+  { "stream": "stderr", "data": "Warning: debug mode enabled\n" },
+  { "stream": "stdout", "data": "Listening on :3000\n" },
+  { "stream": "exit", "code": 0 }
+]

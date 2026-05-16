@@ -1,0 +1,20 @@
+{
+  "mode": "rules",
+  "rules": [
+    {
+      "domains": ["api.openai.com", "api.anthropic.com"],
+      "ports": [443],
+      "action": "allow"
+    },
+    {
+      "cidrs": ["10.0.0.0/8", "172.16.0.0/12"],
+      "action": "deny"
+    },
+    {
+      "domains": ["*.npmjs.org"],
+      "ports": [443],
+      "action": "allow",
+      "inject": "Authorization: Bearer ${NPM_TOKEN}"
+    }
+  ]
+}
