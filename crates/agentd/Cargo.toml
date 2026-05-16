@@ -10,13 +10,21 @@ desktop = []
 
 [dependencies]
 common = { path = "../common" }
+axum = { version = "0.8", features = ["multipart"] }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+uuid.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.6", features = ["trace"] }
 
 [dev-dependencies]
 common = { path = "../common", features = ["test-stubs"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }
 
 [lints]
 workspace = true
