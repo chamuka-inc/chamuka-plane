@@ -1,10 +1,11 @@
 use crate::log_types::{BackendAddr, LoggableTime};
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{fmt::Display, net::SocketAddr};
 
-#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, PartialOrd, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum BackendStatus {
     /// The backend has been scheduled to a drone, but has not yet been acknowledged.
