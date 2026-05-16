@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+
+cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets --all-features -- -D warnings
+
+if [ -f crates/tools/generate-schemas/src/main.rs ] && grep -q "write_schema" crates/tools/generate-schemas/src/main.rs; then
+    cargo run --quiet --manifest-path crates/Cargo.toml --bin generate-schemas
+    if ! git diff --quiet contracts/schemas/; then
+        echo "ERROR: contracts/schemas/ is stale. Run 'cargo run --bin generate-schemas' and commit."
+        exit 1
+    fi
+fi
+
+if git diff --cached | grep -E '(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]+ PRIVATE KEY-----)' > /dev/null 2>&1; then
+    echo "ERROR: Possible secret detected in staged changes."
+    exit 1
+fi
