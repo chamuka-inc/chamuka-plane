@@ -4,7 +4,7 @@ use schemars::{schema_for, JsonSchema};
 use std::fs;
 use std::path::Path;
 
-fn write_schema<T: JsonSchema>(output_dir: &Path) {
+fn write_schema<T: JsonSchema>(output_dir: &Path) -> bool {
     let schema = schema_for!(T);
     let name = T::schema_name();
     let filename = to_filename(&name);
@@ -12,9 +12,14 @@ fn write_schema<T: JsonSchema>(output_dir: &Path) {
         panic!("Failed to serialize schema for {name}: {e}");
     });
     let path = output_dir.join(format!("{filename}.schema.json"));
-    fs::write(&path, format!("{json}\n")).unwrap_or_else(|e| {
+    let content = format!("{json}\n");
+    if fs::read_to_string(&path).ok().as_deref() == Some(&content) {
+        return false;
+    }
+    fs::write(&path, content).unwrap_or_else(|e| {
         panic!("Failed to write {}: {e}", path.display());
     });
+    true
 }
 
 fn to_filename(name: &str) -> String {
@@ -48,50 +53,56 @@ fn main() {
     use common::ext::snapshot;
     use common::ext::usage;
 
-    write_schema::<sandbox::Sandbox>(&output_dir);
-    write_schema::<sandbox::TrustLevel>(&output_dir);
-    write_schema::<sandbox::Arch>(&output_dir);
-    write_schema::<sandbox::SandboxResources>(&output_dir);
+    let mut written = 0u32;
+    let mut total = 0u32;
 
-    write_schema::<network::NetworkPolicy>(&output_dir);
-    write_schema::<network::NetworkRule>(&output_dir);
+    macro_rules! gen {
+        ($ty:ty) => {{
+            total += 1;
+            if write_schema::<$ty>(&output_dir) {
+                written += 1;
+            }
+        }};
+    }
 
-    write_schema::<snapshot::Snapshot>(&output_dir);
+    gen!(sandbox::Sandbox);
+    gen!(sandbox::TrustLevel);
+    gen!(sandbox::Arch);
+    gen!(sandbox::SandboxResources);
 
-    write_schema::<usage::UsageRecord>(&output_dir);
+    gen!(network::NetworkPolicy);
+    gen!(network::NetworkRule);
 
-    write_schema::<api::CreateSandboxRequest>(&output_dir);
-    write_schema::<api::CreateSandboxResponse>(&output_dir);
-    write_schema::<api::ListSandboxesResponse>(&output_dir);
-    write_schema::<api::SnapshotRequest>(&output_dir);
-    write_schema::<api::SnapshotResponse>(&output_dir);
-    write_schema::<api::ExtendTimeoutRequest>(&output_dir);
-    write_schema::<api::CreateSecretRequest>(&output_dir);
-    write_schema::<api::CreateSecretResponse>(&output_dir);
-    write_schema::<api::CreateCredentialBindingRequest>(&output_dir);
-    write_schema::<api::CredentialBinding>(&output_dir);
-    write_schema::<api::SandboxConnection>(&output_dir);
+    gen!(snapshot::Snapshot);
 
-    write_schema::<agentd::ExecRequest>(&output_dir);
-    write_schema::<agentd::ExecSyncResponse>(&output_dir);
-    write_schema::<agentd::ExecDetachedResponse>(&output_dir);
-    write_schema::<agentd::LogFrame>(&output_dir);
-    write_schema::<agentd::SignalRequest>(&output_dir);
-    write_schema::<agentd::MkdirRequest>(&output_dir);
-    write_schema::<agentd::ListResponse>(&output_dir);
-    write_schema::<agentd::FsEvent>(&output_dir);
-    write_schema::<agentd::PortsResponse>(&output_dir);
-    write_schema::<agentd::ComputerActionRequest>(&output_dir);
-    write_schema::<agentd::ComputerActionResponse>(&output_dir);
+    gen!(usage::UsageRecord);
 
-    let count = fs::read_dir(&output_dir)
-        .expect("read output dir")
-        .filter(|e| {
-            e.as_ref()
-                .map(|e| e.path().extension().is_some_and(|ext| ext == "json"))
-                .unwrap_or(false)
-        })
-        .count();
+    gen!(api::CreateSandboxRequest);
+    gen!(api::CreateSandboxResponse);
+    gen!(api::ListSandboxesResponse);
+    gen!(api::SnapshotRequest);
+    gen!(api::SnapshotResponse);
+    gen!(api::ExtendTimeoutRequest);
+    gen!(api::CreateSecretRequest);
+    gen!(api::CreateSecretResponse);
+    gen!(api::CreateCredentialBindingRequest);
+    gen!(api::CredentialBinding);
+    gen!(api::SandboxConnection);
 
-    eprintln!("Generated {count} schemas in {}", output_dir.display());
+    gen!(agentd::ExecRequest);
+    gen!(agentd::ExecSyncResponse);
+    gen!(agentd::ExecDetachedResponse);
+    gen!(agentd::LogFrame);
+    gen!(agentd::SignalRequest);
+    gen!(agentd::MkdirRequest);
+    gen!(agentd::ListResponse);
+    gen!(agentd::FsEvent);
+    gen!(agentd::PortsResponse);
+    gen!(agentd::ComputerActionRequest);
+    gen!(agentd::ComputerActionResponse);
+
+    eprintln!(
+        "Schemas: {written} written, {} unchanged ({total} total)",
+        total - written
+    );
 }

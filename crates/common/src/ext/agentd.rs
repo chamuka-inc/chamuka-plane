@@ -43,10 +43,17 @@ pub struct ExecSyncResponse {
     pub truncated: Option<bool>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DetachedStatus {
+    Started,
+    Running,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecDetachedResponse {
     pub cmd_id: String,
-    pub status: String,
+    pub status: DetachedStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -156,9 +163,33 @@ pub struct PortsResponse {
     pub listening: Vec<ListeningPort>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ComputerAction {
+    Click,
+    DoubleClick,
+    RightClick,
+    MiddleClick,
+    Drag,
+    Type,
+    KeyPress,
+    Scroll,
+    Screenshot,
+    Move,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ScrollDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ComputerActionRequest {
-    pub action: String,
+    pub action: ComputerAction,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coordinate: Option<[i32; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -170,7 +201,7 @@ pub struct ComputerActionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<[i32; 4]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scroll_direction: Option<String>,
+    pub scroll_direction: Option<ScrollDirection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scroll_amount: Option<i32>,
 }

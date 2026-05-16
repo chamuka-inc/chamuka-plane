@@ -11,7 +11,16 @@
       "type": "string"
     },
     "status": {
-      "type": "string"
+      "$ref": "#/definitions/DetachedStatus"
+    }
+  },
+  "definitions": {
+    "DetachedStatus": {
+      "type": "string",
+      "enum": [
+        "started",
+        "running"
+      ]
     }
   }
 }

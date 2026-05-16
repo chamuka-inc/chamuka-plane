@@ -11,8 +11,6 @@ test-stubs = []
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
-uuid.workspace = true
 schemars = { workspace = true, features = ["chrono"] }
 plane-common.workspace = true
 chrono = { version = "0.4", features = ["serde"] }

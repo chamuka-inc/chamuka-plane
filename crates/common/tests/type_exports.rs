@@ -155,7 +155,8 @@ fn snapshot_schema_has_required_fields() {
     assert!(props.contains(&"arch".to_string()));
 }
 
-#[allow(unused)]
+// Compile-time assertion: these types are accessible from the public API.
+#[test]
 fn assert_types_exist() {
     let _ = std::mem::size_of::<ExecSyncResponse>();
     let _ = std::mem::size_of::<CreateSandboxResponse>();

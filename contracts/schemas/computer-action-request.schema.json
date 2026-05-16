@@ -7,7 +7,7 @@
   ],
   "properties": {
     "action": {
-      "type": "string"
+      "$ref": "#/definitions/ComputerAction"
     },
     "coordinate": {
       "type": [
@@ -49,9 +49,13 @@
       "format": "int32"
     },
     "scroll_direction": {
-      "type": [
-        "string",
-        "null"
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ScrollDirection"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "start_coordinate": {
@@ -70,6 +74,32 @@
       "type": [
         "string",
         "null"
+      ]
+    }
+  },
+  "definitions": {
+    "ComputerAction": {
+      "type": "string",
+      "enum": [
+        "click",
+        "doubleclick",
+        "rightclick",
+        "middleclick",
+        "drag",
+        "type",
+        "keypress",
+        "scroll",
+        "screenshot",
+        "move"
+      ]
+    },
+    "ScrollDirection": {
+      "type": "string",
+      "enum": [
+        "up",
+        "down",
+        "left",
+        "right"
       ]
     }
   }

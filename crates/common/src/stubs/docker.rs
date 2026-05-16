@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, Clone)]
 pub struct ContainerCreateRequest {
@@ -39,21 +39,22 @@ impl MockDockerSocket {
         }
     }
 
+    fn lock_inner(&self) -> MutexGuard<'_, Vec<Container>> {
+        self.containers.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
     pub fn create_container(&self, req: ContainerCreateRequest) -> String {
-        let id = format!("mock-container-{}", self.container_count());
-        let container = Container {
+        let mut containers = self.lock_inner();
+        let id = format!("mock-container-{}", containers.len());
+        containers.push(Container {
             request: req,
             state: ContainerState::Created,
-        };
-        self.containers
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(container);
+        });
         id
     }
 
     pub fn start_container(&self, index: usize) -> bool {
-        let mut containers = self.containers.lock().unwrap_or_else(|p| p.into_inner());
+        let mut containers = self.lock_inner();
         if let Some(c) = containers.get_mut(index) {
             c.state = ContainerState::Running;
             true
@@ -63,7 +64,7 @@ impl MockDockerSocket {
     }
 
     pub fn stop_container(&self, index: usize) -> bool {
-        let mut containers = self.containers.lock().unwrap_or_else(|p| p.into_inner());
+        let mut containers = self.lock_inner();
         if let Some(c) = containers.get_mut(index) {
             c.state = ContainerState::Stopped;
             true
@@ -73,32 +74,20 @@ impl MockDockerSocket {
     }
 
     pub fn container_count(&self) -> usize {
-        self.containers
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .len()
+        self.lock_inner().len()
     }
 
     pub fn container_state(&self, index: usize) -> Option<ContainerState> {
-        self.containers
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(index)
-            .map(|c| c.state)
+        self.lock_inner().get(index).map(|c| c.state)
     }
 
     pub fn container_image(&self, index: usize) -> Option<String> {
-        self.containers
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+        self.lock_inner()
             .get(index)
             .map(|c| c.request.image.clone())
     }
 
     pub fn clear(&self) {
-        self.containers
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clear();
+        self.lock_inner().clear();
     }
 }
