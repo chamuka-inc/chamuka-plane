@@ -21,6 +21,78 @@ pub async fn logs(
         .into_response()
 }
 
+pub async fn stdout_stream(
+    State(registry): State<ProcessRegistry>,
+    Path(cmd_id): Path<String>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    let streams = match registry.take_streams(&cmd_id).await {
+        Ok(s) => s,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    ws.on_upgrade(move |socket| {
+        handle_single_stream(socket, registry, cmd_id, streams.stdout, true)
+    })
+    .into_response()
+}
+
+pub async fn stderr_stream(
+    State(registry): State<ProcessRegistry>,
+    Path(cmd_id): Path<String>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    let streams = match registry.take_streams(&cmd_id).await {
+        Ok(s) => s,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    ws.on_upgrade(move |socket| {
+        handle_single_stream(socket, registry, cmd_id, streams.stderr, false)
+    })
+    .into_response()
+}
+
+async fn handle_single_stream<R: AsyncReadExt + Unpin + Send + 'static>(
+    mut socket: WebSocket,
+    registry: ProcessRegistry,
+    cmd_id: String,
+    reader: Option<R>,
+    is_stdout: bool,
+) {
+    if let Some(mut reader) = reader {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    let data = base64_encode(&buf[..n]);
+                    let frame = if is_stdout {
+                        LogFrame::Stdout { data }
+                    } else {
+                        LogFrame::Stderr { data }
+                    };
+                    let json = match serde_json::to_string(&frame) {
+                        Ok(j) => j,
+                        Err(_) => break,
+                    };
+                    if socket.send(Message::Text(json.into())).await.is_err() {
+                        return;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    if let Ok(code) = registry.wait_exit(&cmd_id).await {
+        let exit_frame = LogFrame::Exit { code, signal: None };
+        if let Ok(json) = serde_json::to_string(&exit_frame) {
+            let _ = socket.send(Message::Text(json.into())).await;
+        }
+    }
+}
+
 async fn handle_logs(
     mut socket: WebSocket,
     registry: ProcessRegistry,

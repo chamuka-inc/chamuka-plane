@@ -16,6 +16,14 @@ pub fn router() -> Router {
         .route("/v1/exec/{cmd_id}", get(handlers::exec_status::get))
         .route("/v1/exec/{cmd_id}/stdin", post(handlers::exec_stdin::post))
         .route("/v1/exec/{cmd_id}/signal", post(handlers::signal::post))
+        .route(
+            "/v1/exec/{cmd_id}/stdout",
+            get(handlers::exec_logs::stdout_stream),
+        )
+        .route(
+            "/v1/exec/{cmd_id}/stderr",
+            get(handlers::exec_logs::stderr_stream),
+        )
         .route("/v1/exec/{cmd_id}/logs", get(handlers::exec_logs::logs))
         .route("/v1/fs/read", get(handlers::fs::read))
         .route("/v1/fs/write", put(handlers::fs::write))
@@ -23,8 +31,10 @@ pub fn router() -> Router {
         .route("/v1/fs/rm", delete(handlers::fs::rm))
         .route("/v1/fs/list", get(handlers::fs::list))
         .route("/v1/fs/move", post(handlers::fs::mv))
+        .route("/v1/fs/watch", get(handlers::fs_watch::watch))
         .route("/v1/ports", get(handlers::ports::get))
         .route("/v1/processes", get(handlers::processes::get))
+        .route("/v1/computer", post(handlers::computer::post))
         .with_state(registry)
 }
 

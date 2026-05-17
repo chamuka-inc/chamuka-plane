@@ -18,6 +18,7 @@ thiserror.workspace = true
 uuid.workspace = true
 base64 = "0.22"
 libc = "0.2"
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

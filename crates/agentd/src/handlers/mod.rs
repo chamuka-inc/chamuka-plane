@@ -1,8 +1,10 @@
+pub mod computer;
 pub mod exec;
 pub mod exec_logs;
 pub mod exec_status;
 pub mod exec_stdin;
 pub mod fs;
+pub mod fs_watch;
 pub mod health;
 pub mod info;
 pub mod ports;
