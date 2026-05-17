@@ -14,6 +14,7 @@
 
 const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:9090";
 const PROXY_URL = process.env.PROXY_URL ?? "http://localhost:8080";
+const TENANT = "walking-skeleton";
 
 interface CreateSandboxResponse {
   sandbox: { id: string; status: string };
@@ -38,7 +39,6 @@ async function waitForReady(statusUrl: string, timeoutMs = 30000): Promise<void>
         if (body.status === "ready") return;
       }
     } catch {
-      // Not ready yet
     }
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -52,7 +52,7 @@ async function main() {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Auth-Tenant": "walking-skeleton",
+      "X-Auth-Tenant": TENANT,
     },
     body: JSON.stringify({
       runtime: "custom",
@@ -70,8 +70,12 @@ async function main() {
   console.log(`==> Sandbox created: ${sandbox.id}`);
   console.log(`==> Waiting for ready...`);
 
-  const statusUrl = connection.status_url.replace("http://0.0.0.0:9090", CONTROLLER_URL);
-  await waitForReady(statusUrl);
+  const statusParsed = new URL(connection.status_url);
+  const controllerParsed = new URL(CONTROLLER_URL);
+  statusParsed.hostname = controllerParsed.hostname;
+  statusParsed.port = controllerParsed.port;
+  statusParsed.protocol = controllerParsed.protocol;
+  await waitForReady(statusParsed.toString());
   console.log(`==> Sandbox ready!`);
 
   const proxyPath = new URL(connection.url).pathname;
@@ -106,7 +110,7 @@ async function main() {
   console.log(`==> Terminating sandbox...`);
   const deleteResp = await fetch(`${CONTROLLER_URL}/pub/v1/sandboxes/${sandbox.id}`, {
     method: "DELETE",
-    headers: { "X-Auth-Tenant": "walking-skeleton" },
+    headers: { "X-Auth-Tenant": TENANT },
   });
 
   if (!deleteResp.ok && deleteResp.status !== 404) {
