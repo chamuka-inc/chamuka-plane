@@ -81,6 +81,23 @@ impl<'a> SnapshotDatabase<'a> {
         .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    pub async fn cleanup_expired(&self, batch_size: i32) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM snapshot
+            WHERE id IN (
+                SELECT id FROM snapshot
+                WHERE expires_at < now()
+                LIMIT $1
+            )
+            "#,
+        )
+        .bind(batch_size)
+        .execute(self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }
 
 #[derive(Debug, Clone, FromRow)]

@@ -43,4 +43,29 @@ impl<'a> SecretDatabase<'a> {
         .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    pub async fn cleanup_soft_deleted(
+        &self,
+        min_age_days: i32,
+        batch_size: i32,
+    ) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM secret
+            WHERE id IN (
+                SELECT s.id FROM secret s
+                LEFT JOIN credential_binding cb ON cb.secret_id = s.id
+                WHERE s.deleted_at IS NOT NULL
+                  AND s.deleted_at < now() - make_interval(days => $1)
+                  AND cb.id IS NULL
+                LIMIT $2
+            )
+            "#,
+        )
+        .bind(min_age_days)
+        .bind(batch_size)
+        .execute(self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }
