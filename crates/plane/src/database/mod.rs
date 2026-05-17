@@ -14,6 +14,7 @@ use self::{
     secret::SecretDatabase,
     snapshot::SnapshotDatabase,
     subscribe::{EventSubscriptionManager, Notification, NotificationPayload, Subscription},
+    tenant::TenantDatabase,
     usage_record::UsageRecordDatabase,
 };
 use plane_common::{
@@ -40,6 +41,7 @@ pub mod sandbox;
 pub mod secret;
 pub mod snapshot;
 pub mod subscribe;
+pub mod tenant;
 pub mod usage_record;
 pub mod util;
 
@@ -118,6 +120,10 @@ impl PlaneDatabase {
 
     pub fn extension_action(&self) -> ExtensionActionDatabase<'_> {
         ExtensionActionDatabase::new(&self.pool)
+    }
+
+    pub fn tenant(&self) -> TenantDatabase<'_> {
+        TenantDatabase::new(&self.pool)
     }
 
     pub fn usage_record(&self) -> UsageRecordDatabase<'_> {

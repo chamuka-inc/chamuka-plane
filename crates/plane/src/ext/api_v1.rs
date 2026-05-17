@@ -133,6 +133,16 @@ pub async fn create_sandbox(
         auth: serde_json::Map::new(),
     };
 
+    controller
+        .db
+        .tenant()
+        .ensure_exists(&tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to ensure tenant exists");
+            ApiError::internal("Failed to initialize tenant")
+        })?;
+
     let connect_response = controller
         .connect(&connect_request)
         .await

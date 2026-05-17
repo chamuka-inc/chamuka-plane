@@ -1,20 +1,55 @@
 use common::test_env::TestEnvironment;
-use plane_common::types::DronePoolName;
+use plane::{controller::ControllerServer, database::PlaneDatabase};
+use plane_common::{
+    names::{ControllerName, Name},
+    types::{ClusterName, DronePoolName},
+};
 use plane_test_macro::plane_test;
 use serde_json::json;
+use tokio::net::TcpListener;
+use url::Url;
 
 mod common;
 
+const TEST_CLUSTER: &str = "plane.test";
+
+fn api_url(base: &Url, path: &str) -> String {
+    format!("{}pub/v1{path}", base.as_str())
+}
+
+async fn controller_with_cluster(db: PlaneDatabase) -> ControllerServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url: Url = format!("http://{}", listener.local_addr().unwrap())
+        .parse()
+        .unwrap();
+    let cluster: ClusterName = TEST_CLUSTER.parse().unwrap();
+
+    ControllerServer::run_with_listener(
+        db,
+        listener,
+        ControllerName::new_random(),
+        url,
+        Some(cluster),
+        None,
+        None,
+        None,
+        2,
+    )
+    .await
+    .expect("Unable to construct controller.")
+}
+
 #[plane_test]
 async fn create_sandbox_happy_path(env: TestEnvironment) {
-    let controller = env.controller().await;
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
     let _drone = env
         .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
         .await;
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-    let url = format!("{}/pub/v1/sandboxes", controller.url());
+    let url = api_url(&controller.url(), "/sandboxes");
     let client = reqwest::Client::new();
 
     let response = client
@@ -28,9 +63,10 @@ async fn create_sandbox_happy_path(env: TestEnvironment) {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), 201, "Expected 201 Created");
-
-    let body: serde_json::Value = response.json().await.unwrap();
+    let status = response.status();
+    let body_text = response.text().await.unwrap();
+    assert_eq!(status, 201, "Expected 201 Created, body: {body_text}");
+    let body: serde_json::Value = serde_json::from_str(&body_text).unwrap();
 
     assert!(body["sandbox"]["id"].as_str().unwrap().starts_with("sb-"));
     assert!(body["sandbox"]["backend_id"].as_str().is_some());
@@ -47,9 +83,10 @@ async fn create_sandbox_happy_path(env: TestEnvironment) {
 
 #[plane_test]
 async fn create_sandbox_custom_runtime_requires_image(env: TestEnvironment) {
-    let controller = env.controller().await;
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
 
-    let url = format!("{}/pub/v1/sandboxes", controller.url());
+    let url = api_url(&controller.url(), "/sandboxes");
     let client = reqwest::Client::new();
 
     let response = client
@@ -69,9 +106,10 @@ async fn create_sandbox_custom_runtime_requires_image(env: TestEnvironment) {
 
 #[plane_test]
 async fn create_sandbox_no_drone_returns_503(env: TestEnvironment) {
-    let controller = env.controller().await;
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
 
-    let url = format!("{}/pub/v1/sandboxes", controller.url());
+    let url = api_url(&controller.url(), "/sandboxes");
     let client = reqwest::Client::new();
 
     let response = client
