@@ -70,18 +70,23 @@ impl<'a> ExtensionActionDatabase<'a> {
         Ok(rows)
     }
 
-    pub async fn cleanup_acked(&self, batch_size: i32) -> Result<u64, sqlx::Error> {
+    pub async fn cleanup_acked(
+        &self,
+        min_age_days: i32,
+        batch_size: i32,
+    ) -> Result<u64, sqlx::Error> {
         let result = sqlx::query(
             r#"
             DELETE FROM extension_action
             WHERE id IN (
                 SELECT id FROM extension_action
                 WHERE acked_at IS NOT NULL
-                  AND acked_at < now() - interval '1 day'
-                LIMIT $1
+                  AND acked_at < now() - make_interval(days => $1)
+                LIMIT $2
             )
             "#,
         )
+        .bind(min_age_days)
         .bind(batch_size)
         .execute(self.pool)
         .await?;

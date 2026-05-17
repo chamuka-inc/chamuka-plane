@@ -108,6 +108,7 @@ CREATE TABLE credential_binding (
 );
 CREATE INDEX idx_credential_sandbox ON credential_binding (sandbox_id)
     WHERE revoked_at IS NULL;
+CREATE INDEX idx_credential_secret ON credential_binding (secret_id);
 
 -- Outbound action queue for our extensions (policy/credential push, snapshot).
 CREATE TABLE extension_action (

@@ -3,6 +3,8 @@ use anyhow::Result;
 
 const CLEANUP_LOOP_INTERVAL_SECONDS: u64 = 60 * 3;
 const DEFAULT_BATCH_SIZE: i32 = 100;
+const SECRET_RETENTION_DAYS: i32 = 30;
+const ACKED_ACTION_RETENTION_DAYS: i32 = 1;
 
 pub async fn run_cleanup(
     db: &PlaneDatabase,
@@ -33,12 +35,18 @@ async fn run_extension_cleanup(db: &PlaneDatabase, batch_size: i32) -> Result<()
         tracing::info!(snapshots_deleted, "Cleaned up expired snapshots");
     }
 
-    let secrets_deleted = db.secret().cleanup_soft_deleted(30, batch_size).await?;
+    let secrets_deleted = db
+        .secret()
+        .cleanup_soft_deleted(SECRET_RETENTION_DAYS, batch_size)
+        .await?;
     if secrets_deleted > 0 {
         tracing::info!(secrets_deleted, "Cleaned up soft-deleted secrets");
     }
 
-    let actions_deleted = db.extension_action().cleanup_acked(batch_size).await?;
+    let actions_deleted = db
+        .extension_action()
+        .cleanup_acked(ACKED_ACTION_RETENTION_DAYS, batch_size)
+        .await?;
     if actions_deleted > 0 {
         tracing::info!(actions_deleted, "Cleaned up acked extension actions");
     }
@@ -89,37 +97,35 @@ mod tests {
     }
 
     impl TestFixture {
-        fn controller_id(&self) -> String {
-            format!("ctrl-gc-{}", self.suffix)
-        }
-        fn node_name(&self) -> String {
-            format!("node-gc-{}", self.suffix)
-        }
         fn backend_id(&self) -> String {
-            format!("bk-gc-{}", self.suffix)
+            id("bk", &self.suffix)
         }
         fn tenant_id(&self) -> String {
-            format!("tenant-gc-{}", self.suffix)
+            id("tenant", &self.suffix)
         }
         fn sandbox_id(&self) -> String {
-            format!("sb-gc-{}", self.suffix)
+            id("sb", &self.suffix)
         }
     }
 
-    async fn setup(pool: &PgPool, suffix: &str) -> TestFixture {
-        let f = TestFixture {
-            suffix: suffix.to_string(),
-            drone_id: 0,
-        };
+    fn id(prefix: &str, suffix: &str) -> String {
+        format!("{prefix}-gc-{suffix}")
+    }
 
-        // Clean up any leftover data from prior runs
-        teardown(pool, &f).await;
+    async fn setup(pool: &PgPool, suffix: &str) -> TestFixture {
+        teardown_by_suffix(pool, suffix).await;
+
+        let controller_id = id("ctrl", suffix);
+        let node_name = id("node", suffix);
+        let backend_id = id("bk", suffix);
+        let tenant_id = id("tenant", suffix);
+        let sandbox_id = id("sb", suffix);
 
         sqlx::query(
             "INSERT INTO controller (id, last_heartbeat, is_online, plane_version, plane_hash, ip)
              VALUES ($1, now(), true, '0.0.0', 'test', '127.0.0.1')",
         )
-        .bind(&f.controller_id())
+        .bind(&controller_id)
         .execute(pool)
         .await
         .expect("insert controller");
@@ -128,14 +134,14 @@ mod tests {
             "INSERT INTO node (kind, name, plane_version, plane_hash, ip, controller)
              VALUES ('drone', $1, '0.0.0', 'test', '127.0.0.1', $2)",
         )
-        .bind(&f.node_name())
-        .bind(&f.controller_id())
+        .bind(&node_name)
+        .bind(&controller_id)
         .execute(pool)
         .await
         .expect("insert node");
 
         let drone_id: i32 = sqlx::query_scalar("SELECT id FROM node WHERE name = $1")
-            .bind(&f.node_name())
+            .bind(&node_name)
             .fetch_one(pool)
             .await
             .expect("get node id");
@@ -154,14 +160,14 @@ mod tests {
                                   last_keepalive, state)
              VALUES ($1, 'default', 'running', now(), $2, now(), '{}'::jsonb)",
         )
-        .bind(&f.backend_id())
+        .bind(&backend_id)
         .bind(drone_id)
         .execute(pool)
         .await
         .expect("insert backend");
 
         sqlx::query("INSERT INTO tenant (id) VALUES ($1)")
-            .bind(&f.tenant_id())
+            .bind(&tenant_id)
             .execute(pool)
             .await
             .expect("insert tenant");
@@ -172,9 +178,9 @@ mod tests {
              VALUES ($1, $2, $3, 'node24', 'untrusted', 'amd64', 'node:24', 2, 4096,
                      now() + interval '1 hour')",
         )
-        .bind(&f.sandbox_id())
-        .bind(&f.backend_id())
-        .bind(&f.tenant_id())
+        .bind(&sandbox_id)
+        .bind(&backend_id)
+        .bind(&tenant_id)
         .execute(pool)
         .await
         .expect("insert sandbox");
@@ -185,75 +191,69 @@ mod tests {
         }
     }
 
-    async fn teardown(pool: &PgPool, f: &TestFixture) {
+    // Intentionally ignores errors: teardown is best-effort; rows may not exist
+    async fn teardown_by_suffix(pool: &PgPool, suffix: &str) {
+        let backend_id = id("bk", suffix);
+        let sandbox_id = id("sb", suffix);
+        let tenant_id = id("tenant", suffix);
+        let node_name = id("node", suffix);
+        let controller_id = id("ctrl", suffix);
+
         sqlx::query("DELETE FROM extension_action WHERE backend_id = $1")
-            .bind(&f.backend_id())
+            .bind(&backend_id)
             .execute(pool)
             .await
             .ok();
         sqlx::query("DELETE FROM credential_binding WHERE sandbox_id = $1")
-            .bind(&f.sandbox_id())
+            .bind(&sandbox_id)
             .execute(pool)
             .await
             .ok();
         sqlx::query("DELETE FROM snapshot WHERE sandbox_id = $1")
-            .bind(&f.sandbox_id())
+            .bind(&sandbox_id)
             .execute(pool)
             .await
             .ok();
         sqlx::query("DELETE FROM secret WHERE tenant = $1")
-            .bind(&f.tenant_id())
+            .bind(&tenant_id)
             .execute(pool)
             .await
             .ok();
         sqlx::query("DELETE FROM sandbox WHERE id = $1")
-            .bind(&f.sandbox_id())
+            .bind(&sandbox_id)
             .execute(pool)
             .await
             .ok();
         sqlx::query("DELETE FROM backend WHERE id = $1")
-            .bind(&f.backend_id())
+            .bind(&backend_id)
             .execute(pool)
             .await
             .ok();
-        if f.drone_id > 0 {
+        let did: Option<i32> = sqlx::query_scalar("SELECT id FROM node WHERE name = $1")
+            .bind(&node_name)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        if let Some(did) = did {
             sqlx::query("DELETE FROM drone WHERE id = $1")
-                .bind(f.drone_id)
+                .bind(did)
                 .execute(pool)
                 .await
                 .ok();
             sqlx::query("DELETE FROM node WHERE id = $1")
-                .bind(f.drone_id)
+                .bind(did)
                 .execute(pool)
                 .await
                 .ok();
-        } else {
-            let did: Option<i32> = sqlx::query_scalar("SELECT id FROM node WHERE name = $1")
-                .bind(&f.node_name())
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten();
-            if let Some(did) = did {
-                sqlx::query("DELETE FROM drone WHERE id = $1")
-                    .bind(did)
-                    .execute(pool)
-                    .await
-                    .ok();
-                sqlx::query("DELETE FROM node WHERE id = $1")
-                    .bind(did)
-                    .execute(pool)
-                    .await
-                    .ok();
-            }
         }
         sqlx::query("DELETE FROM tenant WHERE id = $1")
-            .bind(&f.tenant_id())
+            .bind(&tenant_id)
             .execute(pool)
             .await
             .ok();
         sqlx::query("DELETE FROM controller WHERE id = $1")
-            .bind(&f.controller_id())
+            .bind(&controller_id)
             .execute(pool)
             .await
             .ok();
@@ -305,7 +305,7 @@ mod tests {
                 .expect("count");
         assert_eq!(remaining, 1);
 
-        teardown(&pool, &f).await;
+        teardown_by_suffix(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
@@ -343,7 +343,7 @@ mod tests {
                 .expect("count");
         assert!(remaining <= 3);
 
-        teardown(&pool, &f).await;
+        teardown_by_suffix(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
@@ -419,7 +419,7 @@ mod tests {
                 .expect("check active");
         assert!(active_exists, "active secret should survive");
 
-        teardown(&pool, &f).await;
+        teardown_by_suffix(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
@@ -473,7 +473,7 @@ mod tests {
             "secret with active binding should not be deleted (got deleted={deleted})"
         );
 
-        teardown(&pool, &f).await;
+        teardown_by_suffix(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
@@ -527,7 +527,7 @@ mod tests {
         let db = PlaneDatabase::new(pool.clone());
         let deleted = db
             .extension_action()
-            .cleanup_acked(100)
+            .cleanup_acked(1, 100)
             .await
             .expect("cleanup");
         assert!(deleted >= 1);
@@ -556,7 +556,7 @@ mod tests {
                 .expect("check pending");
         assert!(pending_exists);
 
-        teardown(&pool, &f).await;
+        teardown_by_suffix(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
@@ -634,6 +634,6 @@ mod tests {
                 .expect("check");
         assert!(act_gone, "old acked action should be cleaned up");
 
-        teardown(&pool, &f).await;
+        teardown_by_suffix(&pool, &f.suffix).await;
     }
 }

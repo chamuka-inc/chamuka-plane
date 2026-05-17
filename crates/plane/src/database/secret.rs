@@ -54,10 +54,11 @@ impl<'a> SecretDatabase<'a> {
             DELETE FROM secret
             WHERE id IN (
                 SELECT s.id FROM secret s
-                LEFT JOIN credential_binding cb ON cb.secret_id = s.id
                 WHERE s.deleted_at IS NOT NULL
                   AND s.deleted_at < now() - make_interval(days => $1)
-                  AND cb.id IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM credential_binding cb WHERE cb.secret_id = s.id
+                  )
                 LIMIT $2
             )
             "#,
