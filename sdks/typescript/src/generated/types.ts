@@ -245,7 +245,7 @@ export type Snapshot = {
   sandbox_id: string;
   tenant?: string;
   image_ref?: string;
-  image: string;
+  image?: string;
   digest?: string;
   base_image?: string;
   size_bytes?: number | null;
