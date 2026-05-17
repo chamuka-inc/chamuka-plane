@@ -37,8 +37,9 @@ ENV VNC_ENABLED=0
 
 WORKDIR /workspace
 
-COPY --from=builder /build/crates/target/release/agentd /usr/local/bin/agentd
 COPY runtime-images/desktop/start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
+COPY --from=builder /build/crates/target/release/agentd /usr/local/bin/agentd
 
 ENTRYPOINT ["tini", "--"]
 CMD ["/usr/local/bin/start.sh"]

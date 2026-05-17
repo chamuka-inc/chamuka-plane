@@ -27,8 +27,9 @@ ENV VNC_ENABLED=0
 
 WORKDIR /workspace
 
-COPY agentd /usr/local/bin/agentd
 COPY start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
+COPY agentd /usr/local/bin/agentd
 
 ENTRYPOINT ["tini", "--"]
 CMD ["/usr/local/bin/start.sh"]
