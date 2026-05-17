@@ -14,19 +14,22 @@ pub async fn post(Json(_req): Json<ComputerActionRequest>) -> impl IntoResponse 
 
 #[cfg(feature = "desktop")]
 pub async fn post(Json(req): Json<ComputerActionRequest>) -> impl IntoResponse {
-    use common::ext::agentd::{ComputerAction, ComputerActionResponse, ComputerOutput};
+    use crate::computer;
 
-    let output = match req.action {
-        ComputerAction::Screenshot => ComputerOutput::Image {
-            base64: String::new(),
-            media_type: "image/png".to_string(),
-        },
-        ComputerAction::CursorPosition => ComputerOutput::Text {
-            text: "0,0".to_string(),
-        },
-        _ => ComputerOutput::Ok,
-    };
-
-    let resp = ComputerActionResponse { output };
-    (StatusCode::OK, Json(resp)).into_response()
+    match computer::execute(&req).await {
+        Ok(resp) => (StatusCode::OK, Json(resp)).into_response(),
+        Err(computer::ComputerError::MissingField(field)) => (
+            StatusCode::BAD_REQUEST,
+            format!("missing required field: {field}"),
+        )
+            .into_response(),
+        Err(computer::ComputerError::InvalidCoordinate(x, y)) => (
+            StatusCode::BAD_REQUEST,
+            format!("invalid coordinate: ({x}, {y})"),
+        )
+            .into_response(),
+        Err(computer::ComputerError::ExecutionFailed(msg)) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
+        }
+    }
 }

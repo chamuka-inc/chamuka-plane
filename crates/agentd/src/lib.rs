@@ -1,3 +1,4 @@
+pub mod computer;
 mod handlers;
 pub mod process_registry;
 mod server;
