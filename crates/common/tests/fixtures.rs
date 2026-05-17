@@ -2,6 +2,9 @@
 
 use common::ext::agentd::{ExecRequest, ExecSyncResponse, LogFrame};
 use common::ext::api::{CreateSandboxRequest, CreateSandboxResponse};
+use common::ext::extension_action::{
+    PushCredentialMessage, PushNetworkPolicyMessage, SnapshotCommand,
+};
 use common::ext::network::NetworkPolicy;
 use common::ext::sandbox::Sandbox;
 use common::ext::snapshot::Snapshot;
@@ -111,4 +114,33 @@ fn usage_record() {
     let u: UsageRecord = load_fixture_as("usage/record.json");
     assert_eq!(u.sandbox_id, "sb-full789");
     assert_eq!(u.cpu_nsec, 45000000000);
+}
+
+#[test]
+fn extension_action_push_network_policy() {
+    let m: PushNetworkPolicyMessage = load_fixture_as("extension-action/push-network-policy.json");
+    assert_eq!(m.backend_id, "bk-abc123def456");
+    assert_eq!(m.version, 3);
+    assert_eq!(
+        m.policy.mode,
+        common::ext::network::NetworkPolicyMode::Rules
+    );
+}
+
+#[test]
+fn extension_action_push_credential() {
+    let m: PushCredentialMessage = load_fixture_as("extension-action/push-credential.json");
+    assert_eq!(m.backend_id, "bk-abc123def456");
+    assert_eq!(m.binding.id, "cred-7f3d1a2b4c5e");
+    assert_eq!(m.binding.destination, "api.openai.com");
+    assert_eq!(m.binding.header_format, "Bearer {value}");
+}
+
+#[test]
+fn extension_action_snapshot_command() {
+    let m: SnapshotCommand = load_fixture_as("extension-action/snapshot-command.json");
+    assert_eq!(m.action_id, "xak-snapshot-001");
+    assert_eq!(m.backend_id, "bk-abc123def456");
+    assert_eq!(m.ttl_days, Some(30));
+    assert_eq!(m.name.as_deref(), Some("pre-deploy-snapshot"));
 }

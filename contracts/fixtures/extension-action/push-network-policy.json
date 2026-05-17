@@ -1,0 +1,14 @@
+{
+  "backend_id": "bk-abc123def456",
+  "policy": {
+    "mode": "rules",
+    "rules": [
+      {
+        "domains": ["api.openai.com", "*.stripe.com"],
+        "ports": [443],
+        "action": "allow"
+      }
+    ]
+  },
+  "version": 3
+}

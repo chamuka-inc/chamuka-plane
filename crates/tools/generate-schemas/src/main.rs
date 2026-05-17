@@ -48,6 +48,7 @@ fn main() {
 
     use common::ext::agentd;
     use common::ext::api;
+    use common::ext::extension_action;
     use common::ext::network;
     use common::ext::sandbox;
     use common::ext::snapshot;
@@ -88,6 +89,12 @@ fn main() {
     gen!(api::CreateCredentialBindingRequest);
     gen!(api::CredentialBinding);
     gen!(api::SandboxConnection);
+
+    gen!(extension_action::PushNetworkPolicyMessage);
+    gen!(extension_action::PushCredentialMessage);
+    gen!(extension_action::SnapshotCommand);
+    gen!(extension_action::AckExtensionAction);
+    gen!(extension_action::ExtensionActionKind);
 
     gen!(agentd::ExecRequest);
     gen!(agentd::ExecSyncResponse);

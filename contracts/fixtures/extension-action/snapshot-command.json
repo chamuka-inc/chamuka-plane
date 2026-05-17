@@ -1,0 +1,6 @@
+{
+  "action_id": "xak-snapshot-001",
+  "backend_id": "bk-abc123def456",
+  "ttl_days": 30,
+  "name": "pre-deploy-snapshot"
+}
