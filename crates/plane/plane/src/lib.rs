@@ -15,6 +15,7 @@ pub mod controller;
 pub mod database;
 pub mod dns;
 pub mod drone;
+pub mod ext;
 pub mod heartbeat_consts;
 pub mod init_tracing;
 pub mod proxy;

@@ -12,6 +12,7 @@ readme = "README.md"
 [dependencies]
 acme2-eab = "0.5.7"
 anyhow = "1.0.75"
+chamuka-common = { path = "../../common", package = "common" }
 async-stream = "0.3.5"
 async-trait = "0.1.74"
 axum = { version = "0.7.7", features = ["ws"] }

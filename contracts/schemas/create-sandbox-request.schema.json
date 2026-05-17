@@ -3,7 +3,6 @@
   "title": "CreateSandboxRequest",
   "type": "object",
   "required": [
-    "resources",
     "runtime"
   ],
   "properties": {
@@ -39,9 +38,13 @@
       ]
     },
     "key": {
-      "type": [
-        "string",
-        "null"
+      "anyOf": [
+        {
+          "$ref": "#/definitions/KeySpec"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "persistent": {
@@ -58,7 +61,14 @@
       }
     },
     "resources": {
-      "$ref": "#/definitions/SandboxResources"
+      "default": {
+        "vcpus": 2
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ResourcesSpec"
+        }
+      ]
     },
     "runtime": {
       "type": "string"
@@ -108,6 +118,29 @@
         "amd64",
         "arm64"
       ]
+    },
+    "KeySpec": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "NetworkPolicy": {
       "type": "object",
@@ -187,6 +220,17 @@
         }
       }
     },
+    "ResourcesSpec": {
+      "type": "object",
+      "properties": {
+        "vcpus": {
+          "default": 2,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
     "RuleAction": {
       "type": "string",
       "enum": [
@@ -194,54 +238,37 @@
         "deny"
       ]
     },
-    "SandboxResources": {
-      "type": "object",
-      "required": [
-        "memory_mb",
-        "vcpus"
-      ],
-      "properties": {
-        "memory_mb": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "vcpus": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        }
-      }
-    },
     "SandboxSource": {
       "oneOf": [
         {
           "type": "object",
           "required": [
-            "repo",
-            "type"
+            "type",
+            "url"
           ],
           "properties": {
-            "branch": {
+            "depth": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "revision": {
               "type": [
                 "string",
                 "null"
               ]
-            },
-            "commit": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "repo": {
-              "type": "string"
             },
             "type": {
               "type": "string",
               "enum": [
                 "git"
               ]
+            },
+            "url": {
+              "type": "string"
             }
           }
         },

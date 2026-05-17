@@ -8,12 +8,43 @@ use super::sandbox::{Arch, Sandbox, SandboxResources, TrustLevel};
 use super::snapshot::Snapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ResourcesSpec {
+    #[serde(default = "default_vcpus")]
+    pub vcpus: u32,
+}
+
+fn default_vcpus() -> u32 {
+    2
+}
+
+impl Default for ResourcesSpec {
+    fn default() -> Self {
+        Self {
+            vcpus: default_vcpus(),
+        }
+    }
+}
+
+impl ResourcesSpec {
+    pub fn memory_mb(&self) -> u32 {
+        self.vcpus * 2048
+    }
+
+    pub fn to_sandbox_resources(&self) -> SandboxResources {
+        SandboxResources {
+            vcpus: self.vcpus,
+            memory_mb: self.memory_mb(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GitSource {
-    pub repo: String,
+    pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
+    pub revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit: Option<String>,
+    pub depth: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -25,6 +56,15 @@ pub enum SandboxSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct KeySpec {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateSandboxRequest {
     pub runtime: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -33,7 +73,8 @@ pub struct CreateSandboxRequest {
     pub trust: TrustLevel,
     #[serde(default = "default_arch")]
     pub arch: Arch,
-    pub resources: SandboxResources,
+    #[serde(default)]
+    pub resources: ResourcesSpec,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,7 +92,7 @@ pub struct CreateSandboxRequest {
     #[serde(default)]
     pub use_static_token: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
+    pub key: Option<KeySpec>,
 }
 
 fn default_trust() -> TrustLevel {

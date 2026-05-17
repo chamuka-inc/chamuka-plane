@@ -3,9 +3,9 @@
   "image": "registry.internal/python:3.13-sandbox",
   "trust": "paranoid",
   "arch": "arm64",
-  "resources": { "vcpus": 4, "memory_mb": 2048 },
+  "resources": { "vcpus": 4 },
   "timeout_ms": 300000,
-  "source": { "type": "git", "repo": "https://github.com/acme/ml-worker.git", "branch": "main" },
+  "source": { "type": "git", "url": "https://github.com/acme/ml-worker.git", "revision": "main" },
   "ports": [8080, 9090],
   "env": { "PYTHON_ENV": "production", "LOG_LEVEL": "info" },
   "tags": { "team": "ml-infra", "cost-center": "eng-42" },
@@ -15,5 +15,5 @@
     "rules": [{ "domains": ["api.openai.com"], "ports": [443], "action": "allow" }]
   },
   "use_static_token": true,
-  "key": "ml-worker-prod"
+  "key": { "name": "ml-worker-prod", "namespace": "acme", "tag": "v1" }
 }

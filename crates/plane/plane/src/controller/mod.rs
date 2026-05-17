@@ -11,6 +11,7 @@ use crate::{
     cleanup,
     controller::{connect::handle_connect, core::Controller, drone::handle_drone_socket},
     database::{connect_and_migrate, PlaneDatabase},
+    ext::ext_routes,
     heartbeat_consts::HEARTBEAT_INTERVAL,
     signals::wait_for_shutdown_signal,
     util::GuardHandle,
@@ -52,7 +53,7 @@ mod backend_state;
 mod cluster_state;
 pub mod command;
 mod connect;
-mod core;
+pub mod core;
 mod dns;
 mod drain;
 mod drone;
@@ -272,8 +273,11 @@ impl ControllerServer {
             .route("/health", get(health))
             .layer(cors_public.clone());
 
+        let v1_routes = ext_routes();
+
         let app = Router::new()
             .nest("/pub", public_routes)
+            .nest("/pub/v1", v1_routes)
             .nest("/ctrl", control_routes)
             .layer(trace_layer)
             .with_state(controller);

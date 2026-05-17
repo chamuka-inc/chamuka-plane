@@ -1,4 +1,3 @@
 {
-  "runtime": "node24",
-  "resources": { "vcpus": 1, "memory_mb": 256 }
+  "runtime": "node24"
 }

@@ -8,7 +8,7 @@
     "trust": "untrusted",
     "arch": "amd64",
     "image": "node:24-slim",
-    "resources": { "vcpus": 1, "memory_mb": 256 },
+    "resources": { "vcpus": 2, "memory_mb": 4096 },
     "ports": [3000],
     "tags": {},
     "persistent": false,
@@ -20,7 +20,6 @@
   "connection": {
     "token": "tk-a1b2c3d4e5f6",
     "url": "https://us-east-1/tk-a1b2c3d4e5f6/",
-    "secret_token": "st-secret123",
     "status_url": "https://us-east-1/pub/b/bk-gen789/status"
   }
 }
