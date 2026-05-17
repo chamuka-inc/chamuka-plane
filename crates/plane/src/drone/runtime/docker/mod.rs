@@ -31,7 +31,6 @@ use std::{
 use tokio::sync::broadcast::Sender;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
-use valuable::Valuable;
 
 /// Clean up containers and images every minute.
 const CLEANUP_INTERVAL_SECS: i64 = 60;
@@ -137,11 +136,7 @@ async fn events_loop(
         let exit_code = attributes.get("exitCode");
         let exit_code = exit_code.and_then(|s| s.parse::<i32>().ok());
 
-        tracing::debug!(
-            exit_code,
-            backend_id = backend_id.as_value(),
-            "Received exit code"
-        );
+        tracing::debug!(exit_code, ?backend_id, "Received exit code");
 
         if let Err(err) = event_sender.send(TerminateEvent {
             backend_id,
@@ -277,10 +272,10 @@ impl Runtime for DockerRuntime {
 
     async fn wait_for_backend(
         &self,
-        _backend: &BackendName,
+        backend: &BackendName,
         address: SocketAddr,
     ) -> Result<(), BackendError> {
-        wait_for_backend(address).await
+        wait_for_backend(&self.docker, backend, address).await
     }
 }
 

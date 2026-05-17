@@ -16,7 +16,6 @@ use std::{
     net::IpAddr,
     sync::{Arc, Mutex},
 };
-use valuable::Valuable;
 
 /// The backend manager uses a state machine internally to manage the state of the backend.
 /// Each time we enter a state, we can do one of three things:
@@ -203,6 +202,10 @@ impl BackendManager {
                             tracing::error!("Backend startup timeout");
                             state.to_hard_terminating(TerminationReason::StartupTimeout)
                         }
+                        Err(BackendError::ContainerExited(exit_code)) => {
+                            tracing::error!(?exit_code, "Container exited during startup");
+                            state.to_terminated(exit_code)
+                        }
                         Err(BackendError::Other(msg)) => {
                             tracing::error!("Failed to wait for backend: {}", msg);
                             state.to_hard_terminating(TerminationReason::InternalError)
@@ -225,8 +228,8 @@ impl BackendManager {
         let mut lock = self.state.lock().expect("State lock is poisoned");
 
         tracing::debug!(
-            backend_id = self.backend_id.as_value(),
-            state = state.as_value(),
+            backend_id = ?self.backend_id,
+            state = ?state,
             "Updating backend state"
         );
 
@@ -282,8 +285,8 @@ impl BackendManager {
             .state
             .clone();
         tracing::debug!(
-            backend_id = self.backend_id.as_value(),
-            state = state.as_value(),
+            backend_id = ?self.backend_id,
+            state = ?state,
             "Marking backend as terminated"
         );
         self.set_state(state.to_terminated(exit_code));

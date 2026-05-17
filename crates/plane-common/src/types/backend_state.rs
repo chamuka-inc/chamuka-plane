@@ -58,26 +58,7 @@ impl BackendStatus {
     }
 }
 
-impl valuable::Valuable for BackendStatus {
-    fn as_value(&self) -> valuable::Value<'_> {
-        match self {
-            BackendStatus::Scheduled => valuable::Value::String("scheduled"),
-            BackendStatus::Loading => valuable::Value::String("loading"),
-            BackendStatus::Starting => valuable::Value::String("starting"),
-            BackendStatus::Waiting => valuable::Value::String("waiting"),
-            BackendStatus::Ready => valuable::Value::String("ready"),
-            BackendStatus::Terminating => valuable::Value::String("terminating"),
-            BackendStatus::HardTerminating => valuable::Value::String("hard-terminating"),
-            BackendStatus::Terminated => valuable::Value::String("terminated"),
-        }
-    }
-
-    fn visit(&self, visit: &mut dyn valuable::Visit) {
-        visit.visit_value(self.as_value())
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, valuable::Valuable)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TerminationKind {
     Soft,
@@ -117,115 +98,6 @@ pub enum BackendState {
     },
 }
 
-impl valuable::Valuable for BackendState {
-    fn as_value(&self) -> valuable::Value<'_> {
-        valuable::Value::Mappable(self)
-    }
-
-    fn visit(&self, visit: &mut dyn valuable::Visit) {
-        match self {
-            BackendState::Scheduled => visit.visit_entry(
-                valuable::Value::String("status"),
-                valuable::Value::String("scheduled"),
-            ),
-            BackendState::Loading => visit.visit_entry(
-                valuable::Value::String("status"),
-                valuable::Value::String("loading"),
-            ),
-            BackendState::Starting => visit.visit_entry(
-                valuable::Value::String("status"),
-                valuable::Value::String("starting"),
-            ),
-            BackendState::Waiting { address } => {
-                visit.visit_entry(
-                    valuable::Value::String("status"),
-                    valuable::Value::String("waiting"),
-                );
-                visit.visit_entry(valuable::Value::String("address"), address.as_value());
-            }
-            BackendState::Ready { address } => {
-                visit.visit_entry(
-                    valuable::Value::String("status"),
-                    valuable::Value::String("ready"),
-                );
-                visit.visit_entry(valuable::Value::String("address"), address.as_value());
-            }
-            #[allow(deprecated)]
-            BackendState::Terminating {
-                last_status,
-                termination,
-                reason,
-            } => {
-                visit.visit_entry(
-                    valuable::Value::String("status"),
-                    valuable::Value::String("terminating"),
-                );
-                visit.visit_entry(
-                    valuable::Value::String("last_status"),
-                    last_status.as_value(),
-                );
-                visit.visit_entry(
-                    valuable::Value::String("termination"),
-                    termination.as_value(),
-                );
-                visit.visit_entry(valuable::Value::String("reason"), reason.as_value());
-            }
-            BackendState::HardTerminating {
-                last_status,
-                reason,
-            } => {
-                visit.visit_entry(
-                    valuable::Value::String("status"),
-                    valuable::Value::String("hard-terminating"),
-                );
-                visit.visit_entry(
-                    valuable::Value::String("last_status"),
-                    last_status.as_value(),
-                );
-                visit.visit_entry(valuable::Value::String("reason"), reason.as_value());
-            }
-            BackendState::Terminated {
-                last_status,
-                termination,
-                reason,
-                exit_code,
-            } => {
-                visit.visit_entry(
-                    valuable::Value::String("status"),
-                    valuable::Value::String("terminated"),
-                );
-                visit.visit_entry(
-                    valuable::Value::String("last_status"),
-                    last_status.as_value(),
-                );
-                visit.visit_entry(
-                    valuable::Value::String("termination"),
-                    termination.as_value(),
-                );
-                visit.visit_entry(valuable::Value::String("reason"), reason.as_value());
-                visit.visit_entry(valuable::Value::String("exit_code"), exit_code.as_value());
-            }
-        }
-    }
-}
-
-impl valuable::Mappable for BackendState {
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // These numbers should match the number of calls to visit_entry in visit.
-        // (This is use as a hint; differences are not a correctness issue.)
-        match self {
-            BackendState::Scheduled => (1, Some(1)),
-            BackendState::Loading => (1, Some(1)),
-            BackendState::Starting => (1, Some(1)),
-            BackendState::Waiting { .. } => (2, Some(2)),
-            BackendState::Ready { .. } => (1, Some(2)),
-            BackendState::Terminating { .. } => (1, Some(4)),
-            BackendState::HardTerminating { .. } => (1, Some(3)),
-            BackendState::Terminated { .. } => (2, Some(5)),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TerminationReason {
@@ -237,27 +109,12 @@ pub enum TerminationReason {
     InternalError,
 }
 
-impl valuable::Valuable for TerminationReason {
-    fn as_value(&self) -> valuable::Value<'_> {
-        match self {
-            TerminationReason::Swept => valuable::Value::String("swept"),
-            TerminationReason::External => valuable::Value::String("external"),
-            TerminationReason::KeyExpired => valuable::Value::String("keyexpired"),
-            TerminationReason::Lost => valuable::Value::String("lost"),
-            TerminationReason::StartupTimeout => valuable::Value::String("startuptimeout"),
-            TerminationReason::InternalError => valuable::Value::String("internalerror"),
-        }
-    }
-
-    fn visit(&self, visit: &mut dyn valuable::Visit) {
-        visit.visit_value(self.as_value())
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, thiserror::Error)]
 pub enum BackendError {
     #[error("Timeout waiting for backend to start")]
     StartupTimeout,
+    #[error("Container exited during startup (exit_code={0:?})")]
+    ContainerExited(Option<i32>),
     #[error("{0}")]
     Other(String),
 }
