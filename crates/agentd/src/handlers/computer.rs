@@ -18,16 +18,10 @@ pub async fn post(Json(req): Json<ComputerActionRequest>) -> impl IntoResponse {
 
     match computer::execute(&req).await {
         Ok(resp) => (StatusCode::OK, Json(resp)).into_response(),
-        Err(computer::ComputerError::MissingField(field)) => (
-            StatusCode::BAD_REQUEST,
-            format!("missing required field: {field}"),
-        )
-            .into_response(),
-        Err(computer::ComputerError::InvalidCoordinate(x, y)) => (
-            StatusCode::BAD_REQUEST,
-            format!("invalid coordinate: ({x}, {y})"),
-        )
-            .into_response(),
+        Err(
+            e @ (computer::ComputerError::MissingField(_)
+            | computer::ComputerError::InvalidCoordinate(_, _)),
+        ) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         Err(computer::ComputerError::ExecutionFailed(msg)) => {
             (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
         }
