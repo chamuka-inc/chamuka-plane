@@ -76,7 +76,10 @@ pub async fn post(
     let stdout_task = tokio::spawn(async move {
         let mut buf = Vec::new();
         if let Some(ref mut out) = stdout_handle {
-            let _ = out.read_to_end(&mut buf).await;
+            let _ = out
+                .take(MAX_OUTPUT_BYTES as u64)
+                .read_to_end(&mut buf)
+                .await;
         }
         buf
     });
@@ -84,7 +87,10 @@ pub async fn post(
     let stderr_task = tokio::spawn(async move {
         let mut buf = Vec::new();
         if let Some(ref mut err) = stderr_handle {
-            let _ = err.read_to_end(&mut buf).await;
+            let _ = err
+                .take(MAX_OUTPUT_BYTES as u64)
+                .read_to_end(&mut buf)
+                .await;
         }
         buf
     });

@@ -53,9 +53,12 @@ impl ProcessRegistry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SignalError {
+    #[error("process not found")]
     NotFound,
+    #[error("process already exited")]
     ProcessExited,
-    OsError(std::io::Error),
+    #[error("signal delivery failed: {0}")]
+    OsError(#[from] std::io::Error),
 }

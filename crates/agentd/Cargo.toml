@@ -19,7 +19,6 @@ uuid.workspace = true
 libc = "0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tower-http = { version = "0.6", features = ["trace"] }
 
 [dev-dependencies]
 common = { path = "../common", features = ["test-stubs"] }

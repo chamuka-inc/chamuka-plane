@@ -1,26 +1,26 @@
 use axum::Json;
 use common::ext::agentd::{ListeningPort, PortProtocol, PortsResponse};
-use std::process::Command;
+use tokio::process::Command;
 
 pub async fn get() -> Json<PortsResponse> {
-    let listening = list_listening_ports();
+    let listening = list_listening_ports().await;
     Json(PortsResponse { listening })
 }
 
-fn list_listening_ports() -> Vec<ListeningPort> {
+async fn list_listening_ports() -> Vec<ListeningPort> {
     #[cfg(target_os = "macos")]
     {
-        list_ports_lsof()
+        list_ports_lsof().await
     }
     #[cfg(target_os = "linux")]
     {
-        list_ports_ss()
+        list_ports_ss().await
     }
 }
 
 #[cfg(target_os = "linux")]
-fn list_ports_ss() -> Vec<ListeningPort> {
-    let output = Command::new("ss").args(["-tlnp", "-H"]).output().ok();
+async fn list_ports_ss() -> Vec<ListeningPort> {
+    let output = Command::new("ss").args(["-tlnp", "-H"]).output().await.ok();
 
     let Some(output) = output else {
         return Vec::new();
@@ -57,10 +57,11 @@ fn list_ports_ss() -> Vec<ListeningPort> {
 }
 
 #[cfg(target_os = "macos")]
-fn list_ports_lsof() -> Vec<ListeningPort> {
+async fn list_ports_lsof() -> Vec<ListeningPort> {
     let output = Command::new("lsof")
         .args(["-iTCP", "-sTCP:LISTEN", "-nP", "-F", "pcn"])
         .output()
+        .await
         .ok();
 
     let Some(output) = output else {

@@ -11,24 +11,67 @@ use tokio::fs;
 #[derive(Deserialize)]
 pub struct ReadQuery {
     path: String,
-    #[allow(dead_code)]
     offset: Option<u64>,
-    #[allow(dead_code)]
     length: Option<u64>,
 }
 
 pub async fn read(Query(q): Query<ReadQuery>) -> impl IntoResponse {
-    match fs::read(&q.path).await {
-        Ok(data) => (StatusCode::OK, Body::from(data)).into_response(),
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    let mut file = match fs::File::open(&q.path).await {
+        Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            (StatusCode::NOT_FOUND, Body::from("not found")).into_response()
+            return (StatusCode::NOT_FOUND, Body::from("not found")).into_response();
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Body::from(format!("read error: {e}")),
-        )
-            .into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Body::from(format!("read error: {e}")),
+            )
+                .into_response();
+        }
+    };
+
+    if let Some(offset) = q.offset {
+        if let Err(e) = file.seek(std::io::SeekFrom::Start(offset)).await {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Body::from(format!("seek error: {e}")),
+            )
+                .into_response();
+        }
     }
+
+    let data = match q.length {
+        Some(len) => {
+            let mut buf = vec![0u8; len as usize];
+            let n = match file.read(&mut buf).await {
+                Ok(n) => n,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Body::from(format!("read error: {e}")),
+                    )
+                        .into_response();
+                }
+            };
+            buf.truncate(n);
+            buf
+        }
+        None => {
+            let mut buf = Vec::new();
+            if let Err(e) = file.read_to_end(&mut buf).await {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Body::from(format!("read error: {e}")),
+                )
+                    .into_response();
+            }
+            buf
+        }
+    };
+
+    (StatusCode::OK, Body::from(data)).into_response()
 }
 
 pub async fn write(mut multipart: Multipart) -> impl IntoResponse {
@@ -55,7 +98,13 @@ pub async fn write(mut multipart: Multipart) -> impl IntoResponse {
     };
 
     if let Some(parent) = std::path::Path::new(&path).parent() {
-        let _ = fs::create_dir_all(parent).await;
+        if let Err(e) = fs::create_dir_all(parent).await {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed to create parent directory: {e}"),
+            )
+                .into_response();
+        }
     }
 
     match fs::write(&path, &data).await {
@@ -134,19 +183,20 @@ pub async fn list(Query(q): Query<ListQuery>) -> impl IntoResponse {
     let mut entries = Vec::new();
     while let Ok(Some(entry)) = read_dir.next_entry().await {
         let name = entry.file_name().to_string_lossy().into_owned();
+        let file_type = entry.file_type().await;
         let meta = entry.metadata().await;
-        let (entry_type, size, mode, modified_at) = match meta {
-            Ok(m) => {
-                let et = if m.is_dir() {
-                    EntryType::Dir
-                } else if m.is_symlink() {
+        let (entry_type, size, mode, modified_at) = match (&file_type, &meta) {
+            (Ok(ft), Ok(m)) => {
+                let et = if ft.is_symlink() {
                     EntryType::Symlink
-                } else if m.is_file() {
+                } else if ft.is_dir() {
+                    EntryType::Dir
+                } else if ft.is_file() {
                     EntryType::File
                 } else {
                     EntryType::Other
                 };
-                let size = if m.is_file() { Some(m.len()) } else { None };
+                let size = if ft.is_file() { Some(m.len()) } else { None };
                 let modified = m
                     .modified()
                     .ok()
@@ -155,7 +205,7 @@ pub async fn list(Query(q): Query<ListQuery>) -> impl IntoResponse {
                     .unwrap_or_default();
                 (et, size, m.mode(), modified)
             }
-            Err(_) => (EntryType::Other, None, 0, String::new()),
+            _ => (EntryType::Other, None, 0, String::new()),
         };
 
         entries.push(DirEntry {
