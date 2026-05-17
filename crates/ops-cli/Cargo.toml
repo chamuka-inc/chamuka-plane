@@ -5,13 +5,24 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "sbctl"
+path = "src/main.rs"
+
 [dependencies]
 common = { path = "../common" }
+clap.workspace = true
+reqwest.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+tabled.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 common = { path = "../common", features = ["test-stubs"] }
+chrono = "0.4"
 
 [lints]
 workspace = true
