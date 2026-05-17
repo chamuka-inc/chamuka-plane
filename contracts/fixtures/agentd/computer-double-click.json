@@ -1,0 +1,11 @@
+{
+  "request": {
+    "action": "double_click",
+    "coordinate": [250, 350]
+  },
+  "response": {
+    "output": {
+      "type": "ok"
+    }
+  }
+}

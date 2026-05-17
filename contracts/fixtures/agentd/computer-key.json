@@ -1,0 +1,11 @@
+{
+  "request": {
+    "action": "key",
+    "text": "Return"
+  },
+  "response": {
+    "output": {
+      "type": "ok"
+    }
+  }
+}

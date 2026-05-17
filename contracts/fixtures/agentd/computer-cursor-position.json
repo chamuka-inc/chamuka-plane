@@ -1,0 +1,11 @@
+{
+  "request": {
+    "action": "cursor_position"
+  },
+  "response": {
+    "output": {
+      "type": "text",
+      "text": "512,384"
+    }
+  }
+}

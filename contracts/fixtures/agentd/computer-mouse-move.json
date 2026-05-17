@@ -1,0 +1,11 @@
+{
+  "request": {
+    "action": "mouse_move",
+    "coordinate": [500, 600]
+  },
+  "response": {
+    "output": {
+      "type": "ok"
+    }
+  }
+}

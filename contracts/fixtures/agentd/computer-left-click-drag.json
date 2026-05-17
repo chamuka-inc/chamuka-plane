@@ -1,0 +1,12 @@
+{
+  "request": {
+    "action": "left_click_drag",
+    "start_coordinate": [100, 100],
+    "coordinate": [300, 300]
+  },
+  "response": {
+    "output": {
+      "type": "ok"
+    }
+  }
+}

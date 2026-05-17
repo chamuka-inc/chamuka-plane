@@ -1,0 +1,12 @@
+{
+  "request": {
+    "action": "hold_key",
+    "text": "shift",
+    "duration": 500
+  },
+  "response": {
+    "output": {
+      "type": "ok"
+    }
+  }
+}

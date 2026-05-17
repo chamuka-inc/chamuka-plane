@@ -1,0 +1,13 @@
+{
+  "request": {
+    "action": "scroll",
+    "coordinate": [400, 300],
+    "scroll_direction": "down",
+    "scroll_amount": 3
+  },
+  "response": {
+    "output": {
+      "type": "ok"
+    }
+  }
+}

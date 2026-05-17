@@ -1,0 +1,11 @@
+{
+  "request": {
+    "action": "type",
+    "text": "hello world"
+  },
+  "response": {
+    "output": {
+      "type": "ok"
+    }
+  }
+}

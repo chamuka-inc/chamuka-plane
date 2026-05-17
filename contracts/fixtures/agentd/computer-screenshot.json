@@ -1,0 +1,12 @@
+{
+  "request": {
+    "action": "screenshot"
+  },
+  "response": {
+    "output": {
+      "type": "image",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "media_type": "image/png"
+    }
+  }
+}
