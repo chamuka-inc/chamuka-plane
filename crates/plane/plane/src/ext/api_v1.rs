@@ -1,15 +1,25 @@
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
+    response::sse::{Event, KeepAlive},
+    response::Sse,
     Json,
 };
 use chamuka_common::ext::api::{
-    CreateSandboxRequest, CreateSandboxResponse, ListSandboxesResponse, SandboxConnection,
+    CreateCredentialBindingRequest, CreateSandboxRequest, CreateSandboxResponse,
+    CreateSecretRequest, CreateSecretResponse, CredentialBinding, ExtendTimeoutRequest,
+    ListSandboxesResponse, SandboxConnection, SnapshotRequest, SnapshotResponse,
 };
+use chamuka_common::ext::network::NetworkPolicy;
 use chamuka_common::ext::sandbox::{Arch, Sandbox, SandboxResources, TrustLevel};
-use plane_common::types::{BackendStatus, ConnectRequest, KeyConfig, SpawnConfig};
+use chamuka_common::ext::snapshot::Snapshot;
+use futures_util::{Stream, StreamExt};
+use plane_common::types::{
+    backend_state::BackendStatusStreamEntry, BackendStatus, ConnectRequest, KeyConfig, SpawnConfig,
+};
 use serde::Deserialize;
 use serde_json::json;
+use std::convert::Infallible;
 
 use crate::controller::core::Controller;
 use crate::database::sandbox::SandboxRow;
@@ -302,6 +312,403 @@ pub async fn delete_sandbox(
 #[derive(Debug, Deserialize)]
 pub struct DeleteQuery {
     pub force: Option<bool>,
+}
+
+pub async fn extend_sandbox(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(request): Json<ExtendTimeoutRequest>,
+) -> Result<Json<Sandbox>, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let additional = chrono::Duration::milliseconds(request.additional_ms as i64);
+    let row = controller
+        .db
+        .sandbox()
+        .extend_expires_at(&id, &tenant, additional)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to extend sandbox");
+            ApiError::internal("Failed to extend sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    Ok(Json(sandbox_from_row(row, &controller)))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StatusQuery {
+    #[serde(default = "default_stream")]
+    pub stream: bool,
+}
+
+fn default_stream() -> bool {
+    true
+}
+
+pub async fn sandbox_status(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<StatusQuery>,
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+
+    let tenant = extract_tenant(&headers)?;
+
+    let row = controller
+        .db
+        .sandbox()
+        .get_by_id(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    let backend_id: plane_common::names::BackendName = row
+        .backend_id
+        .clone()
+        .try_into()
+        .map_err(|_| ApiError::internal("Invalid backend_id stored in sandbox row"))?;
+
+    if !query.stream {
+        let entry = controller
+            .db
+            .backend()
+            .backend(&backend_id)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, "Failed to query backend status");
+                ApiError::internal("Failed to query backend status")
+            })?
+            .map(|row| BackendStatusStreamEntry::from_state(row.state, row.last_status_time))
+            .ok_or_else(|| ApiError::not_found("Backend not found"))?;
+
+        return Ok(Json(entry).into_response());
+    }
+
+    let last_status: Option<BackendStatus> = headers
+        .get("Last-Event-ID")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| BackendStatus::try_from(v.to_owned()).ok());
+
+    let mut st = Box::pin(
+        controller
+            .db
+            .backend()
+            .status_stream(&backend_id)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, "Failed to open status stream");
+                ApiError::internal("Failed to open status stream")
+            })?,
+    );
+
+    let stream: Box<dyn Stream<Item = Result<Event, Infallible>> + Send> =
+        Box::new(async_stream::try_stream! {
+            while let Some(status) = st.next().await {
+                if let Some(last) = last_status {
+                    if status.status <= last {
+                        continue;
+                    }
+                }
+                let id = status.status.to_string();
+                yield Event::default()
+                    .json_data(&status)
+                    .expect("always serializable")
+                    .id(id);
+            }
+        });
+
+    Ok(Sse::new(stream)
+        .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+        .into_response())
+}
+
+pub async fn snapshot_sandbox(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(request): Json<SnapshotRequest>,
+) -> Result<(StatusCode, Json<SnapshotResponse>), ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let row = controller
+        .db
+        .sandbox()
+        .get_by_id(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    let snapshot_id = format!("snap-{}", plane_common::util::random_string());
+    let now = chrono::Utc::now();
+    let ttl_days = request.ttl_days.unwrap_or(7);
+    let expires_at = now + chrono::Duration::days(i64::from(ttl_days));
+
+    controller
+        .db
+        .snapshot()
+        .insert(
+            &snapshot_id,
+            &row.id,
+            &tenant,
+            &row.image,
+            &row.arch,
+            &row.runtime,
+            request.name.as_deref(),
+            &request.tags,
+            expires_at,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to insert snapshot");
+            ApiError::internal("Failed to create snapshot")
+        })?;
+
+    let snapshot = Snapshot {
+        id: snapshot_id,
+        sandbox_id: row.id,
+        tenant,
+        image_ref: format!("{}:snapshot", row.image),
+        digest: String::new(),
+        base_image: row.image,
+        size_bytes: 0,
+        arch: match row.arch.as_str() {
+            "arm64" => Arch::Arm64,
+            _ => Arch::Amd64,
+        },
+        runtime: row.runtime,
+        name: request.name,
+        tags: request.tags,
+        created_at: now,
+        expires_at,
+    };
+
+    Ok((StatusCode::CREATED, Json(SnapshotResponse { snapshot })))
+}
+
+pub async fn update_network_policy(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(policy): Json<NetworkPolicy>,
+) -> Result<Json<NetworkPolicy>, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let _row = controller
+        .db
+        .sandbox()
+        .get_by_id(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    controller
+        .db
+        .sandbox()
+        .update_network_policy(&id, &serde_json::to_value(&policy).unwrap_or_default())
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to update network policy");
+            ApiError::internal("Failed to update network policy")
+        })?;
+
+    Ok(Json(policy))
+}
+
+pub async fn create_credential_binding(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(sandbox_id): Path<String>,
+    Json(request): Json<CreateCredentialBindingRequest>,
+) -> Result<(StatusCode, Json<CredentialBinding>), ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let _row = controller
+        .db
+        .sandbox()
+        .get_by_id(&sandbox_id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    let cred_id = format!("cred-{}", plane_common::util::random_string());
+    let now = chrono::Utc::now();
+
+    controller
+        .db
+        .credential()
+        .insert(
+            &cred_id,
+            &sandbox_id,
+            &request.secret_id,
+            &request.destination,
+            &request.header_name,
+            request.header_format.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to insert credential binding");
+            ApiError::internal("Failed to create credential binding")
+        })?;
+
+    let binding = CredentialBinding {
+        id: cred_id,
+        sandbox_id,
+        destination: request.destination,
+        header_name: request.header_name,
+        header_format: request.header_format,
+        secret_id: request.secret_id,
+        created_at: now.to_rfc3339(),
+    };
+
+    Ok((StatusCode::CREATED, Json(binding)))
+}
+
+pub async fn delete_credential_binding(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path((sandbox_id, cred_id)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let _row = controller
+        .db
+        .sandbox()
+        .get_by_id(&sandbox_id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    let deleted = controller
+        .db
+        .credential()
+        .delete(&cred_id, &sandbox_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to delete credential binding");
+            ApiError::internal("Failed to delete credential binding")
+        })?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::not_found("Credential binding not found"))
+    }
+}
+
+pub async fn get_snapshot(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Snapshot>, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let snapshot = controller
+        .db
+        .snapshot()
+        .get_by_id(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query snapshot");
+            ApiError::internal("Failed to query snapshot")
+        })?
+        .ok_or_else(|| ApiError::not_found("Snapshot not found"))?;
+
+    Ok(Json(snapshot))
+}
+
+pub async fn delete_snapshot(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let deleted = controller
+        .db
+        .snapshot()
+        .delete(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to delete snapshot");
+            ApiError::internal("Failed to delete snapshot")
+        })?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::not_found("Snapshot not found"))
+    }
+}
+
+pub async fn create_secret(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Json(request): Json<CreateSecretRequest>,
+) -> Result<(StatusCode, Json<CreateSecretResponse>), ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let secret_id = format!("secret-{}", plane_common::util::random_string());
+    let now = chrono::Utc::now();
+
+    controller
+        .db
+        .secret()
+        .insert(&secret_id, &tenant, &request.value, request.name.as_deref())
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to insert secret");
+            ApiError::internal("Failed to create secret")
+        })?;
+
+    let response = CreateSecretResponse {
+        id: secret_id,
+        name: request.name,
+        created_at: now.to_rfc3339(),
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+pub async fn delete_secret(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let deleted = controller
+        .db
+        .secret()
+        .delete(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to delete secret");
+            ApiError::internal("Failed to delete secret")
+        })?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::not_found("Secret not found"))
+    }
 }
 
 fn sandbox_from_row(row: SandboxRow, controller: &Controller) -> Sandbox {

@@ -78,6 +78,51 @@ impl<'a> SandboxDatabase<'a> {
         Ok(row)
     }
 
+    pub async fn extend_expires_at(
+        &self,
+        id: &str,
+        tenant: &str,
+        additional: chrono::Duration,
+    ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        let row = sqlx::query_as::<_, SandboxRow>(
+            r#"
+            UPDATE sandbox
+            SET expires_at = expires_at + $3, updated_at = NOW()
+            WHERE id = $1 AND tenant = $2
+            RETURNING
+                id, backend_id, tenant, runtime, trust_tier, arch, image,
+                vcpus, memory_mb, ports, tags,
+                persistent, snapshot_source,
+                created_at, updated_at, expires_at, ready_at, terminated_at
+            "#,
+        )
+        .bind(id)
+        .bind(tenant)
+        .bind(additional)
+        .fetch_optional(self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn update_network_policy(
+        &self,
+        id: &str,
+        policy: &serde_json::Value,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE sandbox
+            SET network_policy = $2, updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(id)
+        .bind(policy)
+        .execute(self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn list_by_tenant(
         &self,
         tenant: &str,

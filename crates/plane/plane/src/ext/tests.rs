@@ -1,6 +1,9 @@
 #![allow(clippy::expect_used)]
 
 use super::types::*;
+use chamuka_common::ext::api::{
+    CreateCredentialBindingRequest, CreateSecretRequest, ExtendTimeoutRequest, SnapshotRequest,
+};
 use std::path::Path;
 
 #[test]
@@ -220,4 +223,63 @@ fn extract_tenant_empty_header_fails() {
     headers.insert("x-auth-tenant", "".parse().expect("header"));
     let err = extract_tenant(&headers).unwrap_err();
     assert_eq!(err.code, "UNAUTHENTICATED");
+}
+
+#[test]
+fn extend_timeout_request_deserialization() {
+    let json = r#"{"additional_ms": 60000}"#;
+    let req: ExtendTimeoutRequest = serde_json::from_str(json).expect("deserialize");
+    assert_eq!(req.additional_ms, 60000);
+}
+
+#[test]
+fn snapshot_request_deserialization_minimal() {
+    let json = r#"{}"#;
+    let req: SnapshotRequest = serde_json::from_str(json).expect("deserialize");
+    assert!(req.name.is_none());
+    assert!(req.ttl_days.is_none());
+    assert!(req.tags.is_empty());
+}
+
+#[test]
+fn snapshot_request_deserialization_full() {
+    let json = r#"{"name": "before-deploy", "ttl_days": 30, "tags": {"env": "staging"}}"#;
+    let req: SnapshotRequest = serde_json::from_str(json).expect("deserialize");
+    assert_eq!(req.name.as_deref(), Some("before-deploy"));
+    assert_eq!(req.ttl_days, Some(30));
+    assert_eq!(req.tags.get("env").map(|v| v.as_str()), Some("staging"));
+}
+
+#[test]
+fn create_secret_request_deserialization() {
+    let json = r#"{"value": "sk-secret123", "name": "openai-key"}"#;
+    let req: CreateSecretRequest = serde_json::from_str(json).expect("deserialize");
+    assert_eq!(req.value, "sk-secret123");
+    assert_eq!(req.name.as_deref(), Some("openai-key"));
+}
+
+#[test]
+fn create_credential_binding_request_deserialization() {
+    let json = r#"{
+        "secret_id": "secret-abc123",
+        "destination": "api.openai.com",
+        "header_name": "Authorization",
+        "header_format": "Bearer {value}"
+    }"#;
+    let req: CreateCredentialBindingRequest = serde_json::from_str(json).expect("deserialize");
+    assert_eq!(req.secret_id, "secret-abc123");
+    assert_eq!(req.destination, "api.openai.com");
+    assert_eq!(req.header_name, "Authorization");
+    assert_eq!(req.header_format.as_deref(), Some("Bearer {value}"));
+}
+
+#[test]
+fn credential_binding_request_without_format() {
+    let json = r#"{
+        "secret_id": "secret-abc123",
+        "destination": "*.stripe.com",
+        "header_name": "X-API-Key"
+    }"#;
+    let req: CreateCredentialBindingRequest = serde_json::from_str(json).expect("deserialize");
+    assert!(req.header_format.is_none());
 }

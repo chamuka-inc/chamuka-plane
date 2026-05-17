@@ -6,9 +6,12 @@ use self::{
     cluster::ClusterDatabase,
     connect::ConnectError,
     controller::ControllerDatabase,
+    credential::CredentialDatabase,
     drone::DroneDatabase,
     node::NodeDatabase,
     sandbox::SandboxDatabase,
+    secret::SecretDatabase,
+    snapshot::SnapshotDatabase,
     subscribe::{EventSubscriptionManager, Notification, NotificationPayload, Subscription},
 };
 use plane_common::{
@@ -27,9 +30,12 @@ pub mod backend_key;
 pub mod cluster;
 pub mod connect;
 pub mod controller;
+pub mod credential;
 pub mod drone;
 pub mod node;
 pub mod sandbox;
+pub mod secret;
+pub mod snapshot;
 pub mod subscribe;
 pub mod util;
 
@@ -92,6 +98,18 @@ impl PlaneDatabase {
 
     pub fn sandbox(&self) -> SandboxDatabase {
         SandboxDatabase::new(&self.pool)
+    }
+
+    pub fn snapshot(&self) -> SnapshotDatabase {
+        SnapshotDatabase::new(&self.pool)
+    }
+
+    pub fn credential(&self) -> CredentialDatabase {
+        CredentialDatabase::new(&self.pool)
+    }
+
+    pub fn secret(&self) -> SecretDatabase {
+        SecretDatabase::new(&self.pool)
     }
 
     pub async fn health_check(&self) -> Result<(), sqlx::Error> {
