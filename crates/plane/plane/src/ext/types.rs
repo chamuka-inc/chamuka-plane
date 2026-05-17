@@ -18,3 +18,9 @@ impl std::fmt::Display for SandboxId {
         write!(f, "{}", self.0)
     }
 }
+
+impl AsRef<str> for SandboxId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}

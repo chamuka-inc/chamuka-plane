@@ -19,6 +19,7 @@ async fn create_sandbox_happy_path(env: TestEnvironment) {
 
     let response = client
         .post(&url)
+        .header("x-auth-tenant", "test-tenant")
         .json(&json!({
             "runtime": "node22",
             "timeout_ms": 10000
@@ -53,6 +54,7 @@ async fn create_sandbox_custom_runtime_requires_image(env: TestEnvironment) {
 
     let response = client
         .post(&url)
+        .header("x-auth-tenant", "test-tenant")
         .json(&json!({
             "runtime": "custom"
         }))
@@ -74,6 +76,7 @@ async fn create_sandbox_no_drone_returns_503(env: TestEnvironment) {
 
     let response = client
         .post(&url)
+        .header("x-auth-tenant", "test-tenant")
         .json(&json!({
             "runtime": "node22"
         }))

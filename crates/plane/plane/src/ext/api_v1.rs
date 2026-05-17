@@ -1,10 +1,18 @@
-use axum::{extract::State, http::StatusCode, Json};
-use chamuka_common::ext::api::{CreateSandboxRequest, CreateSandboxResponse, SandboxConnection};
-use chamuka_common::ext::sandbox::{Sandbox, SandboxResources, TrustLevel};
+use axum::{
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    Json,
+};
+use chamuka_common::ext::api::{
+    CreateSandboxRequest, CreateSandboxResponse, ListSandboxesResponse, SandboxConnection,
+};
+use chamuka_common::ext::sandbox::{Arch, Sandbox, SandboxResources, TrustLevel};
 use plane_common::types::{BackendStatus, ConnectRequest, KeyConfig, SpawnConfig};
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::controller::core::Controller;
+use crate::database::sandbox::SandboxRow;
 
 use super::{error::ApiError, types::SandboxId};
 
@@ -38,10 +46,21 @@ pub(crate) fn trust_to_pool(trust: &TrustLevel) -> &'static str {
     }
 }
 
+pub(crate) fn extract_tenant(headers: &HeaderMap) -> Result<String, ApiError> {
+    headers
+        .get("x-auth-tenant")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .ok_or_else(|| ApiError::unauthenticated("missing or invalid X-Auth-Tenant header"))
+}
+
 pub async fn create_sandbox(
     State(controller): State<Controller>,
+    headers: HeaderMap,
     Json(request): Json<CreateSandboxRequest>,
 ) -> Result<(StatusCode, Json<CreateSandboxResponse>), ApiError> {
+    let tenant = extract_tenant(&headers)?;
     let image = resolve_image(&request.runtime, request.image.as_deref())?;
 
     let pool = trust_to_pool(&request.trust);
@@ -100,10 +119,40 @@ pub async fn create_sandbox(
         .map(|c| c.to_string())
         .unwrap_or_default();
 
+    let trust_str = pool;
+    let arch_str = format!("{:?}", request.arch).to_lowercase();
+    let ports_i32: Vec<i32> = request.ports.iter().map(|&p| i32::from(p)).collect();
+    let tags_json = serde_json::to_value(&request.tags).unwrap_or_default();
+
+    controller
+        .db
+        .sandbox()
+        .insert(
+            sandbox_id.as_ref(),
+            &connect_response.backend_id.to_string(),
+            &tenant,
+            &request.runtime,
+            trust_str,
+            &arch_str,
+            &image,
+            resources.vcpus as i32,
+            resources.memory_mb() as i32,
+            &ports_i32,
+            &tags_json,
+            request.persistent,
+            None,
+            expires_at,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to insert sandbox row");
+            ApiError::internal("Failed to persist sandbox")
+        })?;
+
     let sandbox = Sandbox {
         id: sandbox_id.to_string(),
         backend_id: connect_response.backend_id.to_string(),
-        tenant: "default".to_string(),
+        tenant,
         status: BackendStatus::Scheduled,
         runtime: request.runtime.clone(),
         trust: request.trust,
@@ -139,4 +188,168 @@ pub async fn create_sandbox(
     };
 
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+pub async fn get_sandbox(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Sandbox>, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let row = controller
+        .db
+        .sandbox()
+        .get_by_id(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    Ok(Json(sandbox_from_row(row, &controller)))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListQuery {
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    pub cursor: Option<String>,
+}
+
+fn default_limit() -> i64 {
+    100
+}
+
+pub async fn list_sandboxes(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Query(query): Query<ListQuery>,
+) -> Result<Json<ListSandboxesResponse>, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let limit = query.limit.clamp(1, 500);
+    let cursor = query
+        .cursor
+        .and_then(|c| c.parse::<chrono::DateTime<chrono::Utc>>().ok());
+
+    let rows = controller
+        .db
+        .sandbox()
+        .list_by_tenant(&tenant, limit + 1, cursor)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to list sandboxes");
+            ApiError::internal("Failed to list sandboxes")
+        })?;
+
+    let has_more = rows.len() as i64 > limit;
+    let items: Vec<Sandbox> = rows
+        .into_iter()
+        .take(limit as usize)
+        .map(|r| sandbox_from_row(r, &controller))
+        .collect();
+
+    let next_cursor = if has_more {
+        items.last().map(|s| s.created_at.to_rfc3339())
+    } else {
+        None
+    };
+
+    Ok(Json(ListSandboxesResponse { items, next_cursor }))
+}
+
+pub async fn delete_sandbox(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<DeleteQuery>,
+) -> Result<StatusCode, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let row = controller
+        .db
+        .sandbox()
+        .get_by_id(&id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+
+    let backend_id: plane_common::names::BackendName = row
+        .backend_id
+        .clone()
+        .try_into()
+        .map_err(|_| ApiError::internal("Invalid backend_id stored in sandbox row"))?;
+
+    let result = if query.force.unwrap_or(false) {
+        controller.client.hard_terminate(&backend_id).await
+    } else {
+        controller.client.soft_terminate(&backend_id).await
+    };
+
+    result.map_err(|e| {
+        tracing::error!(error = ?e, "Failed to terminate backend");
+        ApiError::internal("Failed to terminate sandbox")
+    })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteQuery {
+    pub force: Option<bool>,
+}
+
+fn sandbox_from_row(row: SandboxRow, controller: &Controller) -> Sandbox {
+    let trust = match row.trust_tier.as_str() {
+        "trusted" => TrustLevel::Trusted,
+        "paranoid" => TrustLevel::Paranoid,
+        _ => TrustLevel::Untrusted,
+    };
+    let arch = match row.arch.as_str() {
+        "arm64" => Arch::Arm64,
+        _ => Arch::Amd64,
+    };
+    let cluster = controller
+        .default_cluster
+        .as_ref()
+        .map(|c| c.to_string())
+        .unwrap_or_default();
+    let tags: std::collections::HashMap<String, String> =
+        serde_json::from_value(row.tags).unwrap_or_default();
+    let ports: Vec<u16> = row
+        .ports
+        .iter()
+        .filter_map(|&p| u16::try_from(p).ok())
+        .collect();
+
+    Sandbox {
+        id: row.id,
+        backend_id: row.backend_id,
+        tenant: row.tenant,
+        status: BackendStatus::Scheduled,
+        runtime: row.runtime,
+        trust,
+        arch,
+        image: row.image,
+        resources: SandboxResources {
+            vcpus: row.vcpus as u32,
+            memory_mb: row.memory_mb as u32,
+        },
+        ports,
+        tags,
+        persistent: row.persistent,
+        snapshot_source: row.snapshot_source,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        expires_at: row.expires_at,
+        ready_at: row.ready_at,
+        terminated_at: row.terminated_at,
+        drone_name: None,
+        cluster,
+    }
 }

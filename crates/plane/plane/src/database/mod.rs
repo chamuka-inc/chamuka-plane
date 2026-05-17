@@ -8,6 +8,7 @@ use self::{
     controller::ControllerDatabase,
     drone::DroneDatabase,
     node::NodeDatabase,
+    sandbox::SandboxDatabase,
     subscribe::{EventSubscriptionManager, Notification, NotificationPayload, Subscription},
 };
 use plane_common::{
@@ -28,6 +29,7 @@ pub mod connect;
 pub mod controller;
 pub mod drone;
 pub mod node;
+pub mod sandbox;
 pub mod subscribe;
 pub mod util;
 
@@ -86,6 +88,10 @@ impl PlaneDatabase {
 
     pub fn controller(&self) -> controller::ControllerDatabase {
         ControllerDatabase::new(&self.pool)
+    }
+
+    pub fn sandbox(&self) -> SandboxDatabase {
+        SandboxDatabase::new(&self.pool)
     }
 
     pub async fn health_check(&self) -> Result<(), sqlx::Error> {

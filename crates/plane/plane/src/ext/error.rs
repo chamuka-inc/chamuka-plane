@@ -40,6 +40,15 @@ impl ApiError {
         }
     }
 
+    pub fn unauthenticated(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            code: "UNAUTHENTICATED",
+            message: message.into(),
+            details: None,
+        }
+    }
+
     pub fn not_found(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::NOT_FOUND,

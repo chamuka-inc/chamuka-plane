@@ -190,3 +190,34 @@ fn fixture_create_sandbox_response_deserializes() {
     assert_eq!(resp.sandbox.cluster, "us-east-1");
     assert_eq!(resp.connection.token, "tk-a1b2c3d4e5f6");
 }
+
+#[test]
+fn extract_tenant_from_header() {
+    use super::api_v1::extract_tenant;
+    use axum::http::HeaderMap;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-auth-tenant", "tenant-abc".parse().expect("header"));
+    assert_eq!(extract_tenant(&headers).expect("tenant"), "tenant-abc");
+}
+
+#[test]
+fn extract_tenant_missing_header_fails() {
+    use super::api_v1::extract_tenant;
+    use axum::http::HeaderMap;
+
+    let headers = HeaderMap::new();
+    let err = extract_tenant(&headers).unwrap_err();
+    assert_eq!(err.code, "UNAUTHENTICATED");
+}
+
+#[test]
+fn extract_tenant_empty_header_fails() {
+    use super::api_v1::extract_tenant;
+    use axum::http::HeaderMap;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-auth-tenant", "".parse().expect("header"));
+    let err = extract_tenant(&headers).unwrap_err();
+    assert_eq!(err.code, "UNAUTHENTICATED");
+}
