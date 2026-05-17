@@ -50,9 +50,13 @@ async function main() {
 
   const createResp = await fetch(`${CONTROLLER_URL}/pub/v1/sandboxes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Auth-Tenant": "walking-skeleton",
+    },
     body: JSON.stringify({
-      runtime: "node24",
+      runtime: "custom",
+      image: "sandbox-runtime:node24-latest",
       resources: { vcpus: 1, memory_mb: 512 },
       ports: [8080],
     }),
@@ -66,11 +70,14 @@ async function main() {
   console.log(`==> Sandbox created: ${sandbox.id}`);
   console.log(`==> Waiting for ready...`);
 
-  await waitForReady(connection.status_url);
+  const statusUrl = connection.status_url.replace("http://0.0.0.0:9090", CONTROLLER_URL);
+  await waitForReady(statusUrl);
   console.log(`==> Sandbox ready!`);
 
-  console.log(`==> Running command: node -e 'console.log("hi")'`);
-  const execResp = await fetch(`${connection.url}/v1/exec`, {
+  const proxyPath = new URL(connection.url).pathname;
+  const agentdUrl = `${PROXY_URL}${proxyPath}`;
+  console.log(`==> Running command: node -e 'console.log("hi")' via ${agentdUrl}`);
+  const execResp = await fetch(`${agentdUrl}v1/exec`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -99,6 +106,7 @@ async function main() {
   console.log(`==> Terminating sandbox...`);
   const deleteResp = await fetch(`${CONTROLLER_URL}/pub/v1/sandboxes/${sandbox.id}`, {
     method: "DELETE",
+    headers: { "X-Auth-Tenant": "walking-skeleton" },
   });
 
   if (!deleteResp.ok && deleteResp.status !== 404) {
