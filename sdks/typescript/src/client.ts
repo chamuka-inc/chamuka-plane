@@ -1,4 +1,5 @@
 import { createHttpClient, type HttpClient } from "./http.js";
+import { ManagedSandbox } from "./managed-sandbox.js";
 import type {
   Sandbox,
   CreateSandboxRequest,
@@ -50,6 +51,11 @@ export class SandboxClient {
       path: "/pub/v1/sandboxes",
       body: request,
     });
+  }
+
+  async createSandbox(request: CreateSandboxRequest): Promise<ManagedSandbox> {
+    const response = await this.create(request);
+    return new ManagedSandbox(response.sandbox, response.connection, this);
   }
 
   async list(options: ListOptions = {}): Promise<ListSandboxesResponse> {

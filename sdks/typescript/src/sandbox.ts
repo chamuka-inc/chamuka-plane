@@ -73,23 +73,19 @@ const RUNTIME_TO_IMAGE: Record<string, string> = {
 };
 
 export class Sandbox {
-  private readonly dataPlaneClient: HttpClient;
-  private readonly baseUrl: string;
+  protected readonly dataPlaneClient: HttpClient;
+  protected readonly baseUrl: string;
   readonly backendId: string;
   readonly url: string;
   readonly statusUrl: string;
   readonly secretToken: string | undefined;
 
-  private constructor(
-    connectResponse: ConnectResponse,
-    dataPlaneClient: HttpClient,
-    baseUrl: string,
-  ) {
+  constructor(connectResponse: ConnectResponse, baseUrl: string) {
     this.backendId = connectResponse.backend_id;
     this.url = connectResponse.url;
     this.statusUrl = connectResponse.status_url;
     this.secretToken = connectResponse.secret_token;
-    this.dataPlaneClient = dataPlaneClient;
+    this.dataPlaneClient = createHttpClient(baseUrl);
     this.baseUrl = normalizeBaseUrl(baseUrl);
   }
 
@@ -124,16 +120,14 @@ export class Sandbox {
       },
     });
 
-    const dataPlaneClient = createHttpClient(connectResponse.url);
-    return new Sandbox(connectResponse, dataPlaneClient, connectResponse.url);
+    return new Sandbox(connectResponse, connectResponse.url);
   }
 
   static fromConnection(
     url: string,
     connectResponse: ConnectResponse,
   ): Sandbox {
-    const dataPlaneClient = createHttpClient(url);
-    return new Sandbox(connectResponse, dataPlaneClient, url);
+    return new Sandbox(connectResponse, url);
   }
 
   async runCommand(

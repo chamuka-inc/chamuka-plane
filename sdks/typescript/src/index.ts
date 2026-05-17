@@ -16,6 +16,7 @@ export type {
   SnapshotOptions,
   StopOptions,
 } from "./client.js";
+export { ManagedSandbox } from "./managed-sandbox.js";
 export { SandboxError, TimeoutError } from "./errors.js";
 export { createHttpClient } from "./http.js";
 export type { HttpClient, RequestOptions } from "./http.js";
