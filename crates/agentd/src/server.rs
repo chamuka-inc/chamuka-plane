@@ -4,18 +4,23 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 use crate::handlers;
+use crate::process_registry::ProcessRegistry;
 
 pub fn router() -> Router {
+    let registry = ProcessRegistry::new();
+
     Router::new()
         .route("/health", get(handlers::health::get))
         .route("/info", get(handlers::info::get))
         .route("/v1/exec", post(handlers::exec::post))
+        .route("/v1/exec/{cmd_id}/signal", post(handlers::signal::post))
         .route("/v1/fs/read", get(handlers::fs::read))
         .route("/v1/fs/write", put(handlers::fs::write))
         .route("/v1/fs/mkdir", post(handlers::fs::mkdir))
         .route("/v1/fs/rm", delete(handlers::fs::rm))
         .route("/v1/fs/list", get(handlers::fs::list))
         .route("/v1/ports", get(handlers::ports::get))
+        .with_state(registry)
 }
 
 /// Bind to an ephemeral port and spawn the server. Returns the bound address.

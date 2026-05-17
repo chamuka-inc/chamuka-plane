@@ -1,20 +1,24 @@
+use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
-use common::ext::agentd::{ExecRequest, ExecSyncResponse};
+use common::ext::agentd::{DetachedStatus, ExecDetachedResponse, ExecRequest, ExecSyncResponse};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use uuid::Uuid;
 
+use crate::process_registry::ProcessRegistry;
+
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
-pub async fn post(Json(req): Json<ExecRequest>) -> impl IntoResponse {
-    let start = Instant::now();
+pub async fn post(
+    State(registry): State<ProcessRegistry>,
+    Json(req): Json<ExecRequest>,
+) -> Response {
     let cmd_id = Uuid::new_v4().to_string();
-    let timeout = Duration::from_millis(req.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
 
     let mut command = Command::new(&req.cmd);
     command.args(&req.args);
@@ -53,6 +57,18 @@ pub async fn post(Json(req): Json<ExecRequest>) -> impl IntoResponse {
             let _ = stdin.write_all(stdin_data.as_bytes()).await;
         }
     }
+
+    if req.detached {
+        registry.insert(cmd_id.clone(), child).await;
+        let resp = ExecDetachedResponse {
+            cmd_id,
+            status: DetachedStatus::Running,
+        };
+        return (StatusCode::OK, Json(resp)).into_response();
+    }
+
+    let start = Instant::now();
+    let timeout = Duration::from_millis(req.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
 
     let mut stdout_handle = child.stdout.take();
     let mut stderr_handle = child.stderr.take();
