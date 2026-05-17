@@ -4,7 +4,7 @@
  * Requires: docker compose up -d (walking-skeleton/docker-compose.yml)
  */
 
-import { createAndWait, postSandboxEndpoint, terminate, TENANT } from "./helpers";
+import { CONTROLLER_URL, createAndWait, postSandboxEndpoint, terminate, TENANT } from "./helpers";
 
 interface SnapshotResponse {
   snapshot: {
@@ -104,10 +104,44 @@ async function testSnapshot(): Promise<void> {
   console.log("==> PASSED: snapshot creation\n");
 }
 
+async function testParanoidTierRouting(): Promise<void> {
+  console.log("==> Test: paranoid tier routing (expect 503)");
+
+  const resp = await fetch(`${CONTROLLER_URL}/pub/v1/sandboxes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Auth-Tenant": TENANT,
+    },
+    body: JSON.stringify({
+      runtime: "custom",
+      image: "sandbox-runtime:node24-latest",
+      trust: "paranoid",
+      resources: { vcpus: 1, memory_mb: 512 },
+    }),
+  });
+
+  if (resp.status !== 503) {
+    throw new Error(`Expected 503 (no paranoid drone), got ${resp.status}`);
+  }
+
+  const body = (await resp.json()) as { error: { code: string } };
+  if (body.error.code !== "NO_DRONE_AVAILABLE") {
+    throw new Error(`Expected NO_DRONE_AVAILABLE, got ${body.error.code}`);
+  }
+
+  console.log("    Controller correctly rejects paranoid request (no drone in pool)");
+  console.log("==> PASSED: paranoid tier routing\n");
+}
+
 async function main() {
   console.log("Walking Skeleton — Variant Tests\n");
 
-  const results = await Promise.allSettled([testNetworkPolicy(), testSnapshot()]);
+  const results = await Promise.allSettled([
+    testNetworkPolicy(),
+    testSnapshot(),
+    testParanoidTierRouting(),
+  ]);
   const failures = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
 
   if (failures.length > 0) {

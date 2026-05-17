@@ -69,10 +69,12 @@ case "${TRUST_TIER}" in
         DOCKER_RUNTIME="runsc"
         ;;
     paranoid)
-        log "ERROR: 'paranoid' tier requires Kata + Firecracker which is not supported"
-        log "       in the VirtualBox dev fleet (no nested virt). Use a bare-metal"
-        log "       host or an EC2 c8i/m8i instance with NestedVirtualization=enabled."
-        exit 1
+        if [[ ! -e /dev/kvm ]]; then
+            log "ERROR: 'paranoid' tier requires KVM (/dev/kvm not found)."
+            log "  Use a bare-metal host or EC2 c8i/m8i/r8i with nested virt."
+            exit 1
+        fi
+        DOCKER_RUNTIME="kata-runtime"
         ;;
     *)
         log "ERROR: unknown trust tier '${TRUST_TIER}' (valid: trusted, untrusted, paranoid)"

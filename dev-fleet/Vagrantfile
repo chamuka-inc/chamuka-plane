@@ -71,6 +71,13 @@ Vagrant.configure("2") do |config|
         drone.vm.provision "shell", path: "provision/20-runsc.sh"
       end
 
+      # Kata + Firecracker on paranoid-tier drones (requires KVM).
+      if trust == "paranoid"
+        drone.vm.provision "shell",
+          path: "provision/30-kata.sh",
+          env: drone_env
+      end
+
       drone.vm.provision "shell",
         path: "provision/10-drone.sh",
         env: drone_env
