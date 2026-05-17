@@ -57,6 +57,10 @@ pub async fn drone_loop(
     let key_manager = Arc::new(Mutex::new(KeyManager::new(executor.clone())));
 
     loop {
+        if let Some(ref handler) = extension_handler {
+            handler.clear_processed();
+        }
+
         let mut socket = connection.connect_with_retry(&name).await;
         let _heartbeat_guard = HeartbeatLoop::start(socket.sender(MessageFromDrone::Heartbeat));
 
@@ -233,39 +237,14 @@ pub async fn drone_loop(
                     tracing::warn!("Key renewal failed.");
                 }
             }
-            MessageToDrone::PushNetworkPolicy(wire) => {
+            msg @ (MessageToDrone::PushNetworkPolicy(_)
+            | MessageToDrone::PushCredential(_)
+            | MessageToDrone::RevokeCredential { .. }
+            | MessageToDrone::Snapshot(_)) => {
                 if let Some(ref handler) = extension_handler {
-                    handler.handle_push_network_policy(wire, &sender).await;
+                    handler.dispatch(msg, &sender).await;
                 } else {
-                    tracing::warn!(
-                        "Received PushNetworkPolicy but no extension handler configured"
-                    );
-                }
-            }
-            MessageToDrone::PushCredential(wire) => {
-                if let Some(ref handler) = extension_handler {
-                    handler.handle_push_credential(wire, &sender).await;
-                } else {
-                    tracing::warn!("Received PushCredential but no extension handler configured");
-                }
-            }
-            MessageToDrone::RevokeCredential {
-                action_id,
-                binding_id,
-            } => {
-                if let Some(ref handler) = extension_handler {
-                    handler
-                        .handle_revoke_credential(&action_id, &binding_id, &sender)
-                        .await;
-                } else {
-                    tracing::warn!("Received RevokeCredential but no extension handler configured");
-                }
-            }
-            MessageToDrone::Snapshot(wire) => {
-                if let Some(ref handler) = extension_handler {
-                    handler.handle_snapshot(wire, &sender).await;
-                } else {
-                    tracing::warn!("Received Snapshot but no extension handler configured");
+                    tracing::warn!("Received extension action but no handler configured");
                 }
             }
         }
