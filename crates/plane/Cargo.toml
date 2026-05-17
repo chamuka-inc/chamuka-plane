@@ -1,18 +1,58 @@
-[workspace]
-resolver = "2"
-members = [
-    "common",
-    "dynamic-proxy",
-    "plane/plane-tests",
-    "plane",
-    "plane/plane-tests/plane-test-macro",
-]
-# DO NOT PUT plane/plane-dynamic INTO default-members below
-# this is needed for the condition in cargo to be satisfied
-# that passes it -C prefer-dynamic
-# https://github.com/rust-lang/cargo/pull/9252/files
-default-members = [
-    "plane",
-    "plane/plane-tests",
-    "dynamic-proxy",
-]
+[package]
+name = "plane"
+version = "0.5.6"
+edition = "2021"
+default-run = "plane"
+description = "Session backend orchestrator for ambitious browser-based apps."
+repository = "https://github.com/jamsocket/plane"
+license = "MIT"
+homepage = "https://plane.dev"
+readme = "README.md"
+
+[dependencies]
+acme2-eab = "0.5.7"
+anyhow = "1.0.75"
+chamuka-common = { path = "../common", package = "common" }
+async-stream = "0.3.5"
+async-trait = "0.1.74"
+axum = { version = "0.7.7", features = ["ws"] }
+bollard = "0.17.0"
+bytes = "1.7.2"
+chrono = { version = "0.4.31", features = ["serde"] }
+clap = { version = "4.4.10", features = ["derive"] }
+colored = "2.0.4"
+dashmap = "6.1"
+data-encoding = "2.4.0"
+futures-util = "0.3.29"
+http-body = "1.0.1"
+hyper = { version = "1.4.1", features = ["server"] }
+hyper-util = { version = "0.1.9", features = ["client", "client-legacy", "http1", "http2"] }
+lru = "0.12.1"
+openssl = "0.10.66"
+pem = "3.0.2"
+plane-common = { path = "../plane-common", version = "0.5.1" }
+plane-dynamic-proxy = { path = "../plane-dynamic-proxy", version = "0.5.1" }
+rand = "0.8.5"
+reqwest = { version = "0.12.8", features = ["json", "rustls-tls"], default-features = false }
+rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+rustls = "0.23.14"
+rustls-pemfile = "2.0.0"
+rustls-pki-types = "1.0.0"
+serde = { version = "1.0.190", features = ["derive"] }
+serde_json = "1.0.107"
+serde_with = "3.4.0"
+sqlx = { version = "0.8.2", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "migrate", "json", "ipnetwork"] }
+thiserror = "1.0.50"
+time = "0.3.30"
+tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread", "signal"] }
+tokio-stream = { version="0.1.14", features=["sync"] }
+tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-webpki-roots"] }
+tower = "0.5.1"
+tower-http = { version = "0.6.1", features = ["trace", "cors"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json", "valuable"] }
+trust-dns-server = "0.23.2"
+tungstenite = "0.24.0"
+url = { version="2.4.1", features=["serde"] }
+valuable = { version = "0.1.0", features = ["derive"] }
+x509-parser = "0.16"

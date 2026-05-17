@@ -1,0 +1,30 @@
+[package]
+name = "plane-tests"
+version = "0.5.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0.75"
+async-trait = "0.1.74"
+axum = { version = "0.7.5", features = ["ws"] }
+bollard = "0.17.0"
+chrono = { version = "0.4.31", features = ["serde"] }
+futures-util = "0.3.29"
+http = "1.1.0"
+http-body-util = "0.1.2"
+hyper = { version = "1.4.1", features = ["server"] }
+plane = { path = "../plane" }
+plane-common = { path = "../plane-common", version = "0.5.1" }
+plane-dynamic-proxy = { path = "../plane-dynamic-proxy" }
+plane-test-macro = { path = "../plane-test-macro" }
+reqwest = { version = "0.12.8", features = ["json", "rustls-tls"], default-features = false }
+serde = "1.0.210"
+serde_json = "1.0.107"
+thiserror = "1.0.50"
+tokio = { version = "1.33.0", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tokio-tungstenite = "0.24.0"
+tracing = "0.1.40"
+tracing-appender = "0.2.2"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+url = "2.4.1"

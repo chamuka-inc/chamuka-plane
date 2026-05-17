@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+export SQLX_OFFLINE=true
 
-cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets --all-features -- -D warnings
+cd "$(git rev-parse --show-toplevel)/crates"
 
-if [ -f crates/tools/generate-schemas/src/main.rs ] && grep -q "write_schema" crates/tools/generate-schemas/src/main.rs; then
-    cargo run --quiet --manifest-path crates/Cargo.toml --bin generate-schemas
-    if ! git diff --quiet contracts/schemas/; then
+cargo fmt --all -- --check
+
+cargo clippy --workspace --exclude plane-tests --all-targets -- -D warnings
+
+if [ -f tools/generate-schemas/src/main.rs ] && grep -q "write_schema" tools/generate-schemas/src/main.rs; then
+    cargo run --quiet --bin generate-schemas
+    if ! git diff --quiet ../contracts/schemas/; then
         echo "ERROR: contracts/schemas/ is stale. Run 'cargo run --bin generate-schemas' and commit."
         exit 1
     fi

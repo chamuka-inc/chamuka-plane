@@ -8,7 +8,7 @@ fn migration_file_exists_and_sorts_after_plane() {
     let migrations_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("parent")
-        .join("plane/plane/schema/migrations");
+        .join("plane/schema/migrations");
 
     assert!(
         migrations_dir.exists(),
@@ -47,7 +47,7 @@ fn migration_creates_expected_tables() {
     let migration_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("parent")
-        .join("plane/plane/schema/migrations/20260601000000_add-sandbox-platform.sql");
+        .join("plane/schema/migrations/20260601000000_add-sandbox-platform.sql");
 
     let sql = fs::read_to_string(&migration_path).expect("read migration");
 
@@ -77,7 +77,7 @@ fn migration_references_plane_tables() {
     let migration_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("parent")
-        .join("plane/plane/schema/migrations/20260601000000_add-sandbox-platform.sql");
+        .join("plane/schema/migrations/20260601000000_add-sandbox-platform.sql");
 
     let sql = fs::read_to_string(&migration_path).expect("read migration");
 
