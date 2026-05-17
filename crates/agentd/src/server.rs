@@ -16,6 +16,7 @@ pub fn router() -> Router {
         .route("/v1/exec/{cmd_id}", get(handlers::exec_status::get))
         .route("/v1/exec/{cmd_id}/stdin", post(handlers::exec_stdin::post))
         .route("/v1/exec/{cmd_id}/signal", post(handlers::signal::post))
+        .route("/v1/exec/{cmd_id}/logs", get(handlers::exec_logs::logs))
         .route("/v1/fs/read", get(handlers::fs::read))
         .route("/v1/fs/write", put(handlers::fs::write))
         .route("/v1/fs/mkdir", post(handlers::fs::mkdir))
