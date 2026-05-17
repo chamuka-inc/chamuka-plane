@@ -6,6 +6,8 @@ use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
 
+const MAX_MESSAGE_BYTES: u64 = 1024 * 1024;
+
 #[derive(Debug, Deserialize)]
 pub struct PolicyUpdate {
     pub sandbox_id: String,
@@ -47,17 +49,25 @@ impl UdsReceiver {
     }
 
     pub async fn serve(self, socket_path: &Path) -> Result<(), std::io::Error> {
-        if socket_path.exists() {
-            std::fs::remove_file(socket_path)?;
+        match std::fs::remove_file(socket_path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
         }
 
         let listener = UnixListener::bind(socket_path)?;
         tracing::info!(path = %socket_path.display(), "UDS receiver listening");
 
         loop {
-            let (mut stream, _addr) = listener.accept().await?;
-            let mut buf = Vec::new();
-            stream.read_to_end(&mut buf).await?;
+            let (stream, _addr) = listener.accept().await?;
+            let mut buf = Vec::with_capacity(4096);
+            let mut limited = stream.take(MAX_MESSAGE_BYTES);
+            limited.read_to_end(&mut buf).await?;
+
+            if buf.len() as u64 >= MAX_MESSAGE_BYTES {
+                tracing::warn!(size = buf.len(), "Rejected oversized drone message");
+                continue;
+            }
 
             match serde_json::from_slice::<DroneMessage>(&buf) {
                 Ok(msg) => self.handle_message(msg),

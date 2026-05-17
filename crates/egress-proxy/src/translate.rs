@@ -108,9 +108,8 @@ fn translate_rules(sandbox_id: &str, policy: &NetworkPolicy, version: String) ->
         let action = rule.action.unwrap_or(RuleAction::Allow);
         let domains = rule
             .domains
-            .as_deref()
-            .unwrap_or(&["*".to_string()] as &[String])
-            .to_vec();
+            .clone()
+            .unwrap_or_else(|| vec!["*".to_string()]);
 
         match action {
             RuleAction::Allow => {
@@ -118,7 +117,7 @@ fn translate_rules(sandbox_id: &str, policy: &NetworkPolicy, version: String) ->
 
                 let vhost = VirtualHost {
                     name: format!("{sandbox_id}_vhost_{idx}"),
-                    domains: domains.clone(),
+                    domains,
                     routes: vec![Route {
                         r#match: Some(RouteMatch {
                             path_specifier: Some(

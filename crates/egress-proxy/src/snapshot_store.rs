@@ -1,10 +1,17 @@
 use crate::translate::XdsSnapshot;
+use envoy_types::pb::google::protobuf::Any;
+use prost::Message;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+struct Inner {
+    snapshots: HashMap<String, XdsSnapshot>,
+    generation: u64,
+}
+
 #[derive(Clone)]
 pub struct SnapshotStore {
-    inner: Arc<Mutex<HashMap<String, XdsSnapshot>>>,
+    inner: Arc<Mutex<Inner>>,
 }
 
 impl Default for SnapshotStore {
@@ -16,33 +23,77 @@ impl Default for SnapshotStore {
 impl SnapshotStore {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(HashMap::new())),
+            inner: Arc::new(Mutex::new(Inner {
+                snapshots: HashMap::new(),
+                generation: 0,
+            })),
         }
     }
 
     pub fn update(&self, sandbox_id: &str, snapshot: XdsSnapshot) {
-        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        map.insert(sandbox_id.to_string(), snapshot);
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.snapshots.insert(sandbox_id.to_string(), snapshot);
+        inner.generation += 1;
     }
 
     pub fn remove(&self, sandbox_id: &str) {
-        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        map.remove(sandbox_id);
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.snapshots.remove(sandbox_id).is_some() {
+            inner.generation += 1;
+        }
     }
 
     pub fn get(&self, sandbox_id: &str) -> Option<XdsSnapshot> {
-        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        map.get(sandbox_id).cloned()
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.snapshots.get(sandbox_id).cloned()
     }
 
     pub fn sandbox_count(&self) -> usize {
-        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        map.len()
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.snapshots.len()
     }
 
-    pub fn all_snapshots(&self) -> Vec<XdsSnapshot> {
-        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        map.values().cloned().collect()
+    pub fn generation(&self) -> u64 {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.generation
+    }
+
+    pub fn collect_resources(&self, type_url: &str) -> Vec<Any> {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let type_url_str = type_url.to_string();
+        let mut resources = Vec::with_capacity(inner.snapshots.len());
+
+        for snapshot in inner.snapshots.values() {
+            match type_url {
+                super::xds_server::TYPE_URL_LDS => {
+                    for listener in &snapshot.listeners {
+                        resources.push(Any {
+                            type_url: type_url_str.clone(),
+                            value: listener.encode_to_vec(),
+                        });
+                    }
+                }
+                super::xds_server::TYPE_URL_RDS => {
+                    for route in &snapshot.routes {
+                        resources.push(Any {
+                            type_url: type_url_str.clone(),
+                            value: route.encode_to_vec(),
+                        });
+                    }
+                }
+                super::xds_server::TYPE_URL_CDS => {
+                    for cluster in &snapshot.clusters {
+                        resources.push(Any {
+                            type_url: type_url_str.clone(),
+                            value: cluster.encode_to_vec(),
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        resources
     }
 }
 
@@ -108,5 +159,27 @@ mod tests {
     fn get_nonexistent_returns_none() {
         let store = SnapshotStore::new();
         assert!(store.get("sb-nonexistent").is_none());
+    }
+
+    #[test]
+    fn generation_increments_on_mutation() {
+        let store = SnapshotStore::new();
+        assert_eq!(store.generation(), 0);
+
+        store.update("sb-gen", make_snapshot("sb-gen"));
+        assert_eq!(store.generation(), 1);
+
+        store.update("sb-gen", make_snapshot("sb-gen"));
+        assert_eq!(store.generation(), 2);
+
+        store.remove("sb-gen");
+        assert_eq!(store.generation(), 3);
+    }
+
+    #[test]
+    fn remove_nonexistent_does_not_increment() {
+        let store = SnapshotStore::new();
+        store.remove("sb-nope");
+        assert_eq!(store.generation(), 0);
     }
 }
