@@ -32,7 +32,6 @@ ENV SQLX_OFFLINE=true
 RUN cargo build -p plane --release --locked 2>/dev/null || true
 
 # Copy real source
-COPY .cargo .cargo
 COPY plane plane
 COPY plane-dynamic-proxy plane-dynamic-proxy
 COPY plane-common plane-common

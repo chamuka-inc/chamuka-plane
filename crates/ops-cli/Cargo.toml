@@ -4,6 +4,9 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+description = "Operator CLI for the chamuka-plane sandbox platform"
+repository = "https://github.com/chamuka-inc/chamuka-plane"
+publish = false
 
 [[bin]]
 name = "sbctl"

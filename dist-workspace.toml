@@ -1,0 +1,22 @@
+[workspace]
+members = ["crates"]
+
+[dist]
+cargo-dist-version = "0.28.0"
+ci = "github"
+installers = ["shell", "homebrew"]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+install-path = "CARGO_HOME"
+install-updater = false
+
+tap = "chamuka-inc/homebrew-tap"
+
+pr-run-mode = "skip"
+
+[dist.github-custom-runners]
+aarch64-unknown-linux-gnu = "ubuntu-24.04-arm"

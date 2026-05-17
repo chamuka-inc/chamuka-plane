@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+          key: release-${{ matrix.target }}
+
+      - name: Build binaries
+        run: cargo build --release --target ${{ matrix.target }} -p plane -p ops-cli
+
+      - name: Package
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          target="${{ matrix.target }}"
+          staging="chamuka-plane-${tag}-${target}"
+          mkdir -p "../dist/${staging}"
+          cp "target/${target}/release/plane" "../dist/${staging}/"
+          cp "target/${target}/release/sbctl" "../dist/${staging}/"
+          cd ../dist
+          tar czf "${staging}.tar.gz" "${staging}"
+          if command -v sha256sum &>/dev/null; then
+            sha256sum "${staging}.tar.gz" > "${staging}.tar.gz.sha256"
+          else
+            shasum -a 256 "${staging}.tar.gz" > "${staging}.tar.gz.sha256"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*.tar.gz*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release create "${tag}" dist/*.tar.gz dist/*.sha256 \
+            --title "chamuka-plane ${tag}" \
+            --generate-notes
+
+  homebrew:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: "!contains(github.ref_name, '-')"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          base_url="https://github.com/chamuka-inc/chamuka-plane/releases/download/${tag}"
+
+          darwin_arm_sha=$(awk '{print $1}' dist/chamuka-plane-${tag}-aarch64-apple-darwin.tar.gz.sha256)
+          darwin_x86_sha=$(awk '{print $1}' dist/chamuka-plane-${tag}-x86_64-apple-darwin.tar.gz.sha256)
+          linux_x86_sha=$(awk '{print $1}' dist/chamuka-plane-${tag}-x86_64-unknown-linux-gnu.tar.gz.sha256)
+          linux_arm_sha=$(awk '{print $1}' dist/chamuka-plane-${tag}-aarch64-unknown-linux-gnu.tar.gz.sha256)
+
+          formula="class ChamukaPlane < Formula
+            desc \"Ephemeral sandbox compute platform\"
+            homepage \"https://github.com/chamuka-inc/chamuka-plane\"
+            version \"${version}\"
+            license \"MIT\"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url \"${base_url}/chamuka-plane-${tag}-aarch64-apple-darwin.tar.gz\"
+                sha256 \"${darwin_arm_sha}\"
+              else
+                url \"${base_url}/chamuka-plane-${tag}-x86_64-apple-darwin.tar.gz\"
+                sha256 \"${darwin_x86_sha}\"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url \"${base_url}/chamuka-plane-${tag}-aarch64-unknown-linux-gnu.tar.gz\"
+                sha256 \"${linux_arm_sha}\"
+              else
+                url \"${base_url}/chamuka-plane-${tag}-x86_64-unknown-linux-gnu.tar.gz\"
+                sha256 \"${linux_x86_sha}\"
+              end
+            end
+
+            def install
+              bin.install \"plane\"
+              bin.install \"sbctl\"
+            end
+          end"
+
+          content=$(printf '%s' "${formula}" | base64 -w0)
+
+          existing_sha=$(gh api repos/chamuka-inc/homebrew-tap/contents/Formula/chamuka-plane.rb \
+            --jq .sha 2>/dev/null || true)
+
+          if [ -n "${existing_sha}" ]; then
+            gh api repos/chamuka-inc/homebrew-tap/contents/Formula/chamuka-plane.rb \
+              --method PUT \
+              --field message="chamuka-plane ${version}" \
+              --field content="${content}" \
+              --field sha="${existing_sha}" \
+              --field branch=main
+          else
+            gh api repos/chamuka-inc/homebrew-tap/contents/Formula/chamuka-plane.rb \
+              --method PUT \
+              --field message="chamuka-plane ${version}" \
+              --field content="${content}" \
+              --field branch=main
+          fi

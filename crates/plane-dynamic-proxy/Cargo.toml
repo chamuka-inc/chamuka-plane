@@ -3,10 +3,9 @@ name = "plane-dynamic-proxy"
 version = "0.5.6"
 edition = "2021"
 description = "Dynamic proxy crate for Plane"
-repository = "https://github.com/jamsocket/plane"
+repository = "https://github.com/chamuka-inc/chamuka-plane"
 license = "MIT"
-homepage = "https://plane.dev"
-readme = "README.md"
+publish = false
 
 [dependencies]
 anyhow = "1.0.89"
