@@ -14,6 +14,7 @@ use self::{
     secret::SecretDatabase,
     snapshot::SnapshotDatabase,
     subscribe::{EventSubscriptionManager, Notification, NotificationPayload, Subscription},
+    usage_record::UsageRecordDatabase,
 };
 use plane_common::{
     types::{ClusterName, ConnectRequest, ConnectResponse, RevokeRequest},
@@ -39,6 +40,7 @@ pub mod sandbox;
 pub mod secret;
 pub mod snapshot;
 pub mod subscribe;
+pub mod usage_record;
 pub mod util;
 
 pub async fn connect_and_migrate(db: &str) -> sqlx::Result<PlaneDatabase> {
@@ -116,6 +118,10 @@ impl PlaneDatabase {
 
     pub fn extension_action(&self) -> ExtensionActionDatabase {
         ExtensionActionDatabase::new(&self.pool)
+    }
+
+    pub fn usage_record(&self) -> UsageRecordDatabase {
+        UsageRecordDatabase::new(&self.pool)
     }
 
     pub async fn health_check(&self) -> Result<(), sqlx::Error> {
