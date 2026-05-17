@@ -12,9 +12,9 @@
 #   "<host>:<proxy-port>"  — including the port marks it as a dev
 #   cluster, so the proxy serves HTTP (no ACME / TLS).
 
-DRONE_COUNT     = (ENV['DRONE_COUNT']     || '3').to_i
+DRONE_COUNT     = (ENV['DRONE_COUNT']     || '1').to_i
 DRONE_VCPUS     = (ENV['DRONE_VCPUS']     || '2').to_i
-DRONE_MEM_MB    = (ENV['DRONE_MEM_MB']    || '4096').to_i
+DRONE_MEM_MB    = (ENV['DRONE_MEM_MB']    || '2048').to_i
 NESTED_VIRT     = (ENV['NESTED_VIRT']     || 'on') == 'on'
 HOST_ONLY_IP    = ENV['HOST_ONLY_IP']     || '192.168.56.1'
 CONTROLLER_PORT = ENV['CONTROLLER_PORT']  || '8080'

@@ -26,9 +26,7 @@ services:
       retries: 20
 
   controller:
-    # Verified: Plane is published as plane/plane on Docker Hub.
-    # https://hub.docker.com/r/plane/plane/tags
-    image: plane/plane:latest
+    image: chamuka-plane:latest
     container_name: sandbox-controller
     restart: unless-stopped
     depends_on:
@@ -61,7 +59,7 @@ services:
       retries: 20
 
   proxy:
-    image: plane/plane:latest
+    image: chamuka-plane:latest
     container_name: sandbox-proxy
     restart: unless-stopped
     depends_on:
@@ -85,13 +83,14 @@ services:
       - "${HOST_BIND_IP:-192.168.56.1}:${PROXY_PORT:-9090}:${PROXY_PORT:-9090}"
       - "127.0.0.1:${PROXY_PORT:-9090}:${PROXY_PORT:-9090}"
 
-  # Pull-through cache for sandbox runtime images.
+  # Local registry for drone image pulls. VMs pull from 192.168.56.1:5000.
+  # After `docker compose up`, push images with:
+  #   docker tag chamuka-plane:latest 192.168.56.1:5000/chamuka-plane:latest
+  #   docker push 192.168.56.1:5000/chamuka-plane:latest
   registry:
     image: registry:2
     container_name: sandbox-registry
     restart: unless-stopped
-    environment:
-      REGISTRY_PROXY_REMOTEURL: https://registry-1.docker.io
     volumes:
       - registry:/var/lib/registry
     ports:
