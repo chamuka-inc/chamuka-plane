@@ -29,6 +29,7 @@ CREATE TABLE sandbox (
 
     persistent      BOOLEAN   NOT NULL DEFAULT false,
     snapshot_source VARCHAR(255),
+    network_policy  JSONB,
 
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
