@@ -30,7 +30,8 @@ async fn list_processes_proc() -> Vec<ProcessInfo> {
         return Vec::new();
     };
 
-    parse_ps_output(&String::from_utf8_lossy(&output.stdout))
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_ps_lines(stdout.lines())
 }
 
 #[cfg(target_os = "macos")]
@@ -46,18 +47,13 @@ async fn list_processes_ps() -> Vec<ProcessInfo> {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = stdout.lines().collect();
-    if lines.is_empty() {
-        return Vec::new();
-    }
-    // Skip the header line
-    parse_ps_output(&lines[1..].join("\n"))
+    parse_ps_lines(stdout.lines().skip(1))
 }
 
-fn parse_ps_output(output: &str) -> Vec<ProcessInfo> {
+fn parse_ps_lines<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<ProcessInfo> {
     let mut processes = Vec::new();
 
-    for line in output.lines() {
+    for line in lines {
         let line = line.trim();
         if line.is_empty() {
             continue;

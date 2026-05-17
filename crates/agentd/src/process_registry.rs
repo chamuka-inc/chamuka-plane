@@ -100,18 +100,13 @@ impl ProcessRegistry {
     }
 
     pub async fn wait_exit(&self, cmd_id: &str) -> Result<i32, SignalError> {
-        loop {
-            {
-                let mut procs = self.processes.lock().await;
-                let entry = procs.get_mut(cmd_id).ok_or(SignalError::NotFound)?;
-                match entry.child.try_wait() {
-                    Ok(Some(exit)) => return Ok(exit.code().unwrap_or(-1)),
-                    Ok(None) => {}
-                    Err(e) => return Err(SignalError::OsError(e)),
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
+        let mut child = {
+            let mut procs = self.processes.lock().await;
+            let entry = procs.remove(cmd_id).ok_or(SignalError::NotFound)?;
+            entry.child
+        };
+        let status = child.wait().await.map_err(SignalError::OsError)?;
+        Ok(status.code().unwrap_or(-1))
     }
 
     pub async fn remove(&self, cmd_id: &str) -> Option<Child> {
