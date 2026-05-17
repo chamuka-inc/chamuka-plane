@@ -1,15 +1,14 @@
 use common::{
+    proxy_mock::MockProxy,
     simple_axum_server::{RequestInfo, SimpleAxumServer},
     test_env::TestEnvironment,
 };
-use plane::proxy::proxy_server::ProxyState;
 use plane_common::{
     log_types::BackendAddr,
     names::{BackendName, Name},
-    protocol::{RouteInfoRequest, RouteInfoResponse, SubdomainPortRouteUpdate},
-    types::{BearerToken, ClusterName, SecretToken},
+    protocol::{RouteInfoResponse, SubdomainPortRouteUpdate},
+    types::{BearerToken, SecretToken},
 };
-use plane_dynamic_proxy::server::{HttpsConfig, SimpleHttpServer};
 use plane_test_macro::plane_test;
 use rcgen::generate_simple_self_signed;
 use reqwest::StatusCode;
@@ -19,8 +18,7 @@ use rustls::{
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
 };
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
-use tokio::{net::TcpListener, sync::mpsc};
+use std::sync::Arc;
 
 mod common;
 
@@ -54,88 +52,31 @@ impl ResolvesServerCert for TestCertResolver {
     }
 }
 
-struct MockProxyHttps {
-    route_info_request_receiver: mpsc::Receiver<RouteInfoRequest>,
-    proxy_state: ProxyState,
-    addr: SocketAddr,
-    _server: SimpleHttpServer,
-    cert: reqwest::Certificate,
-}
-
-impl MockProxyHttps {
-    async fn new() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("Failed to bind listener");
-        let addr = listener.local_addr().expect("Failed to get local address");
-
-        let cluster: ClusterName = format!("{CERT_DOMAIN}:{}", addr.port()).parse().unwrap();
-        let proxy_state = ProxyState::new(None, cluster);
-        let (route_info_request_sender, route_info_request_receiver) = mpsc::channel(1);
-
-        proxy_state.inner.route_map.set_sender(move |m| {
-            route_info_request_sender
-                .try_send(m)
-                .expect("Failed to send route info request");
-        });
-
-        let (resolver, cert) = TestCertResolver::new();
-
-        let server = SimpleHttpServer::new(
-            proxy_state.clone(),
-            listener,
-            HttpsConfig::from_resolver(resolver),
-        )
-        .expect("Failed to create HTTPS server");
-
-        Self {
-            route_info_request_receiver,
-            proxy_state,
-            addr,
-            _server: server,
-            cert,
-        }
-    }
-
-    fn port(&self) -> u16 {
-        self.addr.port()
-    }
-
-    async fn recv_route_info_request(&mut self) -> RouteInfoRequest {
-        self.route_info_request_receiver
-            .recv()
-            .await
-            .expect("Failed to receive route info request")
-    }
-
-    async fn send_route_info_response(&mut self, response: RouteInfoResponse) {
-        self.proxy_state.inner.route_map.receive(response);
-    }
-}
-
 #[plane_test]
 async fn proxy_https_bearer_token_routing(env: TestEnvironment) {
     let server = SimpleAxumServer::new().await;
-    let mut proxy = MockProxyHttps::new().await;
+    let (resolver, cert) = TestCertResolver::new();
+    let mut proxy = MockProxy::new_with_https(CERT_DOMAIN, resolver, cert.clone()).await;
     let port = proxy.port();
 
     let client = reqwest::Client::builder()
         .https_only(true)
-        .add_root_certificate(proxy.cert.clone())
-        .resolve(CERT_DOMAIN, proxy.addr)
+        .add_root_certificate(cert)
+        .resolve(CERT_DOMAIN, proxy.addr())
         .build()
         .unwrap();
 
-    let url = format!("https://{CERT_DOMAIN}:{port}/mytoken123/some/path");
+    let token = "mytoken123";
+    let url = format!("https://{CERT_DOMAIN}:{port}/{token}/some/path");
     let handle = tokio::spawn(client.get(url).send());
 
     let request = proxy.recv_route_info_request().await;
-    assert_eq!(request.token, BearerToken::from("mytoken123".to_string()));
+    assert_eq!(request.token, BearerToken::from(token.to_string()));
 
-    let cluster = ClusterName::from_str(&format!("{CERT_DOMAIN}:{port}")).unwrap();
+    let cluster = proxy.cluster();
     proxy
         .send_route_info_response(RouteInfoResponse {
-            token: BearerToken::from("mytoken123".to_string()),
+            token: BearerToken::from(token.to_string()),
             route_info: Some(plane_common::protocol::RouteInfo {
                 backend_id: BackendName::new_random(),
                 address: BackendAddr(server.addr()),
@@ -161,7 +102,8 @@ async fn proxy_https_bearer_token_routing(env: TestEnvironment) {
 #[plane_test]
 async fn proxy_https_subdomain_routing(env: TestEnvironment) {
     let server = SimpleAxumServer::new().await;
-    let mut proxy = MockProxyHttps::new().await;
+    let (resolver, cert) = TestCertResolver::new();
+    let mut proxy = MockProxy::new_with_https(CERT_DOMAIN, resolver, cert.clone()).await;
     let port = proxy.port();
 
     proxy
@@ -175,14 +117,15 @@ async fn proxy_https_subdomain_routing(env: TestEnvironment) {
             expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
         });
 
+    let subdomain_host = format!("sb-test-3000.{CERT_DOMAIN}");
     let client = reqwest::Client::builder()
         .https_only(true)
-        .add_root_certificate(proxy.cert.clone())
-        .resolve(&format!("sb-test-3000.{CERT_DOMAIN}"), proxy.addr)
+        .add_root_certificate(cert)
+        .resolve(&subdomain_host, proxy.addr())
         .build()
         .unwrap();
 
-    let url = format!("https://sb-test-3000.{CERT_DOMAIN}:{port}/hello");
+    let url = format!("https://{subdomain_host}:{port}/hello");
     let response = client.get(url).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let request_info: RequestInfo = response.json().await.unwrap();

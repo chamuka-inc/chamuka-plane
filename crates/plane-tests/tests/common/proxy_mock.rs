@@ -9,28 +9,54 @@ use std::net::SocketAddr;
 use tokio::{net::TcpListener, sync::mpsc};
 
 pub struct MockProxy {
-    proxy_state: ProxyState,
+    pub proxy_state: ProxyState,
     route_info_request_receiver: mpsc::Receiver<RouteInfoRequest>,
     addr: SocketAddr,
     _server: SimpleHttpServer,
+    pub cert: Option<reqwest::Certificate>,
 }
 
 #[allow(unused)]
 impl MockProxy {
     pub async fn new() -> Self {
-        Self::new_inner(None).await
+        Self::new_inner(None, HttpsConfig::http()).await
     }
 
     pub async fn new_with_root_redirect(root_redirect_url: String) -> Self {
-        Self::new_inner(Some(root_redirect_url)).await
+        Self::new_inner(Some(root_redirect_url), HttpsConfig::http()).await
+    }
+
+    pub async fn new_with_https(
+        hostname: &str,
+        resolver: impl rustls::server::ResolvesServerCert + 'static,
+        cert: reqwest::Certificate,
+    ) -> Self {
+        let mut mock =
+            Self::new_inner_with_hostname(None, HttpsConfig::from_resolver(resolver), hostname)
+                .await;
+        mock.cert = Some(cert);
+        mock
     }
 
     pub fn backend_entry(&self, backend_id: &BackendName) -> Option<BackendEntry> {
         self.proxy_state.inner.monitor.get_backend_entry(backend_id)
     }
 
-    async fn new_inner(root_redirect_url: Option<String>) -> Self {
-        let cluster: ClusterName = "localhost:9090".parse().unwrap();
+    async fn new_inner(root_redirect_url: Option<String>, https_config: HttpsConfig) -> Self {
+        Self::new_inner_with_hostname(root_redirect_url, https_config, "localhost").await
+    }
+
+    async fn new_inner_with_hostname(
+        root_redirect_url: Option<String>,
+        https_config: HttpsConfig,
+        hostname: &str,
+    ) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Failed to bind listener");
+        let addr = listener.local_addr().expect("Failed to get local address");
+
+        let cluster: ClusterName = format!("{}:{}", hostname, addr.port()).parse().unwrap();
         let proxy_state = ProxyState::new(root_redirect_url, cluster);
         let (route_info_request_sender, route_info_request_receiver) = mpsc::channel(1);
 
@@ -40,12 +66,7 @@ impl MockProxy {
                 .expect("Failed to send route info request");
         });
 
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("Failed to bind listener");
-        let addr = listener.local_addr().expect("Failed to get local address");
-
-        let server = SimpleHttpServer::new(proxy_state.clone(), listener, HttpsConfig::http())
+        let server = SimpleHttpServer::new(proxy_state.clone(), listener, https_config)
             .expect("Failed to create server");
 
         Self {
@@ -53,6 +74,7 @@ impl MockProxy {
             route_info_request_receiver,
             addr,
             _server: server,
+            cert: None,
         }
     }
 
@@ -62,6 +84,10 @@ impl MockProxy {
 
     pub fn port(&self) -> u16 {
         self.addr.port()
+    }
+
+    pub fn cluster(&self) -> ClusterName {
+        self.proxy_state.inner.cluster.clone()
     }
 
     pub fn set_ready(&self, ready: bool) {
