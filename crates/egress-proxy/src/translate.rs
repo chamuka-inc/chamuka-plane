@@ -3,6 +3,7 @@ use envoy_types::pb::envoy::config::{
     cluster::v3::Cluster, listener::v3::Listener, route::v3::RouteConfiguration,
 };
 
+#[derive(Clone)]
 pub struct XdsSnapshot {
     pub version: String,
     pub listeners: Vec<Listener>,
