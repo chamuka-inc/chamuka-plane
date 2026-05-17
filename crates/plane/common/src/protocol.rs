@@ -337,10 +337,26 @@ impl ChannelMessage for MessageFromProxy {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SubdomainPortRouteUpdate {
+    pub sandbox_id_prefix: String,
+    pub port: u16,
+    pub address: BackendAddr,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SubdomainPortRouteRemove {
+    pub sandbox_id_prefix: String,
+    pub port: u16,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum MessageToProxy {
     RouteInfoResponse(RouteInfoResponse),
     CertManagerResponse(CertManagerResponse),
     BackendRemoved { backend: BackendName },
+    SubdomainPortRouteUpdate(SubdomainPortRouteUpdate),
+    SubdomainPortRouteRemove(SubdomainPortRouteRemove),
 }
 
 impl ChannelMessage for MessageToProxy {

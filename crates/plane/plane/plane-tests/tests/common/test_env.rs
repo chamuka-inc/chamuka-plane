@@ -135,7 +135,10 @@ impl TestEnvironment {
 
         let client = PlaneClient::new(controller.url().clone());
 
-        let state = Arc::new(ProxyState::new(Some("https://plane.test".to_string())));
+        let state = Arc::new(ProxyState::new(
+            Some("https://plane.test".to_string()),
+            cluster.clone(),
+        ));
 
         let (_, cert_manager) = watcher_manager_pair(cluster.clone(), None, None)
             .await

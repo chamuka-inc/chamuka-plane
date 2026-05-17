@@ -38,7 +38,7 @@ async fn cert_manager_does_refresh(env: TestEnvironment) {
     .await
     .unwrap();
 
-    let state = Arc::new(ProxyState::new(None));
+    let state = Arc::new(ProxyState::new(None, env.cluster.clone()));
 
     let _proxy_connection = ProxyConnection::new(
         ProxyName::new_random(),
@@ -90,7 +90,7 @@ async fn cert_manager_does_refresh_eab(env: TestEnvironment) {
         .await
         .unwrap();
 
-        let state = Arc::new(ProxyState::new(None));
+        let state = Arc::new(ProxyState::new(None, env.cluster.clone()));
 
         let _proxy_connection = ProxyConnection::new(
             ProxyName::new_random(),

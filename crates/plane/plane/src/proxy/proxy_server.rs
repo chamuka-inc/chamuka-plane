@@ -1,10 +1,11 @@
 use super::{
     connection_monitor::ConnectionMonitorHandle,
-    request::{get_and_maybe_remove_bearer_token, subdomain_from_host},
+    request::{get_and_maybe_remove_bearer_token, parse_subdomain_port, subdomain_from_host},
     route_map::RouteMap,
+    subdomain_port_map::SubdomainPortMap,
 };
 use bytes::Bytes;
-use plane_common::{names::Name, protocol::RouteInfo, version::SERVER_NAME};
+use plane_common::{names::Name, protocol::RouteInfo, types::ClusterName, version::SERVER_NAME};
 use plane_dynamic_proxy::{
     body::{simple_empty_body, SimpleBody},
     hyper::{
@@ -24,9 +25,11 @@ use std::{pin::Pin, sync::Arc};
 
 pub struct ProxyStateInner {
     pub route_map: RouteMap,
+    pub subdomain_port_map: SubdomainPortMap,
     pub proxy_client: ProxyClient,
     pub monitor: ConnectionMonitorHandle,
     pub connected: AtomicBool,
+    pub cluster: ClusterName,
 
     /// If set, the "root" path (/) will redirect to this URL.
     pub root_redirect_url: Option<String>,
@@ -37,19 +40,15 @@ pub struct ProxyState {
     pub inner: Arc<ProxyStateInner>,
 }
 
-impl Default for ProxyState {
-    fn default() -> Self {
-        Self::new(None)
-    }
-}
-
 impl ProxyState {
-    pub fn new(root_redirect_url: Option<String>) -> Self {
+    pub fn new(root_redirect_url: Option<String>, cluster: ClusterName) -> Self {
         let inner = ProxyStateInner {
             route_map: RouteMap::new(),
+            subdomain_port_map: SubdomainPortMap::new(),
             proxy_client: ProxyClient::new(),
             monitor: ConnectionMonitorHandle::new(),
             connected: AtomicBool::new(false),
+            cluster,
             root_redirect_url,
         };
 
@@ -108,7 +107,49 @@ impl Service<Request<Incoming>> for ProxyState {
 
         let mut request = MutableRequest::from_request(request);
 
-        // extract the bearer token from the request
+        // Check subdomain-port routing before token-based routing.
+        let host = request
+            .parts
+            .headers
+            .get(header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .map(|h| h.to_string());
+
+        if let Some(ref host_str) = host {
+            if let Ok(Some(subdomain)) = subdomain_from_host(host_str, &self.inner.cluster) {
+                if let Some(sp_request) = parse_subdomain_port(subdomain) {
+                    if let Some(addr) = self
+                        .inner
+                        .subdomain_port_map
+                        .lookup(&sp_request.sandbox_id_prefix, sp_request.port)
+                    {
+                        let inner = self.inner.clone();
+                        return Box::pin(async move {
+                            request.set_upstream_address(addr);
+                            let req = request.into_request_with_simple_body();
+                            let result = inner.proxy_client.request(req).await;
+                            match result {
+                                Ok((mut res, upgrade_handler)) => {
+                                    if let Some(upgrade_handler) = upgrade_handler {
+                                        tokio::spawn(async move {
+                                            let _ = upgrade_handler.run().await;
+                                        });
+                                    }
+                                    apply_general_headers(&mut res);
+                                    Ok(res)
+                                }
+                                Err(e) => {
+                                    tracing::error!(?e, "Error proxying subdomain-port request");
+                                    status_code_to_response(StatusCode::BAD_GATEWAY)
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // Token-based routing: extract the bearer token from the request
         let mut uri_parts = request.parts.uri.clone().into_parts();
         let original_path = request.parts.uri.path().to_string();
         let bearer_token = get_and_maybe_remove_bearer_token(&mut uri_parts);

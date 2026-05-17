@@ -23,6 +23,7 @@ pub mod proxy_connection;
 pub mod proxy_server;
 mod request;
 mod route_map;
+pub mod subdomain_port_map;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Protocol {
@@ -114,6 +115,7 @@ pub async fn run_proxy(config: ProxyConfig) -> Result<()> {
 
     let state = Arc::new(ProxyState::new(
         config.root_redirect_url.map(|u| u.to_string()),
+        config.cluster.clone(),
     ));
 
     // This returns a guard, we need to keep it in scope so that the connection is not terminated.

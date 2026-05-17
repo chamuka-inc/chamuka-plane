@@ -98,6 +98,10 @@ impl ProxyConnection {
                                     MessageToProxy::BackendRemoved { .. } => {
                                         *message_counts.entry("backend_removed").or_insert(0) += 1;
                                     }
+                                    MessageToProxy::SubdomainPortRouteUpdate(_) |
+                                    MessageToProxy::SubdomainPortRouteRemove(_) => {
+                                        *message_counts.entry("subdomain_port_route").or_insert(0) += 1;
+                                    }
                                 }
 
                                 match message {
@@ -114,6 +118,12 @@ impl ProxyConnection {
                                     MessageToProxy::BackendRemoved { backend } => {
                                         state.inner.route_map.remove_backend(&backend);
                                         state.inner.monitor.remove_backend(&backend);
+                                    }
+                                    MessageToProxy::SubdomainPortRouteUpdate(update) => {
+                                        state.inner.subdomain_port_map.update(update);
+                                    }
+                                    MessageToProxy::SubdomainPortRouteRemove(remove) => {
+                                        state.inner.subdomain_port_map.remove(remove);
                                     }
                                 }
                             }

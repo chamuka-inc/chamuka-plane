@@ -2,6 +2,7 @@ use plane::proxy::{connection_monitor::BackendEntry, proxy_server::ProxyState};
 use plane_common::{
     names::BackendName,
     protocol::{RouteInfoRequest, RouteInfoResponse},
+    types::ClusterName,
 };
 use plane_dynamic_proxy::server::{HttpsConfig, SimpleHttpServer};
 use std::net::SocketAddr;
@@ -29,7 +30,8 @@ impl MockProxy {
     }
 
     async fn new_inner(root_redirect_url: Option<String>) -> Self {
-        let proxy_state = ProxyState::new(root_redirect_url);
+        let cluster: ClusterName = "localhost:9090".parse().unwrap();
+        let proxy_state = ProxyState::new(root_redirect_url, cluster);
         let (route_info_request_sender, route_info_request_receiver) = mpsc::channel(1);
 
         proxy_state.inner.route_map.set_sender(move |m| {
