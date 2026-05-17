@@ -8,6 +8,7 @@ use self::{
     controller::ControllerDatabase,
     credential::CredentialDatabase,
     drone::DroneDatabase,
+    extension_action::ExtensionActionDatabase,
     node::NodeDatabase,
     sandbox::SandboxDatabase,
     secret::SecretDatabase,
@@ -32,6 +33,7 @@ pub mod connect;
 pub mod controller;
 pub mod credential;
 pub mod drone;
+pub mod extension_action;
 pub mod node;
 pub mod sandbox;
 pub mod secret;
@@ -110,6 +112,10 @@ impl PlaneDatabase {
 
     pub fn secret(&self) -> SecretDatabase {
         SecretDatabase::new(&self.pool)
+    }
+
+    pub fn extension_action(&self) -> ExtensionActionDatabase {
+        ExtensionActionDatabase::new(&self.pool)
     }
 
     pub async fn health_check(&self) -> Result<(), sqlx::Error> {

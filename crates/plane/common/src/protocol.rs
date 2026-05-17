@@ -159,6 +159,7 @@ pub enum MessageFromDrone {
     BackendMetrics(BackendMetricsMessage),
     AckAction { action_id: BackendActionName },
     RenewKey(RenewKeyRequest),
+    AckExtensionAction { action_id: String },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -214,6 +215,44 @@ pub enum MessageToDrone {
         event_id: BackendEventId,
     },
     RenewKeyResponse(RenewKeyResponse),
+    PushNetworkPolicy(PushNetworkPolicyWire),
+    PushCredential(PushCredentialWire),
+    RevokeCredential {
+        binding_id: String,
+    },
+    Snapshot(SnapshotCommandWire),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PushNetworkPolicyWire {
+    pub backend_id: String,
+    pub policy: Value,
+    pub version: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PushCredentialWire {
+    pub backend_id: String,
+    pub binding: CredentialPayloadWire,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CredentialPayloadWire {
+    pub id: String,
+    pub destination: String,
+    pub header_name: String,
+    pub header_format: String,
+    pub value: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SnapshotCommandWire {
+    pub action_id: String,
+    pub backend_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl ChannelMessage for MessageToDrone {

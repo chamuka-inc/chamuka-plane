@@ -98,6 +98,9 @@ pub async fn handle_message_from_drone(
 
             sender.send(MessageToDrone::RenewKeyResponse(renew_key_response))?;
         }
+        MessageFromDrone::AckExtensionAction { action_id } => {
+            controller.db.extension_action().ack(&action_id).await?;
+        }
     }
 
     Ok(())
@@ -261,6 +264,9 @@ pub async fn drone_socket_inner(
                             }
                             MessageFromDrone::BackendMetrics(_) => {
                                 *message_counts.entry("backend_metrics").or_insert(0) += 1;
+                            }
+                            MessageFromDrone::AckExtensionAction { .. } => {
+                                *message_counts.entry("ack_extension_action").or_insert(0) += 1;
                             }
                         }
                         if let Err(err) = handle_message_from_drone(message_from_drone, drone_id, &controller, &mut socket).await {

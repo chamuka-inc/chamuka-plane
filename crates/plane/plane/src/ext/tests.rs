@@ -4,6 +4,9 @@ use super::types::*;
 use chamuka_common::ext::api::{
     CreateCredentialBindingRequest, CreateSecretRequest, ExtendTimeoutRequest, SnapshotRequest,
 };
+use plane_common::protocol::{
+    CredentialPayloadWire, PushCredentialWire, PushNetworkPolicyWire, SnapshotCommandWire,
+};
 use std::path::Path;
 
 #[test]
@@ -282,4 +285,117 @@ fn credential_binding_request_without_format() {
     }"#;
     let req: CreateCredentialBindingRequest = serde_json::from_str(json).expect("deserialize");
     assert!(req.header_format.is_none());
+}
+
+// --- Phase 3.3: Extension action protocol and database tests ---
+
+#[test]
+fn message_to_drone_push_network_policy_roundtrip() {
+    use plane_common::protocol::MessageToDrone;
+
+    let policy = serde_json::json!({"mode": "allow-all"});
+    let msg = MessageToDrone::PushNetworkPolicy(PushNetworkPolicyWire {
+        backend_id: "bk-abc123".to_string(),
+        policy,
+        version: 1,
+    });
+    let json = serde_json::to_string(&msg).expect("serialize");
+    let deserialized: MessageToDrone = serde_json::from_str(&json).expect("deserialize");
+    match deserialized {
+        MessageToDrone::PushNetworkPolicy(m) => {
+            assert_eq!(m.backend_id, "bk-abc123");
+            assert_eq!(m.version, 1);
+        }
+        _ => panic!("expected PushNetworkPolicy variant"),
+    }
+}
+
+#[test]
+fn message_to_drone_push_credential_roundtrip() {
+    use plane_common::protocol::MessageToDrone;
+
+    let msg = MessageToDrone::PushCredential(PushCredentialWire {
+        backend_id: "bk-abc123".to_string(),
+        binding: CredentialPayloadWire {
+            id: "cred-001".to_string(),
+            destination: "api.openai.com".to_string(),
+            header_name: "Authorization".to_string(),
+            header_format: "Bearer {value}".to_string(),
+            value: "sk-secret".to_string(),
+        },
+    });
+    let json = serde_json::to_string(&msg).expect("serialize");
+    let deserialized: MessageToDrone = serde_json::from_str(&json).expect("deserialize");
+    match deserialized {
+        MessageToDrone::PushCredential(m) => {
+            assert_eq!(m.backend_id, "bk-abc123");
+            assert_eq!(m.binding.id, "cred-001");
+        }
+        _ => panic!("expected PushCredential variant"),
+    }
+}
+
+#[test]
+fn message_to_drone_snapshot_roundtrip() {
+    use plane_common::protocol::MessageToDrone;
+
+    let msg = MessageToDrone::Snapshot(SnapshotCommandWire {
+        action_id: "xak-001".to_string(),
+        backend_id: "bk-abc123".to_string(),
+        ttl_days: Some(30),
+        name: Some("my-snapshot".to_string()),
+    });
+    let json = serde_json::to_string(&msg).expect("serialize");
+    let deserialized: MessageToDrone = serde_json::from_str(&json).expect("deserialize");
+    match deserialized {
+        MessageToDrone::Snapshot(m) => {
+            assert_eq!(m.action_id, "xak-001");
+            assert_eq!(m.ttl_days, Some(30));
+        }
+        _ => panic!("expected Snapshot variant"),
+    }
+}
+
+#[test]
+fn message_to_drone_revoke_credential_roundtrip() {
+    use plane_common::protocol::MessageToDrone;
+
+    let msg = MessageToDrone::RevokeCredential {
+        binding_id: "cred-001".to_string(),
+    };
+    let json = serde_json::to_string(&msg).expect("serialize");
+    let deserialized: MessageToDrone = serde_json::from_str(&json).expect("deserialize");
+    match deserialized {
+        MessageToDrone::RevokeCredential { binding_id } => {
+            assert_eq!(binding_id, "cred-001");
+        }
+        _ => panic!("expected RevokeCredential variant"),
+    }
+}
+
+#[test]
+fn message_from_drone_ack_extension_action_roundtrip() {
+    use plane_common::protocol::MessageFromDrone;
+
+    let msg = MessageFromDrone::AckExtensionAction {
+        action_id: "xak-001".to_string(),
+    };
+    let json = serde_json::to_string(&msg).expect("serialize");
+    let deserialized: MessageFromDrone = serde_json::from_str(&json).expect("deserialize");
+    match deserialized {
+        MessageFromDrone::AckExtensionAction { action_id } => {
+            assert_eq!(action_id, "xak-001");
+        }
+        _ => panic!("expected AckExtensionAction variant"),
+    }
+}
+
+#[test]
+fn extension_action_id_has_prefix() {
+    let id = super::types::ExtensionActionId::new();
+    assert!(
+        id.0.starts_with("xak-"),
+        "ExtensionActionId should start with xak- prefix, got: {}",
+        id.0
+    );
 }

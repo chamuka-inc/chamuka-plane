@@ -135,6 +135,12 @@ pub async fn drone_loop(
                         MessageToDrone::RenewKeyResponse(_) => {
                             *message_counts.entry("renew_key_response").or_insert(0) += 1;
                         }
+                        MessageToDrone::PushNetworkPolicy(_)
+                        | MessageToDrone::PushCredential(_)
+                        | MessageToDrone::RevokeCredential { .. }
+                        | MessageToDrone::Snapshot(_) => {
+                            *message_counts.entry("extension_action").or_insert(0) += 1;
+                        }
                     }
 
                     let key_manager = key_manager.clone();
@@ -222,6 +228,12 @@ pub async fn drone_loop(
                     // TODO: we could begin the graceful termiation here.
                     tracing::warn!("Key renewal failed.");
                 }
+            }
+            MessageToDrone::PushNetworkPolicy(_)
+            | MessageToDrone::PushCredential(_)
+            | MessageToDrone::RevokeCredential { .. }
+            | MessageToDrone::Snapshot(_) => {
+                tracing::info!("Received extension action (not yet handled by drone).");
             }
         }
     }
