@@ -295,6 +295,7 @@ fn message_to_drone_push_network_policy_roundtrip() {
 
     let policy = serde_json::json!({"mode": "allow-all"});
     let msg = MessageToDrone::PushNetworkPolicy(PushNetworkPolicyWire {
+        action_id: "xak-policy-001".to_string(),
         backend_id: "bk-abc123".to_string(),
         policy,
         version: 1,
@@ -315,6 +316,7 @@ fn message_to_drone_push_credential_roundtrip() {
     use plane_common::protocol::MessageToDrone;
 
     let msg = MessageToDrone::PushCredential(PushCredentialWire {
+        action_id: "xak-cred-001".to_string(),
         backend_id: "bk-abc123".to_string(),
         binding: CredentialPayloadWire {
             id: "cred-001".to_string(),
@@ -361,12 +363,17 @@ fn message_to_drone_revoke_credential_roundtrip() {
     use plane_common::protocol::MessageToDrone;
 
     let msg = MessageToDrone::RevokeCredential {
+        action_id: "xak-revoke-001".to_string(),
         binding_id: "cred-001".to_string(),
     };
     let json = serde_json::to_string(&msg).expect("serialize");
     let deserialized: MessageToDrone = serde_json::from_str(&json).expect("deserialize");
     match deserialized {
-        MessageToDrone::RevokeCredential { binding_id } => {
+        MessageToDrone::RevokeCredential {
+            action_id,
+            binding_id,
+        } => {
+            assert_eq!(action_id, "xak-revoke-001");
             assert_eq!(binding_id, "cred-001");
         }
         _ => panic!("expected RevokeCredential variant"),

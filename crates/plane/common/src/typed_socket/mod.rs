@@ -66,6 +66,16 @@ impl<A: Debug> TypedSocketSender<A> {
     }
 }
 
+impl<A: Send + Sync + 'static> TypedSocketSender<A> {
+    pub fn from_fn(
+        f: impl Fn(SocketAction<A>) -> Result<(), TypedSocketError> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            inner_send: Arc::new(f),
+        }
+    }
+}
+
 impl<T: ChannelMessage> TypedSocket<T> {
     pub fn send(&mut self, message: T) -> Result<(), PlaneClientError> {
         self.send

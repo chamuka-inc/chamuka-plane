@@ -204,13 +204,17 @@ pub async fn process_pending_extension_actions(
             }
         };
 
+        let action_id = row.id.clone();
+
         let message = match kind {
             ExtensionActionKind::PushPolicy => {
-                let wire: PushNetworkPolicyWire = serde_json::from_value(row.payload)?;
+                let mut wire: PushNetworkPolicyWire = serde_json::from_value(row.payload)?;
+                wire.action_id = action_id;
                 MessageToDrone::PushNetworkPolicy(wire)
             }
             ExtensionActionKind::PushCredential => {
-                let wire: PushCredentialWire = serde_json::from_value(row.payload)?;
+                let mut wire: PushCredentialWire = serde_json::from_value(row.payload)?;
+                wire.action_id = action_id;
                 MessageToDrone::PushCredential(wire)
             }
             ExtensionActionKind::RevokeCredential => {
@@ -220,11 +224,13 @@ pub async fn process_pending_extension_actions(
                 }
                 let p: RevokePayload = serde_json::from_value(row.payload)?;
                 MessageToDrone::RevokeCredential {
+                    action_id,
                     binding_id: p.binding_id,
                 }
             }
             ExtensionActionKind::Snapshot => {
-                let wire: SnapshotCommandWire = serde_json::from_value(row.payload)?;
+                let mut wire: SnapshotCommandWire = serde_json::from_value(row.payload)?;
+                wire.action_id = action_id;
                 MessageToDrone::Snapshot(wire)
             }
         };

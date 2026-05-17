@@ -218,6 +218,7 @@ pub enum MessageToDrone {
     PushNetworkPolicy(PushNetworkPolicyWire),
     PushCredential(PushCredentialWire),
     RevokeCredential {
+        action_id: String,
         binding_id: String,
     },
     Snapshot(SnapshotCommandWire),
@@ -225,6 +226,8 @@ pub enum MessageToDrone {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PushNetworkPolicyWire {
+    #[serde(default)]
+    pub action_id: String,
     pub backend_id: String,
     pub policy: Value,
     pub version: u64,
@@ -232,6 +235,8 @@ pub struct PushNetworkPolicyWire {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PushCredentialWire {
+    #[serde(default)]
+    pub action_id: String,
     pub backend_id: String,
     pub binding: CredentialPayloadWire,
 }

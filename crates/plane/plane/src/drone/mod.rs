@@ -1,5 +1,6 @@
 use self::{
     executor::Executor,
+    extension_handler::ExtensionHandler,
     heartbeat::HeartbeatLoop,
     key_manager::KeyManager,
     runtime::{
@@ -40,6 +41,7 @@ use valuable::Valuable;
 mod backend_manager;
 pub mod command;
 mod executor;
+pub mod extension_handler;
 mod heartbeat;
 mod key_manager;
 pub mod runtime;
@@ -49,6 +51,7 @@ pub async fn drone_loop(
     name: DroneName,
     mut connection: TypedSocketConnector<MessageFromDrone>,
     executor: Executor,
+    extension_handler: Option<Arc<ExtensionHandler>>,
 ) {
     let executor = Arc::new(executor);
     let key_manager = Arc::new(Mutex::new(KeyManager::new(executor.clone())));
@@ -144,11 +147,13 @@ pub async fn drone_loop(
                     }
 
                     let key_manager = key_manager.clone();
+                    let ext_handler = extension_handler.clone();
                     tokio::spawn(handle_message(
                         message,
                         key_manager,
                         socket.sender(|x| x),
                         executor.clone(),
+                        ext_handler,
                     ));
                 }
             }
@@ -160,6 +165,7 @@ pub async fn drone_loop(
         key_manager: Arc<Mutex<KeyManager>>,
         sender: TypedSocketSender<MessageFromDrone>,
         executor: Arc<Executor>,
+        extension_handler: Option<Arc<ExtensionHandler>>,
     ) {
         match message {
             MessageToDrone::Action(BackendActionMessage {
@@ -182,7 +188,6 @@ pub async fn drone_loop(
                         );
                     }
 
-                    // Register the key with the key manager, ensuring that it will be refreshed.
                     let result = key_manager
                         .lock()
                         .expect("Key manager lock poisoned.")
@@ -225,15 +230,43 @@ pub async fn drone_loop(
                         .expect("Key manager lock poisoned.")
                         .update_deadlines(&backend, deadlines);
                 } else {
-                    // TODO: we could begin the graceful termiation here.
                     tracing::warn!("Key renewal failed.");
                 }
             }
-            MessageToDrone::PushNetworkPolicy(_)
-            | MessageToDrone::PushCredential(_)
-            | MessageToDrone::RevokeCredential { .. }
-            | MessageToDrone::Snapshot(_) => {
-                tracing::info!("Received extension action (not yet handled by drone).");
+            MessageToDrone::PushNetworkPolicy(wire) => {
+                if let Some(ref handler) = extension_handler {
+                    handler.handle_push_network_policy(wire, &sender).await;
+                } else {
+                    tracing::warn!(
+                        "Received PushNetworkPolicy but no extension handler configured"
+                    );
+                }
+            }
+            MessageToDrone::PushCredential(wire) => {
+                if let Some(ref handler) = extension_handler {
+                    handler.handle_push_credential(wire, &sender).await;
+                } else {
+                    tracing::warn!("Received PushCredential but no extension handler configured");
+                }
+            }
+            MessageToDrone::RevokeCredential {
+                action_id,
+                binding_id,
+            } => {
+                if let Some(ref handler) = extension_handler {
+                    handler
+                        .handle_revoke_credential(&action_id, &binding_id, &sender)
+                        .await;
+                } else {
+                    tracing::warn!("Received RevokeCredential but no extension handler configured");
+                }
+            }
+            MessageToDrone::Snapshot(wire) => {
+                if let Some(ref handler) = extension_handler {
+                    handler.handle_snapshot(wire, &sender).await;
+                } else {
+                    tracing::warn!("Received Snapshot but no extension handler configured");
+                }
             }
         }
     }
@@ -304,7 +337,7 @@ impl Drone {
         let executor = Executor::new(runtime, state_store, config.ip).await;
 
         let id = config.name.clone();
-        let drone_loop = tokio::spawn(drone_loop(id.clone(), connector, executor));
+        let drone_loop = tokio::spawn(drone_loop(id.clone(), connector, executor, None));
 
         Ok(Self { drone_loop, id })
     }

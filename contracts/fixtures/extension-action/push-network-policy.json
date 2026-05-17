@@ -1,4 +1,5 @@
 {
+  "action_id": "xak-policy-001",
   "backend_id": "bk-abc123def456",
   "policy": {
     "mode": "rules",

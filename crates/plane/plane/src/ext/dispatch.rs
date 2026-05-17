@@ -9,6 +9,7 @@ pub fn build_push_network_policy(
     version: u64,
 ) -> PushNetworkPolicyWire {
     PushNetworkPolicyWire {
+        action_id: String::new(),
         backend_id: backend_id.to_string(),
         policy: serde_json::to_value(policy).unwrap_or_default(),
         version,
@@ -24,6 +25,7 @@ pub fn build_push_credential(
     value: &str,
 ) -> PushCredentialWire {
     PushCredentialWire {
+        action_id: String::new(),
         backend_id: backend_id.to_string(),
         binding: CredentialPayloadWire {
             id: cred_id.to_string(),
