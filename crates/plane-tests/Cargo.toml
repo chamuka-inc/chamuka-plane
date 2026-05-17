@@ -18,7 +18,9 @@ plane = { path = "../plane" }
 plane-common = { path = "../plane-common", version = "0.5.1" }
 plane-dynamic-proxy = { path = "../plane-dynamic-proxy" }
 plane-test-macro = { path = "../plane-test-macro" }
+rcgen = "0.13.1"
 reqwest = { version = "0.12.8", features = ["json", "rustls-tls"], default-features = false }
+rustls = { version = "0.23", default-features = false }
 serde = "1.0.210"
 serde_json = "1.0.107"
 thiserror = "1.0.50"
