@@ -15,10 +15,3 @@ export class TimeoutError extends SandboxError {
     this.name = "TimeoutError";
   }
 }
-
-export class ConnectionError extends SandboxError {
-  constructor(message: string) {
-    super(message, undefined, "CONNECTION_ERROR");
-    this.name = "ConnectionError";
-  }
-}

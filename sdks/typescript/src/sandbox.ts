@@ -1,5 +1,6 @@
 import { createHttpClient, type HttpClient } from "./http.js";
 import { SandboxError, TimeoutError } from "./errors.js";
+import { normalizeBaseUrl, sleep } from "./utils.js";
 import type {
   ConnectResponse,
   DirEntry,
@@ -63,6 +64,14 @@ export type WatchOptions = {
   signal?: AbortSignal;
 };
 
+const RUNTIME_TO_IMAGE: Record<string, string> = {
+  node22: "node:22-slim",
+  node24: "node:24-slim",
+  python313: "python:3.13-slim",
+  bun1: "oven/bun:1",
+  desktop: "sandbox-platform/desktop:latest",
+};
+
 export class Sandbox {
   private readonly dataPlaneClient: HttpClient;
   private readonly baseUrl: string;
@@ -81,7 +90,7 @@ export class Sandbox {
     this.statusUrl = connectResponse.status_url;
     this.secretToken = connectResponse.secret_token;
     this.dataPlaneClient = dataPlaneClient;
-    this.baseUrl = baseUrl;
+    this.baseUrl = normalizeBaseUrl(baseUrl);
   }
 
   static async create(
@@ -131,16 +140,7 @@ export class Sandbox {
     cmd: string,
     options: RunCommandOptions = {},
   ): Promise<RunCommandResult> {
-    const body: Record<string, unknown> = {
-      cmd,
-      detached: false,
-    };
-    if (options.args) body.args = options.args;
-    if (options.env) body.env = options.env;
-    if (options.cwd) body.cwd = options.cwd;
-    if (options.stdin) body.stdin = options.stdin;
-    if (options.timeout_ms) body.timeout_ms = options.timeout_ms;
-    if (options.user) body.user = options.user;
+    const body = buildExecBody(cmd, false, options);
 
     const response =
       await this.dataPlaneClient.request<ExecSyncResponse>({
@@ -160,16 +160,7 @@ export class Sandbox {
   }
 
   async spawn(cmd: string, options: SpawnOptions = {}): Promise<SpawnResult> {
-    const body: Record<string, unknown> = {
-      cmd,
-      detached: true,
-    };
-    if (options.args) body.args = options.args;
-    if (options.env) body.env = options.env;
-    if (options.cwd) body.cwd = options.cwd;
-    if (options.stdin) body.stdin = options.stdin;
-    if (options.timeout_ms) body.timeout_ms = options.timeout_ms;
-    if (options.user) body.user = options.user;
+    const body = buildExecBody(cmd, true, options);
     if (options.pty) body.pty = options.pty;
     if (options.ptySize) body.pty_size = options.ptySize;
 
@@ -231,8 +222,12 @@ export class Sandbox {
   }
 
   async readTextFile(path: string): Promise<string> {
-    const bytes = await this.readFile(path);
-    return new TextDecoder().decode(bytes);
+    const response = await this.dataPlaneClient.requestRaw({
+      method: "GET",
+      path: "/v1/fs/read",
+      query: { path },
+    });
+    return response.text();
   }
 
   async writeFile(
@@ -252,10 +247,7 @@ export class Sandbox {
     }
     formData.append("file", blob, "file");
 
-    const base = this.baseUrl.endsWith("/")
-      ? this.baseUrl.slice(0, -1)
-      : this.baseUrl;
-    const url = `${base}/v1/fs/write`;
+    const url = `${this.baseUrl}/v1/fs/write`;
     const response = await fetch(url, {
       method: "PUT",
       body: formData,
@@ -344,17 +336,21 @@ export class Sandbox {
   }
 }
 
-function runtimeToImage(runtime: string): string {
-  const map: Record<string, string> = {
-    node22: "node:22-slim",
-    node24: "node:24-slim",
-    python313: "python:3.13-slim",
-    bun1: "oven/bun:1",
-    desktop: "sandbox-platform/desktop:latest",
-  };
-  return map[runtime] ?? runtime;
+function buildExecBody(
+  cmd: string,
+  detached: boolean,
+  options: RunCommandOptions,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { cmd, detached };
+  if (options.args) body.args = options.args;
+  if (options.env) body.env = options.env;
+  if (options.cwd) body.cwd = options.cwd;
+  if (options.stdin) body.stdin = options.stdin;
+  if (options.timeout_ms) body.timeout_ms = options.timeout_ms;
+  if (options.user) body.user = options.user;
+  return body;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function runtimeToImage(runtime: string): string {
+  return RUNTIME_TO_IMAGE[runtime] ?? runtime;
 }

@@ -1,4 +1,5 @@
 import { SandboxError } from "./errors.js";
+import { normalizeBaseUrl, sleep } from "./utils.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -21,7 +22,7 @@ const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 
 export function createHttpClient(baseUrl: string, token?: string): HttpClient {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedBase = normalizeBaseUrl(baseUrl);
 
   async function doFetch(options: RequestOptions): Promise<Response> {
     const pathWithoutLeadingSlash = options.path.startsWith("/")
@@ -52,9 +53,7 @@ export function createHttpClient(baseUrl: string, token?: string): HttpClient {
     if (options.signal) {
       init.signal = options.signal;
     }
-    const response = await fetch(url.toString(), init);
-
-    return response;
+    return fetch(url.toString(), init);
   }
 
   async function requestWithRetry(options: RequestOptions): Promise<Response> {
@@ -67,6 +66,8 @@ export function createHttpClient(baseUrl: string, token?: string): HttpClient {
         if (response.ok || !RETRYABLE_STATUS_CODES.has(response.status)) {
           return response;
         }
+
+        await response.body?.cancel();
 
         if (attempt < MAX_RETRIES) {
           const delay = BASE_DELAY_MS * Math.pow(2, attempt);
@@ -113,8 +114,4 @@ export function createHttpClient(baseUrl: string, token?: string): HttpClient {
       return response;
     },
   };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
