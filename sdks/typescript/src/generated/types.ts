@@ -14,7 +14,7 @@ export type BackendStatus =
 
 export type SandboxResources = {
   vcpus: number;
-  memory_mb: number;
+  memory_mb?: number;
 };
 
 export type NetworkPolicyMode = "allow-all" | "deny-all" | "rules";
@@ -243,11 +243,19 @@ export type SnapshotRequest = {
 export type Snapshot = {
   id: string;
   sandbox_id: string;
+  tenant?: string;
+  image_ref?: string;
   image: string;
-  runtime: string;
-  tag?: string | null;
+  digest?: string;
+  base_image?: string;
   size_bytes?: number | null;
+  arch?: Arch;
+  runtime: string;
+  name?: string | null;
+  tag?: string | null;
+  tags?: Record<string, string>;
   created_at: string;
+  expires_at?: string | null;
 };
 
 export type SnapshotResponse = {
