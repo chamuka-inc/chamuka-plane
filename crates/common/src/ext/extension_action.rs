@@ -59,3 +59,17 @@ impl std::fmt::Display for ExtensionActionKind {
         }
     }
 }
+
+impl std::str::FromStr for ExtensionActionKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "push_policy" => Ok(Self::PushPolicy),
+            "push_credential" => Ok(Self::PushCredential),
+            "revoke_credential" => Ok(Self::RevokeCredential),
+            "snapshot" => Ok(Self::Snapshot),
+            _ => Err(()),
+        }
+    }
+}

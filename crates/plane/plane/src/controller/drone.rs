@@ -182,52 +182,57 @@ pub async fn process_pending_extension_actions(
     socket: &mut TypedSocket<MessageToDrone>,
     drone_id: &NodeId,
 ) -> Result<(), anyhow::Error> {
-    use crate::database::extension_action::ExtensionActionRow;
-    use plane_common::protocol::{
-        CredentialPayloadWire, PushCredentialWire, PushNetworkPolicyWire, SnapshotCommandWire,
-    };
+    use chamuka_common::ext::extension_action::ExtensionActionKind;
+    use plane_common::protocol::{PushCredentialWire, PushNetworkPolicyWire, SnapshotCommandWire};
 
     let rows = db
         .extension_action()
         .pending_for_drone(drone_id.as_i32(), 50)
         .await?;
 
-    for row in &rows {
-        let message = match row.kind.as_str() {
-            "push_policy" => {
-                let wire: PushNetworkPolicyWire = serde_json::from_value(row.payload.clone())?;
+    let count = rows.len();
+
+    for row in rows {
+        let kind = match row.kind.parse::<ExtensionActionKind>() {
+            Ok(k) => k,
+            Err(()) => {
+                tracing::warn!(
+                    kind = row.kind.as_str(),
+                    "Unknown extension action kind; skipping"
+                );
+                continue;
+            }
+        };
+
+        let message = match kind {
+            ExtensionActionKind::PushPolicy => {
+                let wire: PushNetworkPolicyWire = serde_json::from_value(row.payload)?;
                 MessageToDrone::PushNetworkPolicy(wire)
             }
-            "push_credential" => {
-                let wire: PushCredentialWire = serde_json::from_value(row.payload.clone())?;
+            ExtensionActionKind::PushCredential => {
+                let wire: PushCredentialWire = serde_json::from_value(row.payload)?;
                 MessageToDrone::PushCredential(wire)
             }
-            "revoke_credential" => {
-                let binding_id = row
-                    .payload
-                    .get("binding_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                MessageToDrone::RevokeCredential { binding_id }
+            ExtensionActionKind::RevokeCredential => {
+                #[derive(serde::Deserialize)]
+                struct RevokePayload {
+                    binding_id: String,
+                }
+                let p: RevokePayload = serde_json::from_value(row.payload)?;
+                MessageToDrone::RevokeCredential {
+                    binding_id: p.binding_id,
+                }
             }
-            "snapshot" => {
-                let wire: SnapshotCommandWire = serde_json::from_value(row.payload.clone())?;
+            ExtensionActionKind::Snapshot => {
+                let wire: SnapshotCommandWire = serde_json::from_value(row.payload)?;
                 MessageToDrone::Snapshot(wire)
-            }
-            other => {
-                tracing::warn!(kind = other, "Unknown extension action kind; skipping");
-                continue;
             }
         };
         socket.send(message)?;
     }
 
-    if !rows.is_empty() {
-        tracing::info!(
-            count = rows.len(),
-            "Sent pending extension actions to drone."
-        );
+    if count > 0 {
+        tracing::info!(count, "Sent pending extension actions to drone.");
     }
 
     Ok(())

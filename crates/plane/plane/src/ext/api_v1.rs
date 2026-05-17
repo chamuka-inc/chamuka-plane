@@ -24,7 +24,10 @@ use std::convert::Infallible;
 use crate::controller::core::Controller;
 use crate::database::sandbox::SandboxRow;
 
-use super::{error::ApiError, types::SandboxId};
+use super::{
+    error::ApiError,
+    types::{ExtensionActionKind, SandboxId},
+};
 
 const RUNTIME_IMAGES: &[(&str, &str)] = &[
     ("node22", "node:22-slim"),
@@ -457,7 +460,14 @@ pub async fn snapshot_sandbox(
     );
     let payload = serde_json::to_value(&wire).unwrap_or_default();
 
-    enqueue_extension_action(&controller, "snapshot", &row.backend_id, &row.id, &payload).await;
+    enqueue_extension_action(
+        &controller,
+        ExtensionActionKind::Snapshot,
+        &row.backend_id,
+        &row.id,
+        &payload,
+    )
+    .await;
 
     let snapshot = Snapshot {
         id: snapshot_id,
@@ -504,7 +514,7 @@ pub async fn update_network_policy(
 
     enqueue_extension_action(
         &controller,
-        "push_policy",
+        ExtensionActionKind::PushPolicy,
         &row.backend_id,
         &row.id,
         &policy_json,
@@ -555,7 +565,7 @@ pub async fn create_credential_binding(
 
     enqueue_extension_action(
         &controller,
-        "push_credential",
+        ExtensionActionKind::PushCredential,
         &row.backend_id,
         &sandbox_id,
         &payload,
@@ -600,7 +610,7 @@ pub async fn delete_credential_binding(
     let payload = serde_json::json!({"binding_id": cred_id});
     enqueue_extension_action(
         &controller,
-        "revoke_credential",
+        ExtensionActionKind::RevokeCredential,
         &row.backend_id,
         &sandbox_id,
         &payload,
@@ -710,7 +720,7 @@ pub async fn delete_secret(
 
 async fn enqueue_extension_action(
     controller: &Controller,
-    kind: &str,
+    kind: super::types::ExtensionActionKind,
     backend_id: &str,
     sandbox_id: &str,
     payload: &serde_json::Value,
@@ -736,12 +746,13 @@ async fn enqueue_extension_action(
     };
 
     let action_id = super::types::ExtensionActionId::new();
+    let kind_str = kind.to_string();
     if let Err(e) = controller
         .db
         .extension_action()
         .insert(
             action_id.as_ref(),
-            kind,
+            &kind_str,
             backend_id,
             sandbox_id,
             drone_id,
