@@ -19,7 +19,9 @@ pub fn router() -> Router {
         .route("/v1/fs/mkdir", post(handlers::fs::mkdir))
         .route("/v1/fs/rm", delete(handlers::fs::rm))
         .route("/v1/fs/list", get(handlers::fs::list))
+        .route("/v1/fs/move", post(handlers::fs::mv))
         .route("/v1/ports", get(handlers::ports::get))
+        .route("/v1/processes", get(handlers::processes::get))
         .with_state(registry)
 }
 

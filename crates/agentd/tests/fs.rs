@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use common::ext::agentd::MoveRequest;
 use reqwest::StatusCode;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -157,4 +158,66 @@ async fn fs_list_returns_entries() {
     assert!(names.contains(&"a.txt"));
     assert!(names.contains(&"b.txt"));
     assert!(names.contains(&"subdir"));
+}
+
+#[tokio::test]
+async fn fs_move_renames_file() {
+    let addr = agentd::serve_on_ephemeral().await;
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let src = dir.path().join("original.txt");
+    let dst = dir.path().join("renamed.txt");
+    std::fs::write(&src, "move me").expect("write src");
+
+    let url = format!("http://{addr}/v1/fs/move");
+    let client = reqwest::Client::new();
+    let req = MoveRequest {
+        source: src.to_str().unwrap().to_string(),
+        destination: dst.to_str().unwrap().to_string(),
+    };
+
+    let resp = client
+        .post(&url)
+        .json(&req)
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    assert!(!src.exists());
+    assert!(dst.exists());
+    assert_eq!(std::fs::read_to_string(&dst).unwrap(), "move me");
+}
+
+#[tokio::test]
+async fn fs_move_nonexistent_returns_not_found() {
+    let addr = agentd::serve_on_ephemeral().await;
+    let url = format!("http://{addr}/v1/fs/move");
+    let client = reqwest::Client::new();
+    let req = MoveRequest {
+        source: "/nonexistent/source".to_string(),
+        destination: "/tmp/doesnt-matter".to_string(),
+    };
+
+    let resp = client
+        .post(&url)
+        .json(&req)
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn fs_read_with_offset_and_length() {
+    let addr = agentd::serve_on_ephemeral().await;
+    let mut tmp = NamedTempFile::new().expect("create temp file");
+    write!(tmp, "0123456789abcdef").expect("write");
+    let path = tmp.path().to_str().unwrap();
+
+    let url = format!("http://{addr}/v1/fs/read?path={path}&offset=4&length=6");
+    let resp = reqwest::get(&url).await.expect("request failed");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.bytes().await.expect("body");
+    assert_eq!(body.as_ref(), b"456789");
 }

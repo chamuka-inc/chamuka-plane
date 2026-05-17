@@ -3,7 +3,7 @@ use axum::extract::{Multipart, Query};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use common::ext::agentd::{DirEntry, EntryType, ListResponse, MkdirRequest};
+use common::ext::agentd::{DirEntry, EntryType, ListResponse, MkdirRequest, MoveRequest};
 use serde::Deserialize;
 use std::os::unix::fs::MetadataExt;
 use tokio::fs;
@@ -222,4 +222,16 @@ pub async fn list(Query(q): Query<ListQuery>) -> impl IntoResponse {
         entries,
     };
     (StatusCode::OK, Json(resp)).into_response()
+}
+
+pub async fn mv(Json(req): Json<MoveRequest>) -> impl IntoResponse {
+    match fs::rename(&req.source, &req.destination).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("move error: {e}"),
+        )
+            .into_response(),
+    }
 }

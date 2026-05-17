@@ -123,6 +123,51 @@ pub struct ListResponse {
     pub entries: Vec<DirEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MoveRequest {
+    pub source: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ppid: Option<u32>,
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mem_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ProcessesResponse {
+    pub processes: Vec<ProcessInfo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecStatus {
+    Running,
+    Exited,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ExecStatusResponse {
+    pub cmd_id: String,
+    pub status: ExecStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StdinRequest {
+    pub data: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum FsEventKind {
@@ -164,18 +209,25 @@ pub struct PortsResponse {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum ComputerAction {
-    Click,
-    DoubleClick,
+    Screenshot,
+    CursorPosition,
+    MouseMove,
+    LeftClick,
     RightClick,
     MiddleClick,
-    Drag,
+    DoubleClick,
+    TripleClick,
+    LeftClickDrag,
+    LeftMouseDown,
+    LeftMouseUp,
+    Key,
     Type,
-    KeyPress,
+    HoldKey,
     Scroll,
-    Screenshot,
-    Move,
+    Wait,
+    Zoom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
