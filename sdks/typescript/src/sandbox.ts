@@ -80,7 +80,7 @@ export class Sandbox {
   readonly statusUrl: string;
   readonly secretToken: string | undefined;
 
-  constructor(connectResponse: ConnectResponse, baseUrl: string) {
+  protected constructor(connectResponse: ConnectResponse, baseUrl: string) {
     this.backendId = connectResponse.backend_id;
     this.url = connectResponse.url;
     this.statusUrl = connectResponse.status_url;

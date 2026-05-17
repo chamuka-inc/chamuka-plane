@@ -3,6 +3,7 @@ import type { SandboxClient, SnapshotOptions, StopOptions } from "./client.js";
 import type {
   Sandbox as SandboxType,
   SandboxConnection,
+  BackendStatus,
   SnapshotResponse,
   NetworkPolicy,
   CredentialBinding,
@@ -11,7 +12,7 @@ import type {
 
 export class ManagedSandbox extends Sandbox {
   readonly id: string;
-  readonly status: string;
+  readonly status: BackendStatus;
   readonly runtime: string;
   private readonly client: SandboxClient;
 
