@@ -23,7 +23,6 @@ use plane_common::{
 use serde_json::{Map, Value};
 use sqlx::{postgres::types::PgInterval, PgPool};
 use std::time::Duration;
-use valuable::Valuable;
 
 const TOKEN_LIFETIME_SECONDS: u64 = 3600;
 
@@ -337,7 +336,7 @@ async fn attempt_connect(
         bearer_token.as_ref(),
     )
     .await?;
-    tracing::info!(backend_id = backend_id.as_value(), "Created backend");
+    tracing::info!(?backend_id, "Created backend");
 
     let (token, secret_token) = if let Some(token) = bearer_token {
         (token, None)

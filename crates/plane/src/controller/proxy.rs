@@ -23,7 +23,6 @@ use std::{
     time::Duration,
 };
 use tokio::select;
-use valuable::Valuable;
 
 pub async fn handle_route_info_request(
     token: BearerToken,
@@ -239,10 +238,7 @@ pub async fn handle_message_from_proxy(
                 }
             };
 
-            tracing::info!(
-                response = response.as_value(),
-                "Sending cert manager response"
-            );
+            tracing::info!(?response, "Sending cert manager response");
 
             if let Err(err) = socket.send(MessageToProxy::CertManagerResponse(response)) {
                 tracing::error!(?err, "Error sending cert manager response to proxy.");

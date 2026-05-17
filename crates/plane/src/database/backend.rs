@@ -15,7 +15,6 @@ use plane_common::{
 };
 use sqlx::PgConnection;
 use std::{fmt::Debug, net::SocketAddr, str::FromStr};
-use valuable::Valuable;
 
 pub struct BackendDatabase<'a> {
     db: &'a PlaneDatabase,
@@ -193,7 +192,7 @@ impl<'a> BackendDatabase<'a> {
 
             let last_status = result.map(|r| r.last_status);
 
-            tracing::warn!(last_status, new_status=%new_status, backend=backend.as_value(), "Not updating backend status");
+            tracing::warn!(last_status, new_status=%new_status, ?backend, "Not updating backend status");
             return Ok(false);
         }
 

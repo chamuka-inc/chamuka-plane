@@ -10,7 +10,6 @@ use std::{
     sync::{Mutex, RwLock},
 };
 use tokio::sync::watch::Sender;
-use valuable::Valuable;
 
 const CACHE_SIZE: usize = 1_000;
 
@@ -96,11 +95,7 @@ impl RouteMap {
     }
 
     fn insert(&self, token: BearerToken, route_info: Option<RouteInfo>) {
-        tracing::debug!(
-            token = token.as_value(),
-            ?route_info,
-            "Inserting route info"
-        );
+        tracing::debug!(?token, ?route_info, "Inserting route info");
         self.routes
             .lock()
             .expect("Routes lock was poisoned.")
@@ -132,11 +127,7 @@ impl RouteMap {
             }
         }
         if count > 0 {
-            tracing::info!(
-                count,
-                backend = backend.as_value(),
-                "Removed routes for terminated backend."
-            );
+            tracing::info!(count, ?backend, "Removed routes for terminated backend.");
         }
     }
 }

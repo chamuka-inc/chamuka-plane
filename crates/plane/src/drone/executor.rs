@@ -14,7 +14,6 @@ use std::{
     net::IpAddr,
     sync::{Arc, Mutex},
 };
-use valuable::Valuable;
 
 pub struct Executor {
     pub runtime: Arc<Box<dyn Runtime>>,
@@ -43,7 +42,7 @@ impl Executor {
                 while let Some(event) = events.next().await {
                     if let Some((_, manager)) = backends.remove(&event.backend_id) {
                         tracing::debug!(
-                            backend_id = event.backend_id.as_value(),
+                            backend_id = ?event.backend_id,
                             exit_code = event.exit_code.unwrap_or(-1),
                             "Backend terminated.",
                         );
@@ -198,7 +197,7 @@ impl Executor {
                     key.clone(),
                     static_token.clone(),
                 );
-                tracing::debug!(backend_id = backend_id.as_value(), "Inserting backend.");
+                tracing::debug!(?backend_id, "Inserting backend.");
                 self.backends.insert(backend_id.clone(), manager);
             }
             BackendAction::Terminate { kind, reason } => {
@@ -208,7 +207,7 @@ impl Executor {
                     // We need to be careful here not to hold the lock when we call terminate, or
                     // else we can deadlock.
                     let Some(manager) = self.backends.get(backend_id) else {
-                        tracing::warn!(backend_id = backend_id.as_value(), "Backend not found when handling terminate action (assumed terminated).");
+                        tracing::warn!(?backend_id, "Backend not found when handling terminate action (assumed terminated).");
 
                         // Terminate will only return an error on a docker error, not if the backend is already terminated.
                         self.runtime.terminate(backend_id, true).await?;

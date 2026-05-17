@@ -37,16 +37,7 @@ pub trait Name:
 #[macro_export]
 macro_rules! entity_name {
     ($name:ident, $prefix:expr) => {
-        #[derive(
-            Debug,
-            Clone,
-            PartialEq,
-            Eq,
-            Hash,
-            serde::Serialize,
-            serde::Deserialize,
-            valuable::Valuable,
-        )]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
         pub struct $name(String);
 
         impl $crate::names::Name for $name {

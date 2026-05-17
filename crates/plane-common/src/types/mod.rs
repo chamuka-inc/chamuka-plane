@@ -33,7 +33,7 @@ impl Display for NodeId {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash, valuable::Valuable)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct ClusterName(String);
 
 impl ClusterName {
@@ -70,9 +70,7 @@ impl FromStr for ClusterName {
     }
 }
 
-#[derive(
-    Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, valuable::Valuable,
-)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DronePoolName(String);
 
 impl DronePoolName {
@@ -111,7 +109,7 @@ impl Deref for DronePoolName {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, Debug, Default, valuable::Valuable, PartialEq)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, Default, PartialEq)]
 pub enum PullPolicy {
     #[default]
     IfNotPresent,
@@ -125,16 +123,6 @@ pub enum PullPolicy {
 pub struct DockerCpuPeriod(
     #[serde_as(as = "serde_with::DurationMicroSeconds<u64>")] std::time::Duration,
 );
-
-impl valuable::Valuable for DockerCpuPeriod {
-    fn as_value(&self) -> valuable::Value<'_> {
-        valuable::Value::U128(self.0.as_micros())
-    }
-
-    fn visit(&self, visit: &mut dyn valuable::Visit) {
-        visit.visit_value(self.as_value())
-    }
-}
 
 impl Default for DockerCpuPeriod {
     fn default() -> Self {
@@ -155,18 +143,8 @@ pub struct DockerCpuTimeLimit(
     #[serde_as(as = "serde_with::DurationSeconds<u64>")] pub std::time::Duration,
 );
 
-impl valuable::Valuable for DockerCpuTimeLimit {
-    fn as_value(&self) -> valuable::Value<'_> {
-        valuable::Value::U64(self.0.as_secs())
-    }
-
-    fn visit(&self, visit: &mut dyn valuable::Visit) {
-        visit.visit_value(self.as_value())
-    }
-}
-
 #[serde_with::serde_as]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, valuable::Valuable)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct ResourceLimits {
     /// Period of cpu time (de/serializes as microseconds)
     pub cpu_period: Option<DockerCpuPeriod>,
@@ -194,7 +172,7 @@ impl ResourceLimits {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, valuable::Valuable, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum DockerRegistryAuth {
     UsernamePassword { username: String, password: String },
@@ -213,14 +191,14 @@ impl From<DockerRegistryAuth> for DockerCredentials {
 }
 
 // A spawn requestor can provide a mount parameter, which can be a string or a boolean.
-#[derive(Debug, Clone, Serialize, Deserialize, valuable::Valuable, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum Mount {
     Bool(bool),
     Path(PathBuf),
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, valuable::Valuable, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct DockerExecutorConfig {
     pub image: String,
     pub pull_policy: Option<PullPolicy>,
@@ -281,9 +259,7 @@ pub struct SpawnConfig {
     pub subdomain: Option<Subdomain>,
 }
 
-#[derive(
-    Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq, Hash, valuable::Valuable,
-)]
+#[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq, Hash)]
 pub struct KeyConfig {
     /// If provided, and a running backend was created with the same key,
     /// namespace, and tag, we will connect to that backend instead
@@ -330,7 +306,7 @@ pub struct ConnectRequest {
     pub auth: Map<String, Value>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash, valuable::Valuable)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct BearerToken(String);
 
 const STATIC_TOKEN_PREFIX: &str = "s.";
@@ -357,7 +333,7 @@ impl Display for BearerToken {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, valuable::Valuable)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct SecretToken(String);
 
 impl From<String> for SecretToken {
@@ -504,7 +480,7 @@ pub struct ClusterState {
 #[error("Invalid subdomain: {0}")]
 pub struct InvalidSubdomain(String);
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash, valuable::Valuable)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct Subdomain(String);
 
 impl std::str::FromStr for Subdomain {

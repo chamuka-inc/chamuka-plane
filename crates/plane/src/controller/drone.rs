@@ -1,3 +1,10 @@
+use crate::database::{
+    backend_key::{
+        KEY_LEASE_HARD_TERMINATE_AFTER, KEY_LEASE_RENEW_AFTER, KEY_LEASE_SOFT_TERMINATE_AFTER,
+    },
+    subscribe::Subscription,
+    PlaneDatabase,
+};
 use axum::{
     extract::{ws::WebSocket, ConnectInfo, Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
@@ -19,15 +26,6 @@ use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
     time::Duration,
-};
-use valuable::Valuable;
-
-use crate::database::{
-    backend_key::{
-        KEY_LEASE_HARD_TERMINATE_AFTER, KEY_LEASE_RENEW_AFTER, KEY_LEASE_SOFT_TERMINATE_AFTER,
-    },
-    subscribe::Subscription,
-    PlaneDatabase,
 };
 
 use super::{core::Controller, error::IntoApiError};
@@ -68,7 +66,7 @@ pub async fn handle_message_from_drone(
                 .await?;
         }
         MessageFromDrone::BackendEvent(backend_event) => {
-            tracing::debug!(event = backend_event.as_value(), "Received backend event");
+            tracing::debug!(event = ?backend_event, "Received backend event");
 
             controller
                 .db
@@ -133,7 +131,7 @@ pub async fn sweep_loop(db: PlaneDatabase, drone_id: NodeId) {
 
         for candidate in candidates {
             tracing::info!(
-                backend_id = candidate.backend_id.as_value(),
+                backend_id = ?candidate.backend_id,
                 drone_id = drone_id.as_i32(),
                 expiration_time = ?candidate.expiration_time,
                 allowed_idle_seconds = ?candidate.allowed_idle_seconds,

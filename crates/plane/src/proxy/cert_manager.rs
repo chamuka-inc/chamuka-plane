@@ -24,7 +24,6 @@ use tokio::sync::{
     broadcast,
     watch::{Receiver, Sender},
 };
-use valuable::Valuable;
 
 const DNS_01: &str = "dns-01";
 
@@ -248,8 +247,8 @@ async fn refresh_loop_step(
         if time_until_renew > chrono::Duration::zero() {
             tracing::info!(
                 common_name = current_cert.common_name,
-                validity_end = current_cert.validity_end.as_value(),
-                renewal_time = renewal_time.as_value(),
+                validity_end = ?current_cert.validity_end,
+                renewal_time = ?renewal_time,
                 days_until_renew = time_until_renew.num_days(),
                 "Obtained certificate.",
             );
@@ -410,10 +409,7 @@ async fn get_certificate(
                 return Err(anyhow!("Cert manager error."));
             }
         };
-        tracing::info!(
-            response = response.as_value(),
-            "Received response from cert manager."
-        );
+        tracing::info!(?response, "Received response from cert manager.");
 
         match response {
             CertManagerResponse::SetTxtRecordResponse { accepted: true } => (),

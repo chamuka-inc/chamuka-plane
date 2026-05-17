@@ -36,7 +36,6 @@ use std::{
 };
 use tokio::task::JoinHandle;
 use url::Url;
-use valuable::Valuable;
 
 mod backend_manager;
 pub mod command;
@@ -178,16 +177,12 @@ pub async fn drone_loop(
                 action,
                 ..
             }) => {
-                tracing::info!(
-                    backend_id = backend_id.as_value(),
-                    action = action.as_value(),
-                    "Received action."
-                );
+                tracing::info!(?backend_id, ?action, "Received action.");
 
                 if let BackendAction::Spawn { key, .. } = &action {
                     if key.deadlines.soft_terminate_at.0 < Utc::now() {
                         tracing::warn!(
-                            backend_id = backend_id.as_value(),
+                            ?backend_id,
                             "Received spawn request with deadline in the past. Ignoring."
                         );
                     }
@@ -199,7 +194,7 @@ pub async fn drone_loop(
 
                     if !result {
                         tracing::warn!(
-                            backend = backend_id.as_value(),
+                            ?backend_id,
                             "Key already registered for backend. Ignoring spawn request."
                         );
                         return;
@@ -222,11 +217,7 @@ pub async fn drone_loop(
             }
             MessageToDrone::RenewKeyResponse(renew_key_response) => {
                 let RenewKeyResponse { backend, deadlines } = renew_key_response;
-                tracing::debug!(
-                    backend_id = backend.as_value(),
-                    deadlines = deadlines.as_value(),
-                    "Received key renewal response."
-                );
+                tracing::debug!(?backend, ?deadlines, "Received key renewal response.");
 
                 if let Some(deadlines) = deadlines {
                     key_manager

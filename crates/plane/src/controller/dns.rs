@@ -8,7 +8,6 @@ use plane_common::{
     typed_socket::server::new_server,
 };
 use std::net::{IpAddr, SocketAddr};
-use valuable::Valuable;
 
 pub async fn dns_socket_inner(
     ws: WebSocket,
@@ -23,7 +22,7 @@ pub async fn dns_socket_inner(
     loop {
         let message_from_dns_result = socket.recv().await;
         tracing::info!(
-            v = message_from_dns_result.as_value(),
+            v = ?message_from_dns_result,
             "Handling message from DNS..."
         );
         match message_from_dns_result {

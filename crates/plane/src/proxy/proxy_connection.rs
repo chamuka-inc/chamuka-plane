@@ -8,7 +8,6 @@ use plane_common::{
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
-use valuable::Valuable;
 
 pub struct ProxyConnection {
     handle: JoinHandle<()>,
@@ -110,7 +109,7 @@ impl ProxyConnection {
                                     }
                                     MessageToProxy::CertManagerResponse(response) => {
                                         tracing::info!(
-                                            response = response.as_value(),
+                                            ?response,
                                             "Received cert manager response"
                                         );
                                         cert_manager.receive(response);

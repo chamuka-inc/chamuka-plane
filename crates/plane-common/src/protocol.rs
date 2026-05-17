@@ -40,7 +40,7 @@ impl Display for ApiError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, valuable::Valuable, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct KeyDeadlines {
     /// When the key should be renewed.
     pub renew_at: LoggableTime,
@@ -52,7 +52,7 @@ pub struct KeyDeadlines {
     pub hard_terminate_at: LoggableTime,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, valuable::Valuable, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AcquiredKey {
     /// Details of the key itself.
     pub key: KeyConfig,
@@ -81,40 +81,7 @@ pub enum BackendAction {
     },
 }
 
-impl valuable::Valuable for BackendAction {
-    fn as_value(&self) -> valuable::Value<'_> {
-        valuable::Value::Mappable(self)
-    }
-
-    fn visit(&self, visit: &mut dyn valuable::Visit) {
-        match self {
-            BackendAction::Spawn {
-                key, static_token, ..
-            } => {
-                visit.visit_entry(valuable::Value::String("key"), key.as_value());
-                visit.visit_entry(
-                    valuable::Value::String("static_token"),
-                    static_token.as_value(),
-                );
-            }
-            BackendAction::Terminate { kind, reason } => {
-                visit.visit_entry(valuable::Value::String("kind"), kind.as_value());
-                visit.visit_entry(valuable::Value::String("reason"), reason.as_value());
-            }
-        }
-    }
-}
-
-impl valuable::Mappable for BackendAction {
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            BackendAction::Spawn { .. } => (2, Some(2)),
-            BackendAction::Terminate { .. } => (2, Some(2)),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, valuable::Valuable)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BackendStateMessage {
     pub event_id: BackendEventId,
     pub backend_id: BackendName,
@@ -125,7 +92,7 @@ pub struct BackendStateMessage {
     pub timestamp: LoggableTime,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, valuable::Valuable)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct BackendEventId(i64);
 
 impl From<i64> for BackendEventId {
@@ -293,7 +260,7 @@ impl ChannelMessage for CertManagerRequest {
     type Reply = CertManagerResponse;
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, valuable::Valuable)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum CertManagerResponse {
     /// Acknowledge a lease request and indicate whether it was accepted.
     CertLeaseResponse { accepted: bool },
@@ -363,7 +330,7 @@ impl ChannelMessage for MessageToProxy {
     type Reply = MessageFromProxy;
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, valuable::Valuable)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum MessageFromDns {
     TxtRecordRequest { cluster: ClusterName },
 }
