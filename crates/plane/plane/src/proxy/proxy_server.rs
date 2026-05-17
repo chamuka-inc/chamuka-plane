@@ -5,7 +5,12 @@ use super::{
     subdomain_port_map::SubdomainPortMap,
 };
 use bytes::Bytes;
-use plane_common::{names::Name, protocol::RouteInfo, types::ClusterName, version::SERVER_NAME};
+use plane_common::{
+    names::{BackendName, Name},
+    protocol::RouteInfo,
+    types::ClusterName,
+    version::SERVER_NAME,
+};
 use plane_dynamic_proxy::{
     body::{simple_empty_body, SimpleBody},
     hyper::{
@@ -19,6 +24,7 @@ use plane_dynamic_proxy::{
 };
 use std::{
     future::{ready, Future},
+    net::SocketAddr,
     sync::atomic::{AtomicBool, Ordering},
 };
 use std::{pin::Pin, sync::Arc};
@@ -107,55 +113,25 @@ impl Service<Request<Incoming>> for ProxyState {
 
         let mut request = MutableRequest::from_request(request);
 
-        // Check subdomain-port routing before token-based routing.
-        let host = request
-            .parts
-            .headers
-            .get(header::HOST)
-            .and_then(|h| h.to_str().ok())
-            .map(|h| h.to_string());
-
-        if let Some(ref host_str) = host {
-            if let Ok(Some(subdomain)) = subdomain_from_host(host_str, &self.inner.cluster) {
-                if let Some(sp_request) = parse_subdomain_port(subdomain) {
-                    if let Some(addr) = self
-                        .inner
-                        .subdomain_port_map
-                        .lookup(&sp_request.sandbox_id_prefix, sp_request.port)
-                    {
-                        let inner = self.inner.clone();
-                        return Box::pin(async move {
-                            request.set_upstream_address(addr);
-                            let req = request.into_request_with_simple_body();
-                            let result = inner.proxy_client.request(req).await;
-                            match result {
-                                Ok((mut res, upgrade_handler)) => {
-                                    if let Some(upgrade_handler) = upgrade_handler {
-                                        tokio::spawn(async move {
-                                            let _ = upgrade_handler.run().await;
-                                        });
-                                    }
-                                    apply_general_headers(&mut res);
-                                    Ok(res)
-                                }
-                                Err(e) => {
-                                    tracing::error!(?e, "Error proxying subdomain-port request");
-                                    status_code_to_response(StatusCode::BAD_GATEWAY)
-                                }
-                            }
-                        });
-                    }
-                }
-            }
+        // Subdomain-port routing must be checked before token extraction
+        // because token extraction mutates the URI path.
+        if let Some(addr) = resolve_subdomain_port(
+            &request,
+            &self.inner.cluster,
+            &self.inner.subdomain_port_map,
+        ) {
+            let inner = self.inner.clone();
+            return Box::pin(async move {
+                request.set_upstream_address(addr);
+                forward_and_respond(request, &inner.proxy_client, None).await
+            });
         }
 
-        // Token-based routing: extract the bearer token from the request
         let mut uri_parts = request.parts.uri.clone().into_parts();
         let original_path = request.parts.uri.path().to_string();
         let bearer_token = get_and_maybe_remove_bearer_token(&mut uri_parts);
 
         let Some(bearer_token) = bearer_token else {
-            // This should have already been handled by the root redirect above.
             return Box::pin(ready(status_code_to_response(StatusCode::BAD_REQUEST)));
         };
 
@@ -167,7 +143,6 @@ impl Service<Request<Incoming>> for ProxyState {
         let inner = self.inner.clone();
 
         Box::pin(async move {
-            // look up the route info for the bearer token
             let route_info = inner.route_map.lookup(&bearer_token).await;
 
             let Some(route_info) = route_info else {
@@ -178,39 +153,9 @@ impl Service<Request<Incoming>> for ProxyState {
                 return status_code_to_response(status_code);
             }
 
-            let request = request.into_request_with_simple_body();
+            let monitor_ctx = Some((&inner.monitor, &route_info.backend_id));
+            let mut res = forward_and_respond(request, &inner.proxy_client, monitor_ctx).await?;
 
-            let result = inner.proxy_client.request(request).await;
-
-            let (mut res, upgrade_handler) = match result {
-                Ok((res, upgrade_handler)) => (res, upgrade_handler),
-                Err(e) => {
-                    tracing::error!(?e, "Error proxying request");
-                    return status_code_to_response(StatusCode::INTERNAL_SERVER_ERROR);
-                }
-            };
-
-            if let Some(upgrade_handler) = upgrade_handler {
-                let monitor = inner.monitor.monitor();
-                monitor
-                    .lock()
-                    .expect("Monitor lock poisoned")
-                    .inc_connection(&route_info.backend_id);
-                let backend_id = route_info.backend_id.clone();
-                tokio::spawn(async move {
-                    // ignore noisy errors caused by IO issues (dropped connections, etc.)
-                    let _ = upgrade_handler.run().await;
-
-                    monitor
-                        .lock()
-                        .expect("Monitor lock poisoned")
-                        .dec_connection(&backend_id);
-                });
-            } else {
-                inner.monitor.touch_backend(&route_info.backend_id);
-            }
-
-            apply_general_headers(&mut res);
             res.headers_mut().insert(
                 "x-plane-backend-id",
                 HeaderValue::from_str(&route_info.backend_id.to_string())
@@ -220,6 +165,59 @@ impl Service<Request<Incoming>> for ProxyState {
             Ok(res)
         })
     }
+}
+
+fn resolve_subdomain_port(
+    request: &MutableRequest<Incoming>,
+    cluster: &ClusterName,
+    map: &SubdomainPortMap,
+) -> Option<SocketAddr> {
+    let host = request.parts.headers.get(header::HOST)?.to_str().ok()?;
+    let subdomain = subdomain_from_host(host, cluster).ok()??;
+    let (prefix, port) = parse_subdomain_port(subdomain)?;
+    map.lookup(prefix, port)
+}
+
+async fn forward_and_respond(
+    request: MutableRequest<Incoming>,
+    proxy_client: &ProxyClient,
+    monitor: Option<(&ConnectionMonitorHandle, &BackendName)>,
+) -> Result<Response<SimpleBody>, Box<dyn std::error::Error + Send + Sync>> {
+    let request = request.into_request_with_simple_body();
+    let (mut res, upgrade_handler) = match proxy_client.request(request).await {
+        Ok(pair) => pair,
+        Err(e) => {
+            tracing::error!(?e, "Error proxying request");
+            return status_code_to_response(StatusCode::BAD_GATEWAY);
+        }
+    };
+
+    if let Some(upgrade_handler) = upgrade_handler {
+        if let Some((monitor_handle, backend_id)) = monitor {
+            let monitor = monitor_handle.monitor();
+            monitor
+                .lock()
+                .expect("Monitor lock poisoned")
+                .inc_connection(backend_id);
+            let backend_id = backend_id.clone();
+            tokio::spawn(async move {
+                let _ = upgrade_handler.run().await;
+                monitor
+                    .lock()
+                    .expect("Monitor lock poisoned")
+                    .dec_connection(&backend_id);
+            });
+        } else {
+            tokio::spawn(async move {
+                let _ = upgrade_handler.run().await;
+            });
+        }
+    } else if let Some((monitor_handle, backend_id)) = monitor {
+        monitor_handle.touch_backend(backend_id);
+    }
+
+    apply_general_headers(&mut res);
+    Ok(res)
 }
 
 fn prepare_request<T>(

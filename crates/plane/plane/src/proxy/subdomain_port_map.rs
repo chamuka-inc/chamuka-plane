@@ -1,22 +1,16 @@
 use plane_common::protocol::{SubdomainPortRouteRemove, SubdomainPortRouteUpdate};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Mutex;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SubdomainPortKey {
-    pub sandbox_id_prefix: String,
-    pub port: u16,
-}
+use std::sync::RwLock;
 
 #[derive(Debug, Clone)]
-pub struct SubdomainPortEntry {
-    pub address: SocketAddr,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+struct SubdomainPortEntry {
+    address: SocketAddr,
+    expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct SubdomainPortMap {
-    routes: Mutex<HashMap<SubdomainPortKey, SubdomainPortEntry>>,
+    routes: RwLock<HashMap<String, HashMap<u16, SubdomainPortEntry>>>,
 }
 
 impl Default for SubdomainPortMap {
@@ -28,44 +22,40 @@ impl Default for SubdomainPortMap {
 impl SubdomainPortMap {
     pub fn new() -> Self {
         Self {
-            routes: Mutex::new(HashMap::new()),
+            routes: RwLock::new(HashMap::new()),
         }
     }
 
     pub fn update(&self, msg: SubdomainPortRouteUpdate) {
-        let key = SubdomainPortKey {
-            sandbox_id_prefix: msg.sandbox_id_prefix,
-            port: msg.port,
-        };
-        let addr = msg.address.0;
         let entry = SubdomainPortEntry {
-            address: addr,
+            address: msg.address.0,
             expires_at: msg.expires_at,
         };
-        self.routes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(key, entry);
+        let mut routes = self.routes.write().expect("SubdomainPortMap lock poisoned");
+        routes
+            .entry(msg.sandbox_id_prefix)
+            .or_default()
+            .insert(msg.port, entry);
+
+        routes.retain(|_, ports| {
+            ports.retain(|_, e| e.expires_at >= chrono::Utc::now());
+            !ports.is_empty()
+        });
     }
 
     pub fn remove(&self, msg: SubdomainPortRouteRemove) {
-        let key = SubdomainPortKey {
-            sandbox_id_prefix: msg.sandbox_id_prefix,
-            port: msg.port,
-        };
-        self.routes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&key);
+        let mut routes = self.routes.write().expect("SubdomainPortMap lock poisoned");
+        if let Some(ports) = routes.get_mut(&msg.sandbox_id_prefix) {
+            ports.remove(&msg.port);
+            if ports.is_empty() {
+                routes.remove(&msg.sandbox_id_prefix);
+            }
+        }
     }
 
     pub fn lookup(&self, sandbox_id_prefix: &str, port: u16) -> Option<SocketAddr> {
-        let key = SubdomainPortKey {
-            sandbox_id_prefix: sandbox_id_prefix.to_string(),
-            port,
-        };
-        let routes = self.routes.lock().unwrap_or_else(|e| e.into_inner());
-        let entry = routes.get(&key)?;
+        let routes = self.routes.read().expect("SubdomainPortMap lock poisoned");
+        let entry = routes.get(sandbox_id_prefix)?.get(&port)?;
         if entry.expires_at < chrono::Utc::now() {
             return None;
         }
@@ -73,7 +63,12 @@ impl SubdomainPortMap {
     }
 
     pub fn route_count(&self) -> usize {
-        self.routes.lock().unwrap_or_else(|e| e.into_inner()).len()
+        self.routes
+            .read()
+            .expect("SubdomainPortMap lock poisoned")
+            .values()
+            .map(|ports| ports.len())
+            .sum()
     }
 }
 
@@ -147,6 +142,27 @@ mod tests {
         });
 
         assert_eq!(map.lookup("sb-old", 443), None);
+    }
+
+    #[test]
+    fn expired_entries_evicted_on_update() {
+        let map = SubdomainPortMap::new();
+        let addr = SocketAddr::from_str("10.0.0.3:5000").unwrap();
+        map.update(SubdomainPortRouteUpdate {
+            sandbox_id_prefix: "sb-stale".to_string(),
+            port: 443,
+            address: BackendAddr(addr),
+            expires_at: past_time(),
+        });
+
+        map.update(SubdomainPortRouteUpdate {
+            sandbox_id_prefix: "sb-fresh".to_string(),
+            port: 80,
+            address: BackendAddr(addr),
+            expires_at: future_time(),
+        });
+
+        assert_eq!(map.route_count(), 1, "stale entry should have been evicted");
     }
 
     #[test]

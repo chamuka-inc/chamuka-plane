@@ -2,22 +2,13 @@ use plane_common::types::{BearerToken, ClusterName};
 use plane_dynamic_proxy::hyper::http::uri::{self, PathAndQuery};
 use std::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubdomainPortRequest {
-    pub sandbox_id_prefix: String,
-    pub port: u16,
-}
-
-pub fn parse_subdomain_port(subdomain: &str) -> Option<SubdomainPortRequest> {
+pub fn parse_subdomain_port(subdomain: &str) -> Option<(&str, u16)> {
     let (prefix, port_str) = subdomain.rsplit_once('-')?;
     if prefix.is_empty() {
         return None;
     }
     let port: u16 = port_str.parse().ok()?;
-    Some(SubdomainPortRequest {
-        sandbox_id_prefix: prefix.to_string(),
-        port,
-    })
+    Some((prefix, port))
 }
 
 // If a cluster name does not specify a port, :443 is implied.
@@ -223,25 +214,14 @@ mod tests {
 
     #[test]
     fn parse_subdomain_port_valid() {
-        let result = parse_subdomain_port("sb-abc-3000");
-        assert_eq!(
-            result,
-            Some(SubdomainPortRequest {
-                sandbox_id_prefix: "sb-abc".to_string(),
-                port: 3000,
-            })
-        );
+        assert_eq!(parse_subdomain_port("sb-abc-3000"), Some(("sb-abc", 3000)));
     }
 
     #[test]
     fn parse_subdomain_port_multi_dash_prefix() {
-        let result = parse_subdomain_port("sb-my-sandbox-8080");
         assert_eq!(
-            result,
-            Some(SubdomainPortRequest {
-                sandbox_id_prefix: "sb-my-sandbox".to_string(),
-                port: 8080,
-            })
+            parse_subdomain_port("sb-my-sandbox-8080"),
+            Some(("sb-my-sandbox", 8080))
         );
     }
 
