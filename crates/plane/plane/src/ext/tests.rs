@@ -399,3 +399,49 @@ fn extension_action_id_has_prefix() {
         id.0
     );
 }
+
+#[test]
+fn build_push_network_policy_wire() {
+    use super::dispatch::build_push_network_policy;
+    use chamuka_common::ext::network::{NetworkPolicy, NetworkPolicyMode};
+
+    let policy = NetworkPolicy {
+        mode: NetworkPolicyMode::AllowAll,
+        rules: None,
+    };
+    let wire = build_push_network_policy("bk-test123", &policy, 5);
+    assert_eq!(wire.backend_id, "bk-test123");
+    assert_eq!(wire.version, 5);
+    let mode: String =
+        serde_json::from_value(wire.policy.get("mode").expect("mode").clone()).expect("str");
+    assert_eq!(mode, "allow-all");
+}
+
+#[test]
+fn build_push_credential_wire() {
+    use super::dispatch::build_push_credential;
+
+    let wire = build_push_credential(
+        "bk-test123",
+        "cred-001",
+        "api.openai.com",
+        "Authorization",
+        "Bearer {value}",
+        "sk-secret",
+    );
+    assert_eq!(wire.backend_id, "bk-test123");
+    assert_eq!(wire.binding.id, "cred-001");
+    assert_eq!(wire.binding.destination, "api.openai.com");
+    assert_eq!(wire.binding.value, "sk-secret");
+}
+
+#[test]
+fn build_snapshot_command_wire() {
+    use super::dispatch::build_snapshot_command;
+
+    let wire = build_snapshot_command("xak-001", "bk-test123", Some(30), Some("my-snap"));
+    assert_eq!(wire.action_id, "xak-001");
+    assert_eq!(wire.backend_id, "bk-test123");
+    assert_eq!(wire.ttl_days, Some(30));
+    assert_eq!(wire.name.as_deref(), Some("my-snap"));
+}

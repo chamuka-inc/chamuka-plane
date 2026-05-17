@@ -126,6 +126,17 @@ impl<'a> SandboxDatabase<'a> {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn get_drone_id_for_backend(
+        &self,
+        backend_id: &str,
+    ) -> Result<Option<i32>, sqlx::Error> {
+        let row: Option<(i32,)> = sqlx::query_as(r#"SELECT drone_id FROM backend WHERE id = $1"#)
+            .bind(backend_id)
+            .fetch_optional(self.pool)
+            .await?;
+        Ok(row.map(|r| r.0))
+    }
+
     pub async fn list_by_tenant(
         &self,
         tenant: &str,

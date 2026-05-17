@@ -424,6 +424,7 @@ pub async fn snapshot_sandbox(
     let row = get_sandbox_row(&controller, &id, &tenant).await?;
 
     let snapshot_id = format!("snap-{}", plane_common::util::random_string());
+    let action_id = super::types::ExtensionActionId::new();
     let now = chrono::Utc::now();
     let ttl_days = request.ttl_days.unwrap_or(7);
     let expires_at = now + chrono::Duration::days(i64::from(ttl_days));
@@ -447,6 +448,16 @@ pub async fn snapshot_sandbox(
             tracing::error!(error = ?e, "Failed to insert snapshot");
             ApiError::internal("Failed to create snapshot")
         })?;
+
+    let wire = super::dispatch::build_snapshot_command(
+        action_id.as_ref(),
+        &row.backend_id,
+        request.ttl_days,
+        request.name.as_deref(),
+    );
+    let payload = serde_json::to_value(&wire).unwrap_or_default();
+
+    enqueue_extension_action(&controller, "snapshot", &row.backend_id, &row.id, &payload).await;
 
     let snapshot = Snapshot {
         id: snapshot_id,
@@ -474,6 +485,7 @@ pub async fn update_network_policy(
     Json(policy): Json<NetworkPolicy>,
 ) -> Result<Json<NetworkPolicy>, ApiError> {
     let tenant = extract_tenant(&headers)?;
+    let row = get_sandbox_row(&controller, &id, &tenant).await?;
 
     let policy_json = serde_json::to_value(&policy).unwrap_or_default();
     let updated = controller
@@ -490,6 +502,15 @@ pub async fn update_network_policy(
         return Err(ApiError::not_found("Sandbox not found"));
     }
 
+    enqueue_extension_action(
+        &controller,
+        "push_policy",
+        &row.backend_id,
+        &row.id,
+        &policy_json,
+    )
+    .await;
+
     Ok(Json(policy))
 }
 
@@ -500,7 +521,7 @@ pub async fn create_credential_binding(
     Json(request): Json<CreateCredentialBindingRequest>,
 ) -> Result<(StatusCode, Json<CredentialBinding>), ApiError> {
     let tenant = extract_tenant(&headers)?;
-    let _row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
+    let row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
 
     let cred_id = format!("cred-{}", plane_common::util::random_string());
     let now = chrono::Utc::now();
@@ -522,6 +543,25 @@ pub async fn create_credential_binding(
             ApiError::internal("Failed to create credential binding")
         })?;
 
+    let payload = serde_json::to_value(&super::dispatch::build_push_credential(
+        &row.backend_id,
+        &cred_id,
+        &request.destination,
+        &request.header_name,
+        request.header_format.as_deref().unwrap_or("{value}"),
+        "", // secret value resolved at dispatch time
+    ))
+    .unwrap_or_default();
+
+    enqueue_extension_action(
+        &controller,
+        "push_credential",
+        &row.backend_id,
+        &sandbox_id,
+        &payload,
+    )
+    .await;
+
     let binding = CredentialBinding {
         id: cred_id,
         sandbox_id,
@@ -541,7 +581,7 @@ pub async fn delete_credential_binding(
     Path((sandbox_id, cred_id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
     let tenant = extract_tenant(&headers)?;
-    let _row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
+    let row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
 
     let deleted = controller
         .db
@@ -553,11 +593,21 @@ pub async fn delete_credential_binding(
             ApiError::internal("Failed to delete credential binding")
         })?;
 
-    if deleted {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(ApiError::not_found("Credential binding not found"))
+    if !deleted {
+        return Err(ApiError::not_found("Credential binding not found"));
     }
+
+    let payload = serde_json::json!({"binding_id": cred_id});
+    enqueue_extension_action(
+        &controller,
+        "revoke_credential",
+        &row.backend_id,
+        &sandbox_id,
+        &payload,
+    )
+    .await;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn get_snapshot(
@@ -655,6 +705,51 @@ pub async fn delete_secret(
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::not_found("Secret not found"))
+    }
+}
+
+async fn enqueue_extension_action(
+    controller: &Controller,
+    kind: &str,
+    backend_id: &str,
+    sandbox_id: &str,
+    payload: &serde_json::Value,
+) {
+    let drone_id = match controller
+        .db
+        .sandbox()
+        .get_drone_id_for_backend(backend_id)
+        .await
+    {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            tracing::warn!(
+                backend_id,
+                "No drone found for backend; skipping extension action"
+            );
+            return;
+        }
+        Err(e) => {
+            tracing::error!(error = ?e, "Failed to look up drone for extension action");
+            return;
+        }
+    };
+
+    let action_id = super::types::ExtensionActionId::new();
+    if let Err(e) = controller
+        .db
+        .extension_action()
+        .insert(
+            action_id.as_ref(),
+            kind,
+            backend_id,
+            sandbox_id,
+            drone_id,
+            payload,
+        )
+        .await
+    {
+        tracing::error!(error = ?e, "Failed to enqueue extension action");
     }
 }
 
