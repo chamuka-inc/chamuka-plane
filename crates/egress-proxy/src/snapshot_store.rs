@@ -39,6 +39,11 @@ impl SnapshotStore {
         let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         map.len()
     }
+
+    pub fn all_snapshots(&self) -> Vec<XdsSnapshot> {
+        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        map.values().cloned().collect()
+    }
 }
 
 #[cfg(test)]

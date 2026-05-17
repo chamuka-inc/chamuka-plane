@@ -16,6 +16,8 @@ prost.workspace = true
 prost-types.workspace = true
 tracing.workspace = true
 envoy-types.workspace = true
+uuid.workspace = true
+tokio-stream = "0.1"
 
 [dev-dependencies]
 common = { path = "../common", features = ["test-stubs"] }
