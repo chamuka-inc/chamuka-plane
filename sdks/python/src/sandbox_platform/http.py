@@ -12,6 +12,11 @@ _MAX_RETRIES = 3
 _BASE_DELAY_S = 1.0
 
 
+def _raise_for_status(response: httpx.Response) -> None:
+    if not response.is_success:
+        raise SandboxError(f"HTTP {response.status_code}: {response.text}", response.status_code)
+
+
 class HttpClient:
     def __init__(self, base_url: str, token: str | None = None) -> None:
         base = base_url.rstrip("/")
@@ -29,9 +34,7 @@ class HttpClient:
         params: dict[str, str] | None = None,
     ) -> Any:
         response = await self._request_with_retry(method, path, body=body, params=params)
-        if not response.is_success:
-            text = response.text
-            raise SandboxError(f"HTTP {response.status_code}: {text}", response.status_code)
+        _raise_for_status(response)
         if response.status_code == 204:
             return None
         return response.json()
@@ -45,9 +48,7 @@ class HttpClient:
         params: dict[str, str] | None = None,
     ) -> httpx.Response:
         response = await self._request_with_retry(method, path, body=body, params=params)
-        if not response.is_success:
-            text = response.text
-            raise SandboxError(f"HTTP {response.status_code}: {text}", response.status_code)
+        _raise_for_status(response)
         return response
 
     async def _request_with_retry(
@@ -59,19 +60,20 @@ class HttpClient:
         params: dict[str, str] | None = None,
     ) -> httpx.Response:
         last_error: Exception | None = None
+        kwargs: dict[str, Any] = {}
+        if body is not None:
+            kwargs["json"] = body
+        if params is not None:
+            kwargs["params"] = params
 
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                kwargs: dict[str, Any] = {}
-                if body is not None:
-                    kwargs["json"] = body
-                if params is not None:
-                    kwargs["params"] = params
-
                 response = await self._client.request(method, path, **kwargs)
 
                 if response.is_success or response.status_code not in _RETRYABLE_STATUS_CODES:
                     return response
+
+                await response.aclose()
 
                 if attempt < _MAX_RETRIES:
                     delay = _BASE_DELAY_S * (2**attempt)

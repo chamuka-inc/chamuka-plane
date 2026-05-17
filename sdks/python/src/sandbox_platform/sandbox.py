@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import base64
+from typing import TYPE_CHECKING, Any
 
 from sandbox_platform.http import HttpClient
 from sandbox_platform.types import (
@@ -15,6 +16,33 @@ from sandbox_platform.types import (
 
 if TYPE_CHECKING:
     from sandbox_platform.client import SandboxClient
+
+
+def _build_exec_body(
+    cmd: str,
+    *,
+    detached: bool,
+    args: list[str] | None = None,
+    env: dict[str, str] | None = None,
+    cwd: str | None = None,
+    stdin: str | None = None,
+    timeout_ms: int | None = None,
+    user: str | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"cmd": cmd, "detached": detached}
+    if args is not None:
+        body["args"] = args
+    if env is not None:
+        body["env"] = env
+    if cwd is not None:
+        body["cwd"] = cwd
+    if stdin is not None:
+        body["stdin"] = stdin
+    if timeout_ms is not None:
+        body["timeout_ms"] = timeout_ms
+    if user is not None:
+        body["user"] = user
+    return body
 
 
 class Sandbox:
@@ -33,7 +61,7 @@ class Sandbox:
         cls,
         response: CreateSandboxResponse,
         client: SandboxClient,
-    ) -> "Sandbox":
+    ) -> Sandbox:
         return cls(response.sandbox, response.connection.url, client)
 
     @property
@@ -52,6 +80,12 @@ class Sandbox:
     def runtime(self) -> str:
         return self._data.runtime
 
+    def _require_client(self, method: str) -> SandboxClient:
+        if self._client is None:
+            msg = f"{method}() requires a client (create via SandboxClient.create_sandbox)"
+            raise RuntimeError(msg)
+        return self._client
+
     async def run_command(
         self,
         cmd: str,
@@ -63,20 +97,10 @@ class Sandbox:
         timeout_ms: int | None = None,
         user: str | None = None,
     ) -> dict:
-        body: dict = {"cmd": cmd, "detached": False}
-        if args:
-            body["args"] = args
-        if env:
-            body["env"] = env
-        if cwd:
-            body["cwd"] = cwd
-        if stdin:
-            body["stdin"] = stdin
-        if timeout_ms:
-            body["timeout_ms"] = timeout_ms
-        if user:
-            body["user"] = user
-
+        body = _build_exec_body(
+            cmd, detached=False, args=args, env=env, cwd=cwd,
+            stdin=stdin, timeout_ms=timeout_ms, user=user,
+        )
         return await self._data_plane.request("POST", "/v1/exec", body=body)
 
     async def spawn(
@@ -89,18 +113,11 @@ class Sandbox:
         pty: bool = False,
         pty_size: dict | None = None,
     ) -> dict:
-        body: dict = {"cmd": cmd, "detached": True}
-        if args:
-            body["args"] = args
-        if env:
-            body["env"] = env
-        if cwd:
-            body["cwd"] = cwd
+        body = _build_exec_body(cmd, detached=True, args=args, env=env, cwd=cwd)
         if pty:
             body["pty"] = pty
         if pty_size:
             body["pty_size"] = pty_size
-
         return await self._data_plane.request("POST", "/v1/exec", body=body)
 
     async def get_process_status(self, cmd_id: str) -> dict:
@@ -120,7 +137,7 @@ class Sandbox:
         await self._data_plane.request_raw(
             "PUT",
             "/v1/fs/write",
-            body={"path": path, "content_base64": __import__("base64").b64encode(content).decode()},
+            body={"path": path, "content_base64": base64.b64encode(content).decode()},
         )
 
     async def mkdir(self, path: str, *, recursive: bool = False) -> None:
@@ -144,43 +161,37 @@ class Sandbox:
         return data["listening"]
 
     async def snapshot(self, request: SnapshotRequest | None = None) -> SnapshotResponse:
-        if self._client is None:
-            msg = "snapshot() requires a client (create via SandboxClient.create_sandbox)"
-            raise RuntimeError(msg)
-        return await self._client.snapshot(self.id, request)
+        client = self._require_client("snapshot")
+        return await client.snapshot(self.id, request)
 
     async def set_network_policy(self, policy: NetworkPolicy) -> NetworkPolicy:
-        if self._client is None:
-            msg = "set_network_policy() requires a client (create via SandboxClient.create_sandbox)"
-            raise RuntimeError(msg)
-        return await self._client.set_network_policy(self.id, policy)
+        client = self._require_client("set_network_policy")
+        return await client.set_network_policy(self.id, policy)
 
     async def create_credential(
         self,
         binding: CreateCredentialBindingRequest,
     ) -> CredentialBinding:
-        if self._client is None:
-            msg = "create_credential() requires a client (create via SandboxClient.create_sandbox)"
-            raise RuntimeError(msg)
-        return await self._client.create_credential(self.id, binding)
+        client = self._require_client("create_credential")
+        return await client.create_credential(self.id, binding)
 
     async def delete_credential(self, credential_id: str) -> None:
-        if self._client is None:
-            msg = "delete_credential() requires a client (create via SandboxClient.create_sandbox)"
-            raise RuntimeError(msg)
-        await self._client.delete_credential(self.id, credential_id)
+        client = self._require_client("delete_credential")
+        await client.delete_credential(self.id, credential_id)
 
     async def extend(self, additional_ms: int) -> SandboxData:
-        if self._client is None:
-            msg = "extend() requires a client (create via SandboxClient.create_sandbox)"
-            raise RuntimeError(msg)
-        return await self._client.extend(self.id, additional_ms)
+        client = self._require_client("extend")
+        return await client.extend(self.id, additional_ms)
 
     async def stop(self, *, force: bool = False) -> None:
-        if self._client is None:
-            msg = "stop() requires a client (create via SandboxClient.create_sandbox)"
-            raise RuntimeError(msg)
-        await self._client.stop(self.id, force=force)
+        client = self._require_client("stop")
+        await client.stop(self.id, force=force)
 
     async def close(self) -> None:
         await self._data_plane.close()
+
+    async def __aenter__(self) -> Sandbox:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.close()
