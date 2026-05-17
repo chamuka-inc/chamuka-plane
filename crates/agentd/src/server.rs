@@ -1,4 +1,4 @@
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -12,6 +12,10 @@ pub fn router() -> Router {
         .route("/v1/exec", post(handlers::exec::post))
         .route("/v1/fs/read", get(handlers::fs::read))
         .route("/v1/fs/write", put(handlers::fs::write))
+        .route("/v1/fs/mkdir", post(handlers::fs::mkdir))
+        .route("/v1/fs/rm", delete(handlers::fs::rm))
+        .route("/v1/fs/list", get(handlers::fs::list))
+        .route("/v1/ports", get(handlers::ports::get))
 }
 
 /// Bind to an ephemeral port and spawn the server. Returns the bound address.
