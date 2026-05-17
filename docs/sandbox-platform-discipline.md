@@ -195,7 +195,7 @@ The TDD discipline (§1) says how code arrives in the tree. This section says wh
 
 **No bypassing the propagation rule.** Adding an optional field "just for testing" goes through interfaces.md → type → schema → fixture → test → code, like everything else.
 
-**No editing Plane source outside `ext/`.** Anti-pattern from §5 also; restated here because of how much future pain it prevents.
+**Boy-scout the Plane fork.** `crates/plane/` is a hard fork — modify any file freely. Apply the boy-scout principle: leave code cleaner than you found it (fix warnings, improve naming, simplify logic) whenever you're working in an area.
 
 ### 2.4 Process prohibitions
 
@@ -262,15 +262,10 @@ Git is the audit trail. For solo TDD work it matters more than for a team: the c
 
 **Trunk-based with two long-running branches** (only in `crates/plane/`).
 
-For everything except the plane fork:
 - `main` is the only long-lived branch.
 - Feature branches are short-lived (one session, sometimes two). They merge into `main` via fast-forward or rebase-merge, never via merge commits. Once merged, they're deleted.
 - `main` always has the walking skeleton green. Always.
-
-For `crates/plane/` specifically (the fork):
-- `main` — what we ship from.
-- `upstream-tracking` — fast-forward of `jamsocket/plane` main. We never modify this branch; rebases reset it from upstream.
-- Detailed fork branch management in [build plan §9](./sandbox-platform-build-plan.md#9-fork-management).
+- `crates/plane/` is a hard fork — no upstream-tracking branch, no rebase cadence. See [build plan §9](./sandbox-platform-build-plan.md#9-fork-management).
 
 **No long-running feature branches.** A branch alive for more than a week is a smell. Either it should have merged a long time ago, or it's actually a different thing trying to be a single change.
 
@@ -532,12 +527,11 @@ For tiny changes (a typo fix in a doc, a one-line README), direct commit to `mai
 
 ### 3.9 Conflict resolution
 
-Conflicts are rare in solo work — they happen mostly during plane fork rebases ([build plan §9](./sandbox-platform-build-plan.md#9-fork-management)). When one appears:
+Conflicts are rare in solo work — they may happen when cherry-picking upstream Plane fixes ([build plan §9](./sandbox-platform-build-plan.md#9-fork-management)). When one appears:
 
 1. **Understand both sides.** Read the upstream change and our local change in full. Don't just pick one.
-2. **Resolve in the smallest diff possible.** Often the right answer combines both: our `ext/` adds a variant, upstream renames a method, the resolution applies the rename inside our `ext/`.
+2. **Resolve in the smallest diff possible.** Often the right answer combines both.
 3. **Add a regression test if applicable.** A conflict that resolves with non-obvious semantics gets a test that pins the resolved behavior.
-4. **Document in `UPSTREAM.md`** if the conflict was non-trivial (tier B or higher per [build plan §9.3](./sandbox-platform-build-plan.md#93-tiered-classification)).
 
 ### 3.10 Enforcement
 
@@ -666,7 +660,7 @@ Test currently fails because build_connect_request() returns
 todo!() — handler scaffold is in place but the conversion logic
 isn't implemented yet.
 
-File: crates/plane/plane/src/ext/api_v1.rs line 87
+File: crates/plane/src/ext/api_v1.rs line 87
 
 Phase: 7.3-B
 Next: Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
@@ -705,7 +699,7 @@ This rule and the git-as-tracker rule reinforce each other: the tree is the curr
 
 **Anti-pattern 4: drifting fixtures.** If a binary emits something slightly different from a fixture, pick one truth. Never "make the test accept both shapes."
 
-**Anti-pattern 5: editing Plane source outside `ext/`.** Future merge conflicts compound. Refactor upstream into something `ext/` can call.
+**Anti-pattern 5: leaving upstream mess untouched.** When working in forked Plane code, apply the boy-scout principle. Fix warnings, improve naming, simplify logic — don't preserve upstream quirks out of false respect for an origin we no longer track.
 
 **Anti-pattern 6: skipping the propagation rule.** Code-first changes leave types, schemas, fixtures, and tests behind. They'll be wrong in three different ways and you won't catch it until much later.
 

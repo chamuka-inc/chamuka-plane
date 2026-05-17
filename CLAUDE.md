@@ -21,7 +21,7 @@ This project runs autonomously. Execute the build plan phase by phase (Phase 0 �
 **Do not ask for human input for:**
 - Routine TDD cycles, refactoring, or phase transitions
 - Choosing between implementation alternatives when both satisfy the spec
-- Resolving merge conflicts with upstream Plane (follow the fork management strategy in build plan §9)
+- Cherry-picking upstream Plane fixes when beneficial (see build plan §9)
 - Fixing failing tests or CI — just fix them
 - Any decision the design docs already answer
 
@@ -71,7 +71,18 @@ Full versions of every rule above are in the [discipline doc](./docs/sandbox-pla
 
 ## Key paths
 
-- `crates/` — single Cargo workspace for all Rust binaries (common, plane, agentd, egress-proxy, ops-cli, tools/generate-schemas)
+- `crates/` — single flat Cargo workspace (all crates at same level)
+  - `common/` — our shared types, extension types, test stubs
+  - `plane/` — hard fork of jamsocket/plane (controller + drone + proxy binary)
+  - `plane-common/` — Plane's shared library (upstream origin)
+  - `plane-dynamic-proxy/` — Plane's reverse proxy library (upstream origin)
+  - `plane-tests/` — Plane integration tests (require Docker + Postgres)
+  - `plane-test-macro/` — proc macro for Plane test harness
+  - `agentd/` — in-sandbox HTTP daemon
+  - `egress-proxy/` — xDS publisher for local Envoy
+  - `ops-cli/` — operator tooling (`sbctl` binary)
+  - `tools/generate-schemas/` — emits contracts/schemas/ from common types
+  - `.cargo/config.toml` — workspace rustflags (tracing_unstable)
 - `contracts/schemas/` — JSON Schemas generated from `common` Rust types; CI fails if stale
 - `contracts/fixtures/` — canonical wire examples; the integration surface between Rust and the SDKs
 - `sdks/typescript/`, `sdks/python/` — SDKs in consumers' ecosystems

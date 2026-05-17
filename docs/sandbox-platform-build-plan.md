@@ -78,7 +78,8 @@ Six Rust binaries in one Cargo workspace, plus two SDKs in their native ecosyste
 
 ```
 sandbox-platform/
-├── crates/                          # the Cargo workspace
+├── crates/                          # single flat Cargo workspace
+│   ├── .cargo/config.toml           # rustflags (tracing_unstable)
 │   ├── Cargo.toml                   # workspace root
 │   ├── common/                      # shared types + test stubs (feature-gated)
 │   │   ├── Cargo.toml
@@ -99,23 +100,35 @@ sandbox-platform/
 │   │   │   └── test_helpers/        # load_fixture, etc.
 │   │   └── tests/                   # tests for the helpers themselves
 │   │
-│   ├── plane/                       # forked from github.com/jamsocket/plane
-│   │   ├── Cargo.toml               # depends on common
-│   │   ├── plane/
-│   │   │   ├── src/
-│   │   │   │   ├── controller/      # mostly upstream
-│   │   │   │   ├── drone/
-│   │   │   │   ├── proxy/
-│   │   │   │   └── ext/             # OUR code, isolated
-│   │   │   │       ├── mod.rs
-│   │   │   │       ├── api_v1.rs    # /pub/v1/* handlers
-│   │   │   │       ├── snapshot.rs
-│   │   │   │       ├── extension_action.rs
-│   │   │   │       └── notifications.rs
-│   │   │   ├── tests/               # Layer 2/3 tests
-│   │   │   └── schema/migrations/   # ours date-prefixed after Plane's
-│   │   ├── UPSTREAM.md              # rebase log
-│   │   └── README.md
+│   ├── plane/                       # hard fork of jamsocket/plane (modify freely)
+│   │   ├── Cargo.toml               # depends on common, plane-common, plane-dynamic-proxy
+│   │   ├── .sqlx/                   # offline query metadata (SQLX_OFFLINE=true)
+│   │   ├── src/
+│   │   │   ├── controller/          # controller mode
+│   │   │   ├── drone/               # drone mode
+│   │   │   ├── proxy/               # proxy mode
+│   │   │   └── ext/                 # sandbox platform extensions
+│   │   │       ├── mod.rs
+│   │   │       ├── api_v1.rs        # /pub/v1/* handlers
+│   │   │       ├── dispatch.rs
+│   │   │       └── types.rs
+│   │   └── schema/migrations/       # ours date-prefixed after Plane's
+│   │
+│   ├── plane-common/                # Plane's shared library (upstream origin)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │
+│   ├── plane-dynamic-proxy/         # Plane's reverse proxy library (upstream origin)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │
+│   ├── plane-tests/                 # Plane integration tests (require Docker)
+│   │   ├── Cargo.toml
+│   │   └── tests/
+│   │
+│   ├── plane-test-macro/            # proc macro for Plane test harness
+│   │   ├── Cargo.toml
+│   │   └── src/
 │   │
 │   ├── agentd/                      # in-sandbox HTTP daemon
 │   │   ├── Cargo.toml               # has "desktop" feature
@@ -134,7 +147,7 @@ sandbox-platform/
 │   │   ├── src/
 │   │   └── tests/
 │   │
-│   ├── ops-cli/                     # operator tooling
+│   ├── ops-cli/                     # operator tooling (sbctl binary)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │
@@ -147,13 +160,13 @@ sandbox-platform/
 │   ├── schemas/                     # generated; committed; CI fails if stale
 │   │   └── *.schema.json
 │   ├── fixtures/                    # hand-written initially; tracked carefully
-│   │   ├── messageFromDrone/
-│   │   ├── messageToDrone/
-│   │   ├── messageFromProxy/
-│   │   ├── messageToProxy/
-│   │   ├── http/
-│   │   ├── sse/
-│   │   └── agentd/
+│   │   ├── api/
+│   │   ├── agentd/
+│   │   ├── extension-action/
+│   │   ├── network/
+│   │   ├── sandbox/
+│   │   ├── snapshot/
+│   │   └── usage/
 │   └── README.md
 │
 ├── runtime-images/                  # OCI images
@@ -182,7 +195,9 @@ sandbox-platform/
 └── README.md
 ```
 
-One Cargo workspace; six binary crates plus `common`. SDKs sit outside the workspace because their tooling is per-language. `runtime-images/`, `walking-skeleton/`, `contracts/`, `docs/` are language-agnostic siblings.
+One Cargo workspace; all crates at the same level under `crates/`. The plane fork (`plane/`, `plane-common/`, `plane-dynamic-proxy/`, `plane-tests/`, `plane-test-macro/`) lives alongside our custom crates (`common`, `agentd`, `egress-proxy`, `ops-cli`). SDKs sit outside the workspace because their tooling is per-language. `runtime-images/`, `walking-skeleton/`, `contracts/`, `docs/` are language-agnostic siblings.
+
+**Build note:** Always set `SQLX_OFFLINE=true` when building without a live Postgres. The `.sqlx/` directory in `crates/plane/` contains cached query metadata.
 
 ---
 
@@ -786,7 +801,7 @@ Design verification by reading is not verification by running. Before sinking we
 
 ```
 D.1  Plane source deep-read
-     ├─ Read every file under crates/plane/plane/src/database/
+     ├─ Read every file under crates/plane/src/database/
      │  in detail (it's small — a few thousand lines).
      ├─ Trace: sqlx query patterns, transaction boundaries,
      │  connection-pool config, LISTEN/NOTIFY emission paths,
@@ -1062,7 +1077,7 @@ Test currently fails because build_connect_request() returns
 todo!() — handler scaffold is in place but the conversion logic
 isn't there yet.
 
-File: crates/plane/plane/src/ext/api_v1.rs line 87
+File: crates/plane/src/ext/api_v1.rs line 87
 Layer 1 (unit) tests for request validation: green
 Layer 2 (contract) tests: 1 red, the rest not yet written
 
@@ -1081,43 +1096,36 @@ The next session runs `./scripts/status.sh` (or `git log -1 --format=%B`), sees 
 
 ---
 
-## 9. Fork management — living with upstream Plane
+## 9. Fork management — hard fork
 
 ### 9.1 Strategy
 
-`crates/plane/` tracks `jamsocket/plane` via `upstream`. All our changes live in:
+`crates/plane/` is a **hard fork** of `jamsocket/plane`. There is no upstream tracking branch, no rebase cadence, no `ext/` restriction. We modify any file freely — controller, drone, proxy, database, schema — as needed for the sandbox platform.
 
-- `crates/plane/plane/src/ext/`
-- `crates/plane/plane/schema/migrations/2026*_*.sql` (date-prefixed after upstream)
+Our sandbox-specific code lives primarily in:
 
-Nothing else is modified.
+- `crates/plane/src/ext/` — API handlers, dispatch, types
+- `crates/plane/schema/migrations/2026*_*.sql` — date-prefixed after upstream migrations
 
-### 9.2 Rebase cadence
+But we also fix, refactor, and extend upstream code directly (boy scout principle).
 
-Monthly. First Monday I work on the project:
+### 9.2 Cherry-picking upstream fixes
+
+If `jamsocket/plane` ships a bug fix or feature we want, cherry-pick it manually:
 
 ```bash
-cd crates/plane
-git fetch upstream
-git checkout upstream-tracking && git merge --ff-only upstream/main
-git checkout main && git rebase upstream-tracking
-# resolve any conflicts (only in ext/ or migrations/)
-cargo test --workspace
-make walking-skeleton
-git push --force-with-lease
-# update UPSTREAM.md
+# Add upstream as a remote (one-time)
+git remote add upstream-plane https://github.com/jamsocket/plane.git
+git fetch upstream-plane
+# Cherry-pick the specific commit(s)
+git cherry-pick <commit-hash>
+# Resolve conflicts, test, commit
+SQLX_OFFLINE=true cargo test --workspace --exclude plane-tests
 ```
 
-### 9.3 Tiered classification
+### 9.3 No contributing back
 
-- **Tier A — additive.** Adopt immediately.
-- **Tier B — non-breaking refactor.** Update `ext/`.
-- **Tier C — protocol change.** Bump our `common::ext` major version; update all binaries and fixtures.
-- **Tier D — incompatible.** Document hard fork in UPSTREAM.md; stop tracking.
-
-### 9.4 Contributing back
-
-Generally useful changes get PRs upstream. If accepted, remove our local copy on next rebase.
+This is a divergent fork. We don't maintain PR compatibility with upstream.
 
 ---
 
