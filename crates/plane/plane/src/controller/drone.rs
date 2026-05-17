@@ -48,24 +48,17 @@ pub async fn handle_message_from_drone(
             controller
                 .db
                 .backend()
-                .publish_metrics(metrics_msg.clone())
+                .publish_metrics(&metrics_msg)
                 .await?;
 
             let backend_id_str = metrics_msg.backend_id.to_string();
-            if let Some(sandbox_id) = controller
+            let (cpu_nsec, memory_mb_seconds) =
+                compute_usage_deltas(metrics_msg.cpu_used, metrics_msg.mem_used);
+            controller
                 .db
-                .sandbox()
-                .get_sandbox_id_for_backend(&backend_id_str)
-                .await?
-            {
-                let (cpu_nsec, memory_mb_seconds) =
-                    compute_usage_deltas(metrics_msg.cpu_used, metrics_msg.mem_used);
-                controller
-                    .db
-                    .usage_record()
-                    .accumulate(&sandbox_id, cpu_nsec, memory_mb_seconds, 0, 0)
-                    .await?;
-            }
+                .usage_record()
+                .accumulate_for_backend(&backend_id_str, cpu_nsec, memory_mb_seconds, 0, 0)
+                .await?;
         }
         MessageFromDrone::Heartbeat(Heartbeat { local_time }) => {
             controller
@@ -405,11 +398,13 @@ pub async fn handle_drone_socket(
     Ok(ws.on_upgrade(move |socket| drone_socket(cluster, socket, controller, ip, pool)))
 }
 
+// Drone reports metrics at this cadence; used to convert point-in-time memory to MB·seconds
 const METRICS_INTERVAL_SECS: i64 = 10;
 
 fn compute_usage_deltas(cpu_used_nsec: u64, mem_used_bytes: u64) -> (i64, i64) {
-    let cpu_nsec = cpu_used_nsec as i64;
-    let memory_mb_seconds = (mem_used_bytes as i64 / (1024 * 1024)) * METRICS_INTERVAL_SECS;
+    let cpu_nsec = i64::try_from(cpu_used_nsec).unwrap_or(i64::MAX);
+    let mem_mb = i64::try_from(mem_used_bytes / (1024 * 1024)).unwrap_or(i64::MAX);
+    let memory_mb_seconds = mem_mb.saturating_mul(METRICS_INTERVAL_SECS);
     (cpu_nsec, memory_mb_seconds)
 }
 
@@ -432,10 +427,15 @@ mod tests {
     }
 
     #[test]
-    fn compute_usage_deltas_large_values() {
+    fn compute_usage_deltas_saturates_on_overflow() {
+        let (cpu, _) = compute_usage_deltas(u64::MAX, 0);
+        assert_eq!(cpu, i64::MAX);
+    }
+
+    #[test]
+    fn compute_usage_deltas_large_memory() {
         let eight_gb: u64 = 8 * 1024 * 1024 * 1024;
-        let (cpu, mem) = compute_usage_deltas(u64::MAX / 2, eight_gb);
-        assert_eq!(cpu, (u64::MAX / 2) as i64);
+        let (_, mem) = compute_usage_deltas(0, eight_gb);
         assert_eq!(mem, 8 * 1024 * 10);
     }
 }

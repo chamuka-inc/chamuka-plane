@@ -471,9 +471,9 @@ impl<'a> BackendDatabase<'a> {
         Ok(true)
     }
 
-    pub async fn publish_metrics(&self, metrics: BackendMetricsMessage) -> sqlx::Result<()> {
+    pub async fn publish_metrics(&self, metrics: &BackendMetricsMessage) -> sqlx::Result<()> {
         let mut txn = self.db.pool.begin().await?;
-        emit_backend_metrics(&mut txn, &metrics.backend_id.to_string(), &metrics).await?;
+        emit_backend_metrics(&mut txn, &metrics.backend_id.to_string(), metrics).await?;
         txn.commit().await?;
         Ok(())
     }

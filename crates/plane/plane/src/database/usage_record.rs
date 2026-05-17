@@ -9,9 +9,9 @@ impl<'a> UsageRecordDatabase<'a> {
         Self { pool }
     }
 
-    pub async fn accumulate(
+    pub async fn accumulate_for_backend(
         &self,
-        sandbox_id: &str,
+        backend_id: &str,
         cpu_nsec_delta: i64,
         memory_mb_seconds_delta: i64,
         rx_bytes_delta: i64,
@@ -20,7 +20,8 @@ impl<'a> UsageRecordDatabase<'a> {
         sqlx::query(
             r#"
             INSERT INTO usage_record (sandbox_id, bucket_start, cpu_nsec, memory_mb_seconds, rx_bytes, tx_bytes)
-            VALUES ($1, date_trunc('hour', NOW()), $2, $3, $4, $5)
+            SELECT s.id, date_trunc('hour', NOW()), $2, $3, $4, $5
+            FROM sandbox s WHERE s.backend_id = $1
             ON CONFLICT (sandbox_id, bucket_start)
             DO UPDATE SET
                 cpu_nsec = usage_record.cpu_nsec + EXCLUDED.cpu_nsec,
@@ -29,7 +30,7 @@ impl<'a> UsageRecordDatabase<'a> {
                 tx_bytes = usage_record.tx_bytes + EXCLUDED.tx_bytes
             "#,
         )
-        .bind(sandbox_id)
+        .bind(backend_id)
         .bind(cpu_nsec_delta)
         .bind(memory_mb_seconds_delta)
         .bind(rx_bytes_delta)
