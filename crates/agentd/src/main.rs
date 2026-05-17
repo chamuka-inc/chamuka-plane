@@ -9,7 +9,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let addr: SocketAddr = "0.0.0.0:8080".parse()?;
+    let host = std::env::var("AGENTD_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("AGENTD_PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("agentd listening on {addr}");
 

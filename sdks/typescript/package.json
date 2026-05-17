@@ -1,0 +1,35 @@
+{
+  "name": "@sandbox-platform/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Sandbox Platform",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run tests/ --exclude tests/e2e/",
+    "test:e2e": "vitest run tests/e2e/",
+    "test:walking-skeleton": "vitest run tests/walking-skeleton/",
+    "lint": "tsc --noEmit",
+    "generate-types": "node scripts/generate-types.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "msw": "^2.6.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
