@@ -57,6 +57,8 @@ impl StateStore {
         timestamp: DateTime<Utc>,
     ) -> Result<()> {
         let tx = self.db_conn.transaction()?;
+        let state_json = serde_json::to_value(state)?;
+        let backend_id_str = backend_id.to_string();
 
         // "Upsert" the current backend state into the table. Per sqlite docs (https://www.sqlite.org/lang_upsert.html):
         // > Column names in the expressions of a DO UPDATE refer to the original unchanged value of the column,
@@ -74,7 +76,7 @@ impl StateStore {
                 do update set
                     "state" = excluded."state"
             "#,
-            (backend_id.to_string(), serde_json::to_value(state)?),
+            (&backend_id_str, &state_json),
         )?;
 
         tx.execute(
@@ -85,11 +87,7 @@ impl StateStore {
                     "timestamp"
                 ) values (?, ?, ?)
             "#,
-            (
-                backend_id.to_string(),
-                serde_json::to_value(state)?,
-                timestamp.timestamp_millis(),
-            ),
+            (&backend_id_str, &state_json, timestamp.timestamp_millis()),
         )?;
 
         tx.commit()?;

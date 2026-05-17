@@ -62,7 +62,7 @@ pub trait IntoApiError<T>: Sized {
     ) -> Result<T, Response>;
 }
 
-#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)] // axum Response must be unboxed for IntoResponse
 impl<T, E: Error> IntoApiError<T> for Result<T, E> {
     fn or_status(
         self,
@@ -80,7 +80,7 @@ impl<T, E: Error> IntoApiError<T> for Result<T, E> {
     }
 }
 
-#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)] // axum Response must be unboxed for IntoResponse
 impl<T> IntoApiError<T> for Option<T> {
     fn or_status(
         self,
