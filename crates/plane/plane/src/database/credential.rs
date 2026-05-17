@@ -9,6 +9,7 @@ impl<'a> CredentialDatabase<'a> {
         Self { pool }
     }
 
+    // Maps 1:1 to the INSERT column list
     #[allow(clippy::too_many_arguments)]
     pub async fn insert(
         &self,

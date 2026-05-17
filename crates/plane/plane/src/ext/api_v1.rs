@@ -13,7 +13,7 @@ use chamuka_common::ext::api::{
 use chamuka_common::ext::network::NetworkPolicy;
 use chamuka_common::ext::sandbox::{Arch, Sandbox, SandboxResources, TrustLevel};
 use chamuka_common::ext::snapshot::Snapshot;
-use futures_util::{Stream, StreamExt};
+use futures_util::StreamExt;
 use plane_common::types::{
     backend_state::BackendStatusStreamEntry, BackendStatus, ConnectRequest, KeyConfig, SpawnConfig,
 };
@@ -63,6 +63,23 @@ pub(crate) fn extract_tenant(headers: &HeaderMap) -> Result<String, ApiError> {
         .filter(|s| !s.is_empty())
         .map(String::from)
         .ok_or_else(|| ApiError::unauthenticated("missing or invalid X-Auth-Tenant header"))
+}
+
+async fn get_sandbox_row(
+    controller: &Controller,
+    id: &str,
+    tenant: &str,
+) -> Result<SandboxRow, ApiError> {
+    controller
+        .db
+        .sandbox()
+        .get_by_id(id, tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query sandbox");
+            ApiError::internal("Failed to query sandbox")
+        })?
+        .ok_or_else(|| ApiError::not_found("Sandbox not found"))
 }
 
 pub async fn create_sandbox(
@@ -130,7 +147,7 @@ pub async fn create_sandbox(
         .unwrap_or_default();
 
     let trust_str = pool;
-    let arch_str = format!("{:?}", request.arch).to_lowercase();
+    let arch_str = request.arch.to_string();
     let ports_i32: Vec<i32> = request.ports.iter().map(|&p| i32::from(p)).collect();
     let tags_json = serde_json::to_value(&request.tags).unwrap_or_default();
 
@@ -206,18 +223,7 @@ pub async fn get_sandbox(
     Path(id): Path<String>,
 ) -> Result<Json<Sandbox>, ApiError> {
     let tenant = extract_tenant(&headers)?;
-
-    let row = controller
-        .db
-        .sandbox()
-        .get_by_id(&id, &tenant)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = ?e, "Failed to query sandbox");
-            ApiError::internal("Failed to query sandbox")
-        })?
-        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
-
+    let row = get_sandbox_row(&controller, &id, &tenant).await?;
     Ok(Json(sandbox_from_row(row, &controller)))
 }
 
@@ -277,17 +283,7 @@ pub async fn delete_sandbox(
     Query(query): Query<DeleteQuery>,
 ) -> Result<StatusCode, ApiError> {
     let tenant = extract_tenant(&headers)?;
-
-    let row = controller
-        .db
-        .sandbox()
-        .get_by_id(&id, &tenant)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = ?e, "Failed to query sandbox");
-            ApiError::internal("Failed to query sandbox")
-        })?
-        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+    let row = get_sandbox_row(&controller, &id, &tenant).await?;
 
     let backend_id: plane_common::names::BackendName = row
         .backend_id
@@ -356,17 +352,7 @@ pub async fn sandbox_status(
     use axum::response::IntoResponse;
 
     let tenant = extract_tenant(&headers)?;
-
-    let row = controller
-        .db
-        .sandbox()
-        .get_by_id(&id, &tenant)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = ?e, "Failed to query sandbox");
-            ApiError::internal("Failed to query sandbox")
-        })?
-        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+    let row = get_sandbox_row(&controller, &id, &tenant).await?;
 
     let backend_id: plane_common::names::BackendName = row
         .backend_id
@@ -407,21 +393,21 @@ pub async fn sandbox_status(
             })?,
     );
 
-    let stream: Box<dyn Stream<Item = Result<Event, Infallible>> + Send> =
-        Box::new(async_stream::try_stream! {
-            while let Some(status) = st.next().await {
-                if let Some(last) = last_status {
-                    if status.status <= last {
-                        continue;
-                    }
+    let stream = async_stream::stream! {
+        while let Some(status) = st.next().await {
+            if let Some(last) = last_status {
+                if status.status <= last {
+                    continue;
                 }
-                let id = status.status.to_string();
-                yield Event::default()
-                    .json_data(&status)
-                    .expect("always serializable")
-                    .id(id);
             }
-        });
+            let id = status.status.to_string();
+            let event: Result<Event, Infallible> = Ok(Event::default()
+                .json_data(&status)
+                .expect("always serializable")
+                .id(id));
+            yield event;
+        }
+    };
 
     Ok(Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
@@ -435,17 +421,7 @@ pub async fn snapshot_sandbox(
     Json(request): Json<SnapshotRequest>,
 ) -> Result<(StatusCode, Json<SnapshotResponse>), ApiError> {
     let tenant = extract_tenant(&headers)?;
-
-    let row = controller
-        .db
-        .sandbox()
-        .get_by_id(&id, &tenant)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = ?e, "Failed to query sandbox");
-            ApiError::internal("Failed to query sandbox")
-        })?
-        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+    let row = get_sandbox_row(&controller, &id, &tenant).await?;
 
     let snapshot_id = format!("snap-{}", plane_common::util::random_string());
     let now = chrono::Utc::now();
@@ -480,10 +456,7 @@ pub async fn snapshot_sandbox(
         digest: String::new(),
         base_image: row.image,
         size_bytes: 0,
-        arch: match row.arch.as_str() {
-            "arm64" => Arch::Arm64,
-            _ => Arch::Amd64,
-        },
+        arch: row.arch.parse().unwrap_or(Arch::Amd64),
         runtime: row.runtime,
         name: request.name,
         tags: request.tags,
@@ -502,26 +475,20 @@ pub async fn update_network_policy(
 ) -> Result<Json<NetworkPolicy>, ApiError> {
     let tenant = extract_tenant(&headers)?;
 
-    let _row = controller
+    let policy_json = serde_json::to_value(&policy).unwrap_or_default();
+    let updated = controller
         .db
         .sandbox()
-        .get_by_id(&id, &tenant)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = ?e, "Failed to query sandbox");
-            ApiError::internal("Failed to query sandbox")
-        })?
-        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
-
-    controller
-        .db
-        .sandbox()
-        .update_network_policy(&id, &serde_json::to_value(&policy).unwrap_or_default())
+        .update_network_policy(&id, &tenant, &policy_json)
         .await
         .map_err(|e| {
             tracing::error!(error = ?e, "Failed to update network policy");
             ApiError::internal("Failed to update network policy")
         })?;
+
+    if !updated {
+        return Err(ApiError::not_found("Sandbox not found"));
+    }
 
     Ok(Json(policy))
 }
@@ -533,17 +500,7 @@ pub async fn create_credential_binding(
     Json(request): Json<CreateCredentialBindingRequest>,
 ) -> Result<(StatusCode, Json<CredentialBinding>), ApiError> {
     let tenant = extract_tenant(&headers)?;
-
-    let _row = controller
-        .db
-        .sandbox()
-        .get_by_id(&sandbox_id, &tenant)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = ?e, "Failed to query sandbox");
-            ApiError::internal("Failed to query sandbox")
-        })?
-        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+    let _row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
 
     let cred_id = format!("cred-{}", plane_common::util::random_string());
     let now = chrono::Utc::now();
@@ -584,17 +541,7 @@ pub async fn delete_credential_binding(
     Path((sandbox_id, cred_id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
     let tenant = extract_tenant(&headers)?;
-
-    let _row = controller
-        .db
-        .sandbox()
-        .get_by_id(&sandbox_id, &tenant)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = ?e, "Failed to query sandbox");
-            ApiError::internal("Failed to query sandbox")
-        })?
-        .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
+    let _row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
 
     let deleted = controller
         .db
@@ -712,15 +659,8 @@ pub async fn delete_secret(
 }
 
 fn sandbox_from_row(row: SandboxRow, controller: &Controller) -> Sandbox {
-    let trust = match row.trust_tier.as_str() {
-        "trusted" => TrustLevel::Trusted,
-        "paranoid" => TrustLevel::Paranoid,
-        _ => TrustLevel::Untrusted,
-    };
-    let arch = match row.arch.as_str() {
-        "arm64" => Arch::Arm64,
-        _ => Arch::Amd64,
-    };
+    let trust = row.trust_tier.parse().unwrap_or(TrustLevel::Untrusted);
+    let arch = row.arch.parse().unwrap_or(Arch::Amd64);
     let cluster = controller
         .default_cluster
         .as_ref()

@@ -14,6 +14,7 @@ impl<'a> SnapshotDatabase<'a> {
         Self { pool }
     }
 
+    // Maps 1:1 to the INSERT column list
     #[allow(clippy::too_many_arguments)]
     pub async fn insert(
         &self,
@@ -100,10 +101,7 @@ pub struct SnapshotRow {
 }
 
 fn snapshot_from_row(row: SnapshotRow) -> Snapshot {
-    let arch = match row.arch.as_str() {
-        "arm64" => Arch::Arm64,
-        _ => Arch::Amd64,
-    };
+    let arch = row.arch.parse().unwrap_or(Arch::Amd64);
     let tags: HashMap<String, String> = serde_json::from_value(row.tags).unwrap_or_default();
 
     Snapshot {

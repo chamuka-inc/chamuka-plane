@@ -10,6 +10,7 @@ impl<'a> SandboxDatabase<'a> {
         Self { pool }
     }
 
+    // Maps 1:1 to the INSERT column list; a wrapper struct would just duplicate these fields
     #[allow(clippy::too_many_arguments)]
     pub async fn insert(
         &self,
@@ -107,20 +108,22 @@ impl<'a> SandboxDatabase<'a> {
     pub async fn update_network_policy(
         &self,
         id: &str,
+        tenant: &str,
         policy: &serde_json::Value,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query(
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query(
             r#"
             UPDATE sandbox
             SET network_policy = $2, updated_at = NOW()
-            WHERE id = $1
+            WHERE id = $1 AND tenant = $3
             "#,
         )
         .bind(id)
         .bind(policy)
+        .bind(tenant)
         .execute(self.pool)
         .await?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn list_by_tenant(
