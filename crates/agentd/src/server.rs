@@ -13,6 +13,8 @@ pub fn router() -> Router {
         .route("/health", get(handlers::health::get))
         .route("/info", get(handlers::info::get))
         .route("/v1/exec", post(handlers::exec::post))
+        .route("/v1/exec/{cmd_id}", get(handlers::exec_status::get))
+        .route("/v1/exec/{cmd_id}/stdin", post(handlers::exec_stdin::post))
         .route("/v1/exec/{cmd_id}/signal", post(handlers::signal::post))
         .route("/v1/fs/read", get(handlers::fs::read))
         .route("/v1/fs/write", put(handlers::fs::write))

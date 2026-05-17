@@ -1,4 +1,6 @@
 pub mod exec;
+pub mod exec_status;
+pub mod exec_stdin;
 pub mod fs;
 pub mod health;
 pub mod info;

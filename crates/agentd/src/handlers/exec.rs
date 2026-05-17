@@ -31,7 +31,7 @@ pub async fn post(
         command.current_dir(cwd);
     }
 
-    if req.stdin.is_some() {
+    if req.stdin.is_some() || req.detached {
         command.stdin(Stdio::piped());
     } else {
         command.stdin(Stdio::null());

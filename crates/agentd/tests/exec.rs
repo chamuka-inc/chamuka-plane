@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use common::ext::agentd::{ExecRequest, ExecSyncResponse};
+use common::ext::agentd::{ExecRequest, ExecStatusResponse, ExecSyncResponse};
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -172,4 +172,92 @@ async fn exec_sync_timeout_kills_process() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: ExecSyncResponse = resp.json().await.expect("json parse failed");
     assert_ne!(body.exit_code, 0, "process should have been killed");
+}
+
+#[tokio::test]
+async fn exec_poll_detached_running() {
+    let addr = agentd::serve_on_ephemeral().await;
+    let exec_url = format!("http://{addr}/v1/exec");
+
+    let req = ExecRequest {
+        cmd: "sleep".to_string(),
+        args: vec!["300".to_string()],
+        env: HashMap::new(),
+        cwd: None,
+        stdin: None,
+        timeout_ms: None,
+        detached: true,
+        pty: false,
+        pty_size: None,
+        user: None,
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&exec_url)
+        .json(&req)
+        .send()
+        .await
+        .expect("request failed");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.expect("json");
+    let cmd_id = body["cmd_id"].as_str().unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let status_url = format!("http://{addr}/v1/exec/{cmd_id}");
+    let resp = client.get(&status_url).send().await.expect("poll failed");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let status: ExecStatusResponse = resp.json().await.expect("json");
+    assert_eq!(status.cmd_id, cmd_id);
+    assert_eq!(status.status, common::ext::agentd::ExecStatus::Running);
+    assert_eq!(status.exit_code, None);
+}
+
+#[tokio::test]
+async fn exec_poll_nonexistent_returns_404() {
+    let addr = agentd::serve_on_ephemeral().await;
+    let client = reqwest::Client::new();
+    let url = format!("http://{addr}/v1/exec/nonexistent-id");
+    let resp = client.get(&url).send().await.expect("request failed");
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn exec_stdin_to_detached_process() {
+    let addr = agentd::serve_on_ephemeral().await;
+    let exec_url = format!("http://{addr}/v1/exec");
+
+    let req = ExecRequest {
+        cmd: "cat".to_string(),
+        args: vec![],
+        env: HashMap::new(),
+        cwd: None,
+        stdin: None,
+        timeout_ms: None,
+        detached: true,
+        pty: false,
+        pty_size: None,
+        user: None,
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&exec_url)
+        .json(&req)
+        .send()
+        .await
+        .expect("request failed");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.expect("json");
+    let cmd_id = body["cmd_id"].as_str().unwrap();
+
+    let stdin_url = format!("http://{addr}/v1/exec/{cmd_id}/stdin");
+    let resp = client
+        .post(&stdin_url)
+        .json(&serde_json::json!({"data": "hello from stdin"}))
+        .send()
+        .await
+        .expect("stdin request failed");
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 }
