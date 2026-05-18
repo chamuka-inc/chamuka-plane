@@ -6,6 +6,28 @@ import type {
   ApiError,
 } from "./types";
 
+export type CreateSandboxRequest = {
+  runtime?: string;
+  image?: string;
+  trust?: "trusted" | "untrusted" | "paranoid";
+  resources?: { vcpus?: number; memory_mb?: number };
+  timeout_ms?: number;
+  env?: Record<string, string>;
+  tags?: Record<string, string>;
+  key?: string;
+  max_idle_ms?: number;
+};
+
+export type CreateSandboxResponse = {
+  sandbox: Sandbox;
+  connection: {
+    token: string;
+    url: string;
+    secret_token?: string;
+    status_url: string;
+  };
+};
+
 export class BffError extends Error {
   constructor(
     public code: string,
@@ -19,8 +41,8 @@ export class BffError extends Error {
 
 const headers = { "Content-Type": "application/json" };
 
-async function request<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers });
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, { headers, ...init });
   if (!res.ok) {
     let code = "UNKNOWN";
     let msg = res.statusText;
@@ -50,7 +72,12 @@ export function createBffClient() {
       return request(`/api/sandboxes?${sp}`);
     },
 
-    getSandbox(id: string): Promise<Sandbox> {
+    async getSandbox(id: string): Promise<Sandbox> {
+      const result = await request<{ sandbox: Sandbox }>(`/api/sandboxes/${encodeURIComponent(id)}`);
+      return result.sandbox;
+    },
+
+    getSandboxWithConnection(id: string): Promise<{ sandbox: Sandbox; connection?: { token: string; url: string } }> {
       return request(`/api/sandboxes/${encodeURIComponent(id)}`);
     },
 
@@ -63,6 +90,13 @@ export function createBffClient() {
       if (params?.period) sp.set("period", params.period);
       if (params?.sandbox_id) sp.set("sandbox_id", params.sandbox_id);
       return request(`/api/usage?${sp}`);
+    },
+
+    createSandbox(body: CreateSandboxRequest): Promise<CreateSandboxResponse> {
+      return request("/api/sandboxes", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
     },
   };
 }

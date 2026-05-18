@@ -3,11 +3,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import "@xterm/xterm/css/xterm.css";
 
-const WS_RELAY_URL = process.env.NEXT_PUBLIC_WS_RELAY_URL ?? "ws://localhost:3101";
-
 type TerminalViewProps = {
   sandboxId: string;
 };
+
 
 export function TerminalView({ sandboxId }: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -19,6 +18,8 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
     if (!terminalRef.current) return;
 
     setStatus("connecting");
+
+    const execUrl = `/api/sandboxes/${encodeURIComponent(sandboxId)}/exec`;
 
     const [{ Terminal }, { FitAddon }] = await Promise.all([
       import("@xterm/xterm"),
@@ -45,6 +46,7 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
       },
       cursorBlink: true,
       scrollback: 5000,
+      convertEol: true,
     });
 
     const fitAddon = new FitAddon();
@@ -56,55 +58,113 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
       const { WebglAddon } = await import("@xterm/addon-webgl");
       terminal.loadAddon(new WebglAddon());
     } catch {
-      // WebGL not available, canvas renderer is fine
+      // canvas fallback
     }
 
-    const wsUrl = `${WS_RELAY_URL}/terminal?sandbox=${encodeURIComponent(sandboxId)}&cols=${terminal.cols}&rows=${terminal.rows}`;
-    const ws = new WebSocket(wsUrl);
+    setStatus("connected");
 
-    ws.onopen = () => {
-      setStatus("connected");
-    };
+    let inputBuffer = "";
+    let busy = false;
+    let cwd = "/";
 
-    ws.onmessage = (event) => {
+    async function execCommand(cmd: string) {
+      busy = true;
       try {
-        const msg = JSON.parse(event.data);
-        switch (msg.type) {
-          case "output":
-            terminal.write(msg.data);
-            break;
-          case "exit":
-            terminal.write(`\r\n[Process exited: code=${msg.exitCode}]\r\n`);
-            break;
-          case "error":
-            setStatus("error");
-            setErrorMsg(msg.data);
-            terminal.write(`\r\n[Error: ${msg.data}]\r\n`);
-            break;
+        const res = await fetch(execUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cmd: "/bin/bash",
+            args: ["-c", cmd],
+            cwd,
+            timeout_ms: 30000,
+            env: { TERM: "xterm-256color" },
+          }),
+        });
+
+        if (!res.ok) {
+          terminal.write(`\x1b[31mexec error: ${res.status}\x1b[0m\r\n`);
+          return;
+        }
+
+        const data = await res.json();
+        if (data.stdout) terminal.write(data.stdout);
+        if (data.stderr) terminal.write(`\x1b[31m${data.stderr}\x1b[0m`);
+        if (data.exit_code !== 0) {
+          terminal.write(`\x1b[33m[exit ${data.exit_code}]\x1b[0m\r\n`);
+        }
+      } catch (err) {
+        terminal.write(`\x1b[31m${err instanceof Error ? err.message : "request failed"}\x1b[0m\r\n`);
+      } finally {
+        busy = false;
+      }
+    }
+
+    async function updateCwd() {
+      try {
+        const res = await fetch(execUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cmd: "pwd", args: [], cwd, timeout_ms: 5000 }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.stdout) cwd = data.stdout.trim();
         }
       } catch {
-        terminal.write(event.data);
+        // keep current cwd
       }
-    };
+    }
 
-    ws.onerror = () => {
-      setStatus("error");
-      setErrorMsg("WebSocket connection failed");
-    };
+    function writePrompt() {
+      const dir = cwd === "/" ? "/" : cwd.split("/").pop() ?? cwd;
+      terminal.write(`\x1b[36m${dir}\x1b[0m \x1b[32m$\x1b[0m `);
+    }
 
-    ws.onclose = () => {
-      terminal.write("\r\n[Connection closed]\r\n");
-    };
+    terminal.write(`\x1b[90mConnected to sandbox ${sandboxId}\x1b[0m\r\n`);
+    writePrompt();
 
     terminal.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "input", data }));
-      }
-    });
+      if (busy) return;
 
-    terminal.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols, rows }));
+      for (const ch of data) {
+        if (ch === "\r") {
+          terminal.write("\r\n");
+          const cmd = inputBuffer.trim();
+          inputBuffer = "";
+
+          if (!cmd) {
+            writePrompt();
+            return;
+          }
+
+          if (cmd.startsWith("cd ") || cmd === "cd") {
+            const dir = cmd === "cd" ? "~" : cmd.slice(3).trim();
+            (async () => {
+              await execCommand(`cd ${dir} && pwd`);
+              await updateCwd();
+              writePrompt();
+            })();
+          } else {
+            (async () => {
+              await execCommand(cmd);
+              await updateCwd();
+              writePrompt();
+            })();
+          }
+        } else if (ch === "\x7f") {
+          if (inputBuffer.length > 0) {
+            inputBuffer = inputBuffer.slice(0, -1);
+            terminal.write("\b \b");
+          }
+        } else if (ch === "\x03") {
+          inputBuffer = "";
+          terminal.write("^C\r\n");
+          writePrompt();
+        } else if (ch >= " ") {
+          inputBuffer += ch;
+          terminal.write(ch);
+        }
       }
     });
 
@@ -115,7 +175,6 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
 
     cleanupRef.current = () => {
       resizeObserver.disconnect();
-      ws.close();
       terminal.dispose();
     };
   }, [sandboxId]);
@@ -131,7 +190,7 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <span className="text-xs text-text-3 font-mono">
-          ws-relay → agentd /v1/terminal
+          agentd /v1/exec
         </span>
         <span
           className={`text-xs ${

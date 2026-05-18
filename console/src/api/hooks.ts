@@ -1,7 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createBffClient } from "./client";
+import type { CreateSandboxRequest, CreateSandboxResponse } from "./client";
 import type {
   ListSandboxesResponse,
   Sandbox,
@@ -37,5 +38,15 @@ export function useUsage(params?: { period?: string; sandbox_id?: string }) {
   return useQuery<UsageResponse>({
     queryKey: ["usage", params?.period, params?.sandbox_id],
     queryFn: () => client.getUsage(params),
+  });
+}
+
+export function useCreateSandbox() {
+  const queryClient = useQueryClient();
+  return useMutation<CreateSandboxResponse, Error, CreateSandboxRequest>({
+    mutationFn: (body) => client.createSandbox(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sandboxes"] });
+    },
   });
 }

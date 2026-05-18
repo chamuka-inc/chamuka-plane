@@ -1,34 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:8080";
-const AUTH_TENANT = process.env.AUTH_TENANT ?? "tenant-default";
-const AUTH_USER = process.env.AUTH_USER ?? "admin";
+import { createSandbox, listSandboxes } from "@/lib/sandbox-registry";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const limit = searchParams.get("limit") ?? "100";
-  const status = searchParams.get("status");
-  const cursor = searchParams.get("cursor");
+  const status = searchParams.get("status") ?? undefined;
+  const limit = Number(searchParams.get("limit") ?? "100");
 
-  const params = new URLSearchParams({ limit });
-  if (status) params.set("status", status);
-  if (cursor) params.set("cursor", cursor);
+  const result = await listSandboxes({ status, limit });
+  return NextResponse.json(result);
+}
 
-  const res = await fetch(`${CONTROLLER_URL}/pub/v1/sandboxes?${params}`, {
-    headers: {
-      "X-Auth-Tenant": AUTH_TENANT,
-      "X-Auth-User": AUTH_USER,
-    },
-  });
-
-  let body;
+export async function POST(request: NextRequest) {
+  let body: Record<string, unknown>;
   try {
-    body = await res.json();
+    body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: { code: "UPSTREAM_ERROR", message: `Controller returned ${res.status}`, request_id: "" } },
+      { error: { code: "BAD_REQUEST", message: "Invalid JSON", request_id: "" } },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const result = await createSandbox(body);
+    return NextResponse.json(result, { status: 201 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json(
+      { error: { code: "CREATE_FAILED", message, request_id: "" } },
       { status: 502 },
     );
   }
-  return NextResponse.json(body, { status: res.status });
 }

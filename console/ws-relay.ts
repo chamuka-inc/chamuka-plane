@@ -2,9 +2,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 
 const RELAY_PORT = parseInt(process.env.WS_RELAY_PORT ?? "3101", 10);
+const BFF_URL = process.env.BFF_URL ?? "http://localhost:3100";
 const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:8080";
-const AUTH_TENANT = process.env.AUTH_TENANT ?? "tenant-default";
-const AUTH_USER = process.env.AUTH_USER ?? "admin";
 
 const server = createServer((_req, res) => {
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -25,32 +24,22 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-async function resolveAgentdUrl(sandboxId: string): Promise<string> {
-  const res = await fetch(`${CONTROLLER_URL}/pub/v1/sandboxes/${sandboxId}`, {
-    headers: {
-      "X-Auth-Tenant": AUTH_TENANT,
-      "X-Auth-User": AUTH_USER,
-    },
-  });
+async function resolveProxyUrl(sandboxId: string): Promise<string> {
+  const bffRes = await fetch(
+    `${BFF_URL}/api/sandboxes/${encodeURIComponent(sandboxId)}`,
+  );
 
-  if (!res.ok) {
-    throw new Error(`sandbox ${sandboxId}: controller returned ${res.status}`);
+  if (bffRes.ok) {
+    const data = await bffRes.json();
+    const url = data.connection?.url;
+    if (url) return url.replace(/\/$/, "");
   }
 
-  const sandbox = await res.json();
-  const proxyBaseUrl = sandbox.connection?.url ?? sandbox.proxy_url;
-
-  if (!proxyBaseUrl) {
-    throw new Error(`sandbox ${sandboxId}: no connection URL (status: ${sandbox.status})`);
-  }
-
-  return proxyBaseUrl.replace(/^http/, "ws");
+  throw new Error(`sandbox ${sandboxId}: cannot resolve proxy URL`);
 }
 
 async function handleTerminalRelay(clientWs: WebSocket, params: URLSearchParams) {
   const sandboxId = params.get("sandbox");
-  const cols = params.get("cols") ?? "80";
-  const rows = params.get("rows") ?? "24";
 
   if (!sandboxId) {
     clientWs.send(JSON.stringify({ type: "error", data: "missing sandbox param" }));
@@ -58,56 +47,117 @@ async function handleTerminalRelay(clientWs: WebSocket, params: URLSearchParams)
     return;
   }
 
-  let agentdWsUrl: string;
+  let proxyUrl: string;
   try {
-    const baseWsUrl = await resolveAgentdUrl(sandboxId);
-    agentdWsUrl = `${baseWsUrl}v1/terminal?cols=${cols}&rows=${rows}`;
+    proxyUrl = await resolveProxyUrl(sandboxId);
   } catch (err) {
-    clientWs.send(JSON.stringify({
-      type: "error",
-      data: err instanceof Error ? err.message : "failed to resolve sandbox",
-    }));
+    const msg = err instanceof Error ? err.message : "failed to resolve sandbox";
+    clientWs.send(JSON.stringify({ type: "error", data: msg }));
     clientWs.close();
     return;
   }
 
-  const agentdWs = new WebSocket(agentdWsUrl);
+  let cmdId: string;
+  try {
+    const execRes = await fetch(`${proxyUrl}/v1/exec`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cmd: "/bin/bash",
+        args: ["-l"],
+        detached: true,
+        env: { TERM: "xterm-256color" },
+      }),
+    });
 
-  agentdWs.on("open", () => {
-    console.log(`[ws-relay] connected to agentd for sandbox=${sandboxId}`);
+    if (!execRes.ok) {
+      const text = await execRes.text().catch(() => "");
+      throw new Error(`exec failed: ${execRes.status} ${text}`);
+    }
+
+    const execData = await execRes.json();
+    cmdId = execData.cmd_id;
+    console.log(`[ws-relay] exec started: sandbox=${sandboxId} cmd_id=${cmdId}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "exec spawn failed";
+    clientWs.send(JSON.stringify({ type: "error", data: msg }));
+    clientWs.close();
+    return;
+  }
+
+  const logsWsUrl = `${proxyUrl.replace(/^http/, "ws")}/v1/exec/${cmdId}/logs`;
+  const logsWs = new WebSocket(logsWsUrl);
+
+  logsWs.on("open", () => {
+    console.log(`[ws-relay] logs connected: sandbox=${sandboxId} cmd_id=${cmdId}`);
+    clientWs.send(JSON.stringify({ type: "output", data: "" }));
   });
 
-  agentdWs.on("message", (data) => {
-    if (clientWs.readyState === WebSocket.OPEN) {
-      clientWs.send(data);
+  logsWs.on("message", (raw) => {
+    if (clientWs.readyState !== WebSocket.OPEN) return;
+
+    try {
+      const frame = JSON.parse(raw.toString());
+
+      if (frame.stream === "stdout" || frame.stream === "stderr") {
+        const decoded = Buffer.from(frame.data, "base64").toString("utf-8");
+        clientWs.send(JSON.stringify({ type: "output", data: decoded }));
+      } else if (frame.stream === "exit") {
+        clientWs.send(JSON.stringify({ type: "exit", exitCode: frame.code }));
+        clientWs.close();
+      } else if (frame.stream === "error") {
+        clientWs.send(JSON.stringify({ type: "error", data: frame.code }));
+      }
+    } catch {
+      // Non-JSON frame — forward as raw output
+      clientWs.send(JSON.stringify({ type: "output", data: raw.toString() }));
     }
   });
 
-  clientWs.on("message", (data) => {
-    if (agentdWs.readyState === WebSocket.OPEN) {
-      agentdWs.send(data);
+  clientWs.on("message", async (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+
+      if (msg.type === "input" && msg.data) {
+        await fetch(`${proxyUrl}/v1/exec/${cmdId}/stdin`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: msg.data }),
+        });
+      }
+      // resize is not supported by the current agentd exec API
+    } catch (err) {
+      console.error(`[ws-relay] stdin error:`, err instanceof Error ? err.message : err);
     }
   });
 
   clientWs.on("close", () => {
-    agentdWs.close();
+    logsWs.close();
+    fetch(`${proxyUrl}/v1/exec/${cmdId}/signal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signal: "KILL" }),
+    }).catch(() => {});
   });
 
-  agentdWs.on("close", () => {
-    clientWs.close();
-  });
-
-  agentdWs.on("error", (err) => {
-    console.error(`[ws-relay] agentd error for sandbox=${sandboxId}:`, err.message);
+  logsWs.on("close", () => {
     if (clientWs.readyState === WebSocket.OPEN) {
-      clientWs.send(JSON.stringify({ type: "error", data: `agentd: ${err.message}` }));
+      clientWs.send(JSON.stringify({ type: "exit", exitCode: 0 }));
+      clientWs.close();
     }
-    clientWs.close();
+  });
+
+  logsWs.on("error", (err) => {
+    console.error(`[ws-relay] logs error: sandbox=${sandboxId}:`, err.message);
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.send(JSON.stringify({ type: "error", data: `logs: ${err.message}` }));
+      clientWs.close();
+    }
   });
 
   clientWs.on("error", (err) => {
-    console.error(`[ws-relay] client error for sandbox=${sandboxId}:`, err.message);
-    agentdWs.close();
+    console.error(`[ws-relay] client error: sandbox=${sandboxId}:`, err.message);
+    logsWs.close();
   });
 }
 
