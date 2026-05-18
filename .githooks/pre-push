@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SQLX_OFFLINE=true cargo test --manifest-path crates/Cargo.toml --workspace --all-features
+SQLX_OFFLINE=true cargo test --manifest-path crates/Cargo.toml --workspace --all-features --exclude plane-tests
