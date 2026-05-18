@@ -1,4 +1,5 @@
 import type { DroneState } from "@/api/types";
+import { resolveNodeName } from "@/api/types";
 import { formatHeartbeatAge } from "@/lib/format";
 
 type DroneTableProps = {
@@ -27,9 +28,10 @@ export function DroneTable({ drones, clusterName }: DroneTableProps) {
       <tbody>
         {drones.map((drone) => {
           const hb = formatHeartbeatAge(drone.last_heartbeat_age);
+          const name = resolveNodeName(drone.node.name);
           return (
-            <tr key={drone.node.name} className="border-b border-border hover:bg-bg-hover">
-              <td className="px-6 py-3 text-sm font-mono">{drone.node.name}</td>
+            <tr key={name} className="border-b border-border hover:bg-bg-hover">
+              <td className="px-6 py-3 text-sm font-mono">{name}</td>
               <td className="px-6 py-3 text-sm text-text-2">{clusterName}</td>
               <td className="px-6 py-3 text-sm text-text-2">{drone.backend_count}</td>
               <td className={`px-6 py-3 text-sm ${heartbeatColor[hb.status]}`}>

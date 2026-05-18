@@ -69,13 +69,22 @@ export type DroneState = {
   node: NodeState;
 };
 
+export type NodeName = { Drone: string } | { Proxy: string } | string;
+
 export type NodeState = {
-  name: string;
+  name: NodeName;
   plane_version: string;
   plane_hash: string;
   controller: string;
   controller_heartbeat_age: number;
 };
+
+export function resolveNodeName(name: NodeName): string {
+  if (typeof name === "string") return name;
+  if ("Drone" in name) return name.Drone;
+  if ("Proxy" in name) return name.Proxy;
+  return String(name);
+}
 
 export type ClusterState = {
   name: string;
