@@ -43,8 +43,8 @@ lint: ## Run clippy with deny warnings.
 	$(CARGO) clippy $(CARGO_OPTS) --workspace --all-targets --all-features -- -D warnings
 
 .PHONY: test
-test: ## Run all workspace tests (unit + integration, no Docker).
-	$(CARGO) test $(CARGO_OPTS) --workspace --all-features
+test: ## Run workspace tests (excludes Docker-dependent plane-tests).
+	$(CARGO) test $(CARGO_OPTS) --workspace --all-features --exclude plane-tests
 
 .PHONY: test-unit
 test-unit: ## Run only unit tests (no integration, no Docker).
@@ -59,7 +59,10 @@ test-docker: test-image ## Run Docker-dependent integration tests.
 ##@ CI
 
 .PHONY: ci
-ci: fmt-check lint test ## Run full CI pipeline (fmt check + clippy + tests).
+ci: fmt-check lint test ## CI pipeline (no Docker).
+
+.PHONY: ci-full
+ci-full: fmt-check lint test test-docker ## CI pipeline with Docker integration tests.
 
 .PHONY: fmt-check
 fmt-check: ## Check formatting without modifying.
