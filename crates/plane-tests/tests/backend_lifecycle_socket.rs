@@ -28,7 +28,7 @@ async fn backend_lifecycle_socket(env: TestEnvironment) {
     // Wait for the drone to register. TODO: this seems long.
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     let executor_config = DockerExecutorConfig {
-        image: "ghcr.io/jamsocket/demo-image-drop-four".to_string(),
+        image: common::TEST_IMAGE.to_string(),
         pull_policy: Some(PullPolicy::IfNotPresent),
         env: HashMap::default(),
         resource_limits: ResourceLimits::default(),

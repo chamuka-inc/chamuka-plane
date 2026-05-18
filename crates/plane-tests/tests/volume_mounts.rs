@@ -37,7 +37,7 @@ async fn volume_mounts(env: TestEnvironment) {
             cluster: Some(env.cluster.clone()),
             pool: DronePoolName::default(),
             executable: serde_json::to_value(DockerExecutorConfig {
-                image: "ghcr.io/jamsocket/demo-image-drop-four".to_string(),
+                image: common::TEST_IMAGE.to_string(),
                 pull_policy: Some(PullPolicy::IfNotPresent),
                 env: HashMap::default(),
                 resource_limits: ResourceLimits::default(),
@@ -68,7 +68,7 @@ async fn volume_mounts(env: TestEnvironment) {
             cluster: Some(env.cluster.clone()),
             pool: DronePoolName::default(),
             executable: serde_json::to_value(DockerExecutorConfig {
-                image: "ghcr.io/jamsocket/demo-image-drop-four".to_string(),
+                image: common::TEST_IMAGE.to_string(),
                 pull_policy: Some(PullPolicy::IfNotPresent),
                 env: HashMap::default(),
                 resource_limits: ResourceLimits::default(),

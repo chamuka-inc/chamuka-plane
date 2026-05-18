@@ -8,7 +8,7 @@
     "cluster": "localhost:9090",
     "pool": "",
     "executable": {
-      "image": "ghcr.io/jamsocket/demo-image-drop-four",
+      "image": "sandbox-runtime:test-latest",
       "pull_policy": "IfNotPresent",
       "env": {
         "DEMO_MODE": "true"

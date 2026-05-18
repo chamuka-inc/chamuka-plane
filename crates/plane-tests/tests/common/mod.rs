@@ -4,6 +4,8 @@ use plane_common::{names::BackendName, types::BackendStatus, PlaneClient};
 use std::{panic::AssertUnwindSafe, time::Duration};
 use tokio::time::timeout;
 
+pub const TEST_IMAGE: &str = "sandbox-runtime:test-latest";
+
 pub mod async_drop;
 pub mod auth_mock;
 pub mod docker;
