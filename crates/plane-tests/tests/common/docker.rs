@@ -4,8 +4,10 @@ use bollard::{
     Docker,
 };
 use futures_util::StreamExt;
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Once, time::Duration};
 use tokio::time::sleep;
+
+static BUILD_TEST_IMAGE: Once = Once::new();
 
 pub struct Container {
     docker: Docker,
@@ -176,4 +178,31 @@ pub async fn pull_image(docker: &Docker, image: &str) -> Result<()> {
     tracing::info!(?image, "Pulled image.");
 
     Ok(())
+}
+
+/// Build `sandbox-runtime:test-latest` once per test run.
+pub fn ensure_test_image() {
+    BUILD_TEST_IMAGE.call_once(|| {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("not in cargo project");
+        let dockerfile_dir = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("plane-tests has parent")
+            .parent()
+            .expect("crates has parent")
+            .join("runtime-images/test");
+
+        let output = std::process::Command::new("docker")
+            .args(["build", "-t", super::TEST_IMAGE, "."])
+            .current_dir(&dockerfile_dir)
+            .output()
+            .expect("failed to run docker build");
+
+        assert!(
+            output.status.success(),
+            "docker build failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        tracing::info!(image = super::TEST_IMAGE, "Built test image.");
+    });
 }

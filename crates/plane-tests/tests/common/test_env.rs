@@ -55,6 +55,7 @@ pub struct TestEnvironment {
 #[allow(dead_code)]
 impl TestEnvironment {
     pub fn new(name: &str) -> Self {
+        super::docker::ensure_test_image();
         let scratch_dir = create_scratch_dir(name);
         let run_name = random_string();
 
