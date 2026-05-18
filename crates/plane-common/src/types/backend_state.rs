@@ -65,9 +65,10 @@ pub enum TerminationKind {
     Hard,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Default, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum BackendState {
+    #[default]
     Scheduled,
     Loading,
     Starting,
@@ -227,12 +228,6 @@ impl BackendState {
                 exit_code,
             },
         }
-    }
-}
-
-impl Default for BackendState {
-    fn default() -> Self {
-        Self::Scheduled
     }
 }
 
