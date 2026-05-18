@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSandbox } from "@/lib/sandbox-registry";
+import { getConnectionUrl } from "@/lib/connection-cache";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const entry = await getSandbox(id);
+  const proxyUrl = getConnectionUrl(id)?.replace(/\/$/, "");
 
-  if (!entry?.connection?.url) {
+  if (!proxyUrl) {
     return NextResponse.json(
-      { error: { code: "NOT_FOUND", message: `Sandbox ${id} not found or no connection`, request_id: "" } },
+      { error: { code: "NO_CONNECTION", message: `No connection URL cached for sandbox ${id}. Re-create the sandbox to establish a connection.`, request_id: "" } },
       { status: 404 },
     );
   }
-
-  const proxyUrl = entry.connection.url.replace(/\/$/, "");
 
   let body: unknown;
   try {
