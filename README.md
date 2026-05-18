@@ -1,34 +1,77 @@
 # Sandbox Platform
 
-A Vercel-Sandbox-like ephemeral compute platform built on Plane + OCI containers with tiered isolation.
+Ephemeral compute platform built on [Plane](https://github.com/jamsocket/plane) + OCI containers with tiered isolation.
 
-**Start here:** [CLAUDE.md](./CLAUDE.md) is the entry point for every session. It imports the engineering discipline and points at the four design docs.
-
-## Project state
-
-This workspace contains:
-
-- `CLAUDE.md` — session entry point; imports the discipline doc
-- `docs/` — five mutually-consistent design documents
-  - `sandbox-platform-spec.md` — what we build and why
-  - `sandbox-platform-sad.md` — how it's structured (C4-style)
-  - `sandbox-platform-interfaces.md` — every contract surface, byte-level
-  - `sandbox-platform-build-plan.md` — Phase D → Phase 0 → Phases 1–9
-  - `sandbox-platform-discipline.md` — TDD, code, source control, session handoff (imported every session)
-- `dev-fleet/` — Vagrant-based local fleet for live e2e
-
-## Implementation has not started yet
-
-Currently this is design + discipline only. The first implementation session is Phase D.1 (Plane source deep-read) or Phase 0.1 (workspace scaffolding) depending on whether design verification has been done.
-
-See [docs/sandbox-platform-build-plan.md §8](./docs/sandbox-platform-build-plan.md#8-implementation-order) for the full implementation order.
-
-## First commands after starting implementation
+## Quick start
 
 ```bash
-git init
 git config core.hooksPath .githooks
-# Phase 0.1 will create .githooks/, scripts/status.sh, and the Cargo workspace
+make build                              # build the Rust workspace
+cd dev-fleet && docker compose up -d    # start the local fleet
+./dev-fleet/scripts/smoke-test.sh       # verify everything works
 ```
 
-Until then, `scripts/status.sh` and `.githooks/` do not exist; the next session is responsible for creating them in Phase 0.1.
+## Repository layout
+
+```
+crates/                   Cargo workspace (flat, all crates at same level)
+├── plane/                Hard fork of jamsocket/plane (controller, drone, proxy)
+├── plane-common/         Plane's shared library (upstream origin)
+├── plane-dynamic-proxy/  Plane's reverse proxy library (upstream origin)
+├── agentd/               In-sandbox HTTP daemon
+├── common/               Our shared types, extension types, test stubs
+├── egress-proxy/         xDS publisher for local Envoy
+├── ops-cli/              Operator tooling (sbctl binary)
+├── tools/                Schema generation from Rust types
+├── plane-tests/          Integration tests (require Docker + Postgres)
+└── plane-test-macro/     Proc macro for Plane test harness
+
+sdks/
+├── typescript/           @sandbox-platform/sdk
+└── python/               sandbox-platform-sdk
+
+runtime-images/           OCI image Dockerfiles
+├── node24/               Node 24 + agentd (base sandbox image)
+├── agent/                Node 24 + git + jq + curl + full coreutils + agentd
+├── ysweet/               Node 24 + y-sweet 0.6.3 + agentd
+├── desktop/              X11/VNC + agentd
+└── tests/                Smoke tests for each image (shared lib.sh harness)
+
+dev-fleet/                Docker Compose multi-drone fleet
+├── docker-compose.yml    Controller, proxy, 3 drones, Postgres, registry
+├── scripts/              Fleet status, smoke test, prereq checks
+└── OPS.md                API reference, troubleshooting, quick-start recipes
+
+contracts/
+├── schemas/              JSON Schemas generated from Rust types (CI-checked)
+└── fixtures/             Canonical wire examples
+
+docs/                     Design documents
+├── sandbox-platform-spec.md        What we build and why
+├── sandbox-platform-sad.md         C4-style architecture
+├── sandbox-platform-interfaces.md  Every contract surface, byte-level
+├── sandbox-platform-build-plan.md  Phased implementation order
+└── sandbox-platform-discipline.md  TDD, code rules, source control
+```
+
+## Key commands
+
+| Command | Purpose |
+|---|---|
+| `make ci` | Format check + clippy + tests (no Docker) |
+| `make ci-full` | Full CI including Docker integration tests |
+| `make images` | Build all runtime images |
+| `make schemas` | Regenerate JSON schemas from Rust types |
+| `./scripts/status.sh` | Current phase, next step, walking-skeleton status |
+
+## Current state
+
+Run `./scripts/status.sh` — it reads the latest commit trailers to show the current phase and next concrete step. See [dev-fleet/OPS.md](./dev-fleet/OPS.md) for operational reference.
+
+## Design documents
+
+All design decisions live in `docs/`. The [discipline doc](./docs/sandbox-platform-discipline.md) governs how code arrives in the tree (TDD layers, code rules, commit discipline, session handoff). It is imported every session via [CLAUDE.md](./CLAUDE.md).
+
+## License
+
+Not yet determined.
