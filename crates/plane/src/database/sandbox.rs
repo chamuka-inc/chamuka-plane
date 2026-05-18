@@ -64,12 +64,16 @@ impl<'a> SandboxDatabase<'a> {
         let row = sqlx::query_as::<_, SandboxRow>(
             r#"
             SELECT
-                id, backend_id, tenant, runtime, trust_tier, arch, image,
-                vcpus, memory_mb, ports, tags,
-                persistent, snapshot_source,
-                created_at, updated_at, expires_at, ready_at, terminated_at
-            FROM sandbox
-            WHERE id = $1 AND tenant = $2
+                s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
+                s.vcpus, s.memory_mb, s.ports, s.tags,
+                s.persistent, s.snapshot_source,
+                s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
+                b.last_status AS "live_status",
+                n.name AS "drone_name"
+            FROM sandbox s
+            LEFT JOIN backend b ON b.id = s.backend_id
+            LEFT JOIN node n ON n.id = b.drone_id
+            WHERE s.id = $1 AND s.tenant = $2
             "#,
         )
         .bind(id)
@@ -85,24 +89,23 @@ impl<'a> SandboxDatabase<'a> {
         tenant: &str,
         additional: chrono::Duration,
     ) -> Result<Option<SandboxRow>, sqlx::Error> {
-        let row = sqlx::query_as::<_, SandboxRow>(
+        let updated = sqlx::query(
             r#"
             UPDATE sandbox
             SET expires_at = expires_at + $3, updated_at = NOW()
             WHERE id = $1 AND tenant = $2
-            RETURNING
-                id, backend_id, tenant, runtime, trust_tier, arch, image,
-                vcpus, memory_mb, ports, tags,
-                persistent, snapshot_source,
-                created_at, updated_at, expires_at, ready_at, terminated_at
             "#,
         )
         .bind(id)
         .bind(tenant)
         .bind(additional)
-        .fetch_optional(self.pool)
+        .execute(self.pool)
         .await?;
-        Ok(row)
+
+        if updated.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_by_id(id, tenant).await
     }
 
     pub async fn update_network_policy(
@@ -147,13 +150,17 @@ impl<'a> SandboxDatabase<'a> {
             sqlx::query_as::<_, SandboxRow>(
                 r#"
                 SELECT
-                    id, backend_id, tenant, runtime, trust_tier, arch, image,
-                    vcpus, memory_mb, ports, tags,
-                    persistent, snapshot_source,
-                    created_at, updated_at, expires_at, ready_at, terminated_at
-                FROM sandbox
-                WHERE tenant = $1 AND created_at < $2
-                ORDER BY created_at DESC
+                    s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
+                    s.vcpus, s.memory_mb, s.ports, s.tags,
+                    s.persistent, s.snapshot_source,
+                    s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
+                    b.last_status AS "live_status",
+                    n.name AS "drone_name"
+                FROM sandbox s
+                LEFT JOIN backend b ON b.id = s.backend_id
+                LEFT JOIN node n ON n.id = b.drone_id
+                WHERE s.tenant = $1 AND s.created_at < $2
+                ORDER BY s.created_at DESC
                 LIMIT $3
                 "#,
             )
@@ -166,13 +173,17 @@ impl<'a> SandboxDatabase<'a> {
             sqlx::query_as::<_, SandboxRow>(
                 r#"
                 SELECT
-                    id, backend_id, tenant, runtime, trust_tier, arch, image,
-                    vcpus, memory_mb, ports, tags,
-                    persistent, snapshot_source,
-                    created_at, updated_at, expires_at, ready_at, terminated_at
-                FROM sandbox
-                WHERE tenant = $1
-                ORDER BY created_at DESC
+                    s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
+                    s.vcpus, s.memory_mb, s.ports, s.tags,
+                    s.persistent, s.snapshot_source,
+                    s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
+                    b.last_status AS "live_status",
+                    n.name AS "drone_name"
+                FROM sandbox s
+                LEFT JOIN backend b ON b.id = s.backend_id
+                LEFT JOIN node n ON n.id = b.drone_id
+                WHERE s.tenant = $1
+                ORDER BY s.created_at DESC
                 LIMIT $2
                 "#,
             )
@@ -205,4 +216,6 @@ pub struct SandboxRow {
     pub expires_at: DateTime<Utc>,
     pub ready_at: Option<DateTime<Utc>>,
     pub terminated_at: Option<DateTime<Utc>>,
+    pub live_status: Option<String>,
+    pub drone_name: Option<String>,
 }

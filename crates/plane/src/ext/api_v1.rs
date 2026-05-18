@@ -790,11 +790,21 @@ fn sandbox_from_row(row: SandboxRow, controller: &Controller) -> Sandbox {
         .filter_map(|&p| u16::try_from(p).ok())
         .collect();
 
+    let status = row
+        .live_status
+        .as_deref()
+        .and_then(|s| {
+            serde_json::from_value::<BackendStatus>(serde_json::Value::String(s.to_owned())).ok()
+        })
+        .unwrap_or(BackendStatus::Scheduled);
+
+    let drone_name = row.drone_name;
+
     Sandbox {
         id: row.id,
         backend_id: row.backend_id,
         tenant: row.tenant,
-        status: BackendStatus::Scheduled,
+        status,
         runtime: row.runtime,
         trust,
         arch,
@@ -812,7 +822,7 @@ fn sandbox_from_row(row: SandboxRow, controller: &Controller) -> Sandbox {
         expires_at: row.expires_at,
         ready_at: row.ready_at,
         terminated_at: row.terminated_at,
-        drone_name: None,
+        drone_name,
         cluster,
     }
 }
