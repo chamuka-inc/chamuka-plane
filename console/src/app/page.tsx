@@ -18,10 +18,11 @@ export default function Dashboard() {
   const running = sandboxes.filter((s) => s.status === "ready").length;
   const clusters = fleetData?.clusters ?? [];
   const totalDrones = clusters.reduce((sum, c) => sum + c.drones.length, 0);
-  const staleDrones = clusters.reduce(
-    (sum, c) => sum + c.drones.filter((d) => d.last_heartbeat_age > 30).length,
+  const healthyDrones = clusters.reduce(
+    (sum, c) => sum + c.drones.filter((d) => d.last_heartbeat_age <= 30).length,
     0,
   );
+  const staleDrones = totalDrones - healthyDrones;
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
@@ -46,7 +47,7 @@ export default function Dashboard() {
           {isOperator && (
             <StatCard
               label="Fleet"
-              value={String(totalDrones)}
+              value={String(healthyDrones)}
               suffix={`/${totalDrones}`}
               sub={
                 staleDrones > 0
