@@ -13,7 +13,7 @@ const navItems = [
 
 function LogoMark() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <rect width="20" height="20" rx="4" fill="#ededed" />
       <rect x="4" y="4" width="5" height="5" rx="1" fill="#000" />
       <rect x="11" y="4" width="5" height="5" rx="1" fill="#000" />
@@ -45,6 +45,7 @@ export function Topbar() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive(item.href) ? "page" : undefined}
               className={`text-sm px-3 py-2 rounded-md transition-colors ${
                 isActive(item.href)
                   ? "text-text"
@@ -57,12 +58,16 @@ export function Topbar() {
       </nav>
 
       <div className="flex items-center gap-3">
-        <div className="bg-bg-1 border border-border rounded-md px-3 py-1.5 text-sm text-text-3 flex items-center gap-10 cursor-pointer hover:border-border-light transition-colors">
+        <button
+          type="button"
+          aria-label="Search"
+          className="bg-bg-1 border border-border rounded-md px-3 py-1.5 text-sm text-text-3 flex items-center gap-10 cursor-pointer hover:border-border-light transition-colors"
+        >
           <span>Search...</span>
           <kbd className="text-xs text-text-4 bg-bg border border-border px-1.5 py-0.5 rounded">
             ⌘K
           </kbd>
-        </div>
+        </button>
 
         <button
           onClick={toggleRole}
