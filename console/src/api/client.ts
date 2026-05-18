@@ -72,8 +72,9 @@ export function createBffClient() {
       return request(`/api/sandboxes?${sp}`);
     },
 
-    getSandbox(id: string): Promise<Sandbox> {
-      return request(`/api/sandboxes/${encodeURIComponent(id)}`);
+    async getSandbox(id: string): Promise<Sandbox> {
+      const result = await request<{ sandbox: Sandbox }>(`/api/sandboxes/${encodeURIComponent(id)}`);
+      return result.sandbox;
     },
 
     getFleetState(): Promise<FleetResponse> {

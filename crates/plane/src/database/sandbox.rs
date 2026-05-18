@@ -129,6 +129,18 @@ impl<'a> SandboxDatabase<'a> {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn get_token_for_backend(
+        &self,
+        backend_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let row: Option<(String,)> =
+            sqlx::query_as(r#"SELECT token FROM token WHERE backend_id = $1 LIMIT 1"#)
+                .bind(backend_id)
+                .fetch_optional(self.pool)
+                .await?;
+        Ok(row.map(|r| r.0))
+    }
+
     pub async fn get_drone_id_for_backend(
         &self,
         backend_id: &str,

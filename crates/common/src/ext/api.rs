@@ -119,6 +119,13 @@ pub struct CreateSandboxResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetSandboxResponse {
+    pub sandbox: Sandbox,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<SandboxConnection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListSandboxesResponse {
     pub items: Vec<Sandbox>,
     #[serde(skip_serializing_if = "Option::is_none")]

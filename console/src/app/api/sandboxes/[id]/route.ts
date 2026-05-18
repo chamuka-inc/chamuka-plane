@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setConnectionUrl } from "@/lib/connection-cache";
 
 const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:8080";
 const AUTH_TENANT = process.env.AUTH_TENANT ?? "tenant-default";
@@ -28,6 +29,10 @@ export async function GET(
       { error: { code: "UPSTREAM_ERROR", message: `Controller returned ${res.status}`, request_id: "" } },
       { status: 502 },
     );
+  }
+
+  if (res.ok && body.sandbox?.id && body.connection?.url) {
+    setConnectionUrl(body.sandbox.id, body.connection.url);
   }
 
   return NextResponse.json(body, { status: res.status });

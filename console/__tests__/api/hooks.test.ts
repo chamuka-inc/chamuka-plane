@@ -45,7 +45,7 @@ describe("useSandbox", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve({ id: "sb-7f3d1a", status: "ready" }),
+        Promise.resolve({ sandbox: { id: "sb-7f3d1a", status: "ready" } }),
     });
 
     const { result } = renderHook(() => useSandbox("sb-7f3d1a"), {

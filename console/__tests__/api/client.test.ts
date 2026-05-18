@@ -142,7 +142,7 @@ describe("BffClient", () => {
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(mockSandbox),
+      json: () => Promise.resolve({ sandbox: mockSandbox }),
     });
 
     const client = createBffClient();

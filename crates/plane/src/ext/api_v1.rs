@@ -8,7 +8,8 @@ use axum::{
 use chamuka_common::ext::api::{
     CreateCredentialBindingRequest, CreateSandboxRequest, CreateSandboxResponse,
     CreateSecretRequest, CreateSecretResponse, CredentialBinding, ExtendTimeoutRequest,
-    ListSandboxesResponse, SandboxConnection, SnapshotRequest, SnapshotResponse,
+    GetSandboxResponse, ListSandboxesResponse, SandboxConnection, SnapshotRequest,
+    SnapshotResponse,
 };
 use chamuka_common::ext::network::NetworkPolicy;
 use chamuka_common::ext::sandbox::{Arch, Sandbox, SandboxResources, TrustLevel};
@@ -234,10 +235,42 @@ pub async fn get_sandbox(
     State(controller): State<Controller>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<Sandbox>, ApiError> {
+) -> Result<Json<GetSandboxResponse>, ApiError> {
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &id, &tenant).await?;
-    Ok(Json(sandbox_from_row(row, &controller)))
+    let backend_id = row.backend_id.clone();
+    let sandbox = sandbox_from_row(row, &controller);
+
+    let connection = controller
+        .db
+        .sandbox()
+        .get_token_for_backend(&backend_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|token| {
+            let cluster = controller
+                .default_cluster
+                .as_ref()
+                .map(|c| c.to_string())
+                .unwrap_or_default();
+            let url = format!("http://{}/{}/", cluster, token);
+            let status_url = plane_common::names::BackendName::try_from(backend_id.clone())
+                .ok()
+                .map(|bn| controller.client.backend_status_url(&bn).to_string())
+                .unwrap_or_default();
+            SandboxConnection {
+                token,
+                url,
+                secret_token: None,
+                status_url,
+            }
+        });
+
+    Ok(Json(GetSandboxResponse {
+        sandbox,
+        connection,
+    }))
 }
 
 #[derive(Debug, Deserialize)]

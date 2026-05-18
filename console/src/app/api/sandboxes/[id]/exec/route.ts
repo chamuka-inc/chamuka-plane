@@ -1,16 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getConnectionUrl } from "@/lib/connection-cache";
+import { getConnectionUrl, setConnectionUrl } from "@/lib/connection-cache";
+
+const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:8080";
+const AUTH_TENANT = process.env.AUTH_TENANT ?? "tenant-default";
+const AUTH_USER = process.env.AUTH_USER ?? "admin";
+
+async function resolveConnectionUrl(sandboxId: string): Promise<string | undefined> {
+  const cached = getConnectionUrl(sandboxId);
+  if (cached) return cached;
+
+  const res = await fetch(
+    `${CONTROLLER_URL}/pub/v1/sandboxes/${encodeURIComponent(sandboxId)}`,
+    { headers: { "x-auth-tenant": AUTH_TENANT, "x-auth-user": AUTH_USER } },
+  );
+  if (!res.ok) return undefined;
+
+  const data = await res.json().catch(() => null);
+  if (data?.connection?.url) {
+    setConnectionUrl(sandboxId, data.connection.url);
+    return data.connection.url as string;
+  }
+  return undefined;
+}
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const proxyUrl = getConnectionUrl(id)?.replace(/\/$/, "");
+  const connUrl = await resolveConnectionUrl(id);
+  const proxyUrl = connUrl?.replace(/\/$/, "");
 
   if (!proxyUrl) {
     return NextResponse.json(
-      { error: { code: "NO_CONNECTION", message: `No connection URL cached for sandbox ${id}. Re-create the sandbox to establish a connection.`, request_id: "" } },
+      { error: { code: "NO_CONNECTION", message: `No connection URL for sandbox ${id}`, request_id: "" } },
       { status: 404 },
     );
   }
