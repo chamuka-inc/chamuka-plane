@@ -19,7 +19,8 @@ no shell, no curl. `/bin/wget` is copied from busybox for healthchecks.
 Use `CMD` format (not `CMD-SHELL`) since there is no shell.
 
 Other runtime variants: `sandbox-runtime:desktop-test` (with X11/VNC),
-`sandbox-runtime:ysweet-latest` (y-sweet 0.6.3 pre-installed on port 3000).
+`sandbox-runtime:ysweet-latest` (y-sweet 0.6.3 pre-installed on port 3000),
+`sandbox-runtime:busybox-latest` (13 MB: bash + 405 busybox applets + jq + agentd).
 
 ## Starting the fleet
 
