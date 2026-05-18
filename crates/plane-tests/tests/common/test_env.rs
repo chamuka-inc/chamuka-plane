@@ -380,8 +380,9 @@ impl Drop for DnsServer {
 }
 
 fn create_scratch_dir(name: &str) -> PathBuf {
-    // Use temp_dir to keep Unix socket paths under macOS SUN_LEN (104 bytes)
-    let scratch_dir = std::env::temp_dir().join(format!("plane-test/{name}"));
+    // /tmp keeps paths short (macOS SUN_LEN = 104 bytes) and is shared
+    // with Docker Desktop's VM (unlike /var/folders/... from temp_dir()).
+    let scratch_dir = PathBuf::from(format!("/tmp/plane-test/{name}"));
     std::fs::remove_dir_all(&scratch_dir).unwrap_or(());
     std::fs::create_dir_all(&scratch_dir).unwrap();
     scratch_dir

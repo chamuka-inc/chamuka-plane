@@ -59,7 +59,23 @@ where
     }
 }
 
-// For some reason Rust doesn't see that this function is used
+#[allow(dead_code)]
+pub async fn wait_until_backend_ready(client: &PlaneClient, backend_id: &BackendName) {
+    let mut backend_status_stream = client
+        .backend_status_stream(backend_id)
+        .with_timeout(10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    while let Ok(Some(message)) = backend_status_stream.next().with_timeout(30).await {
+        tracing::info!("Got status: {:?}", message);
+        if message.status == BackendStatus::Ready {
+            break;
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub async fn wait_until_backend_terminated(client: &PlaneClient, backend_id: &BackendName) {
     let mut backend_status_stream = client

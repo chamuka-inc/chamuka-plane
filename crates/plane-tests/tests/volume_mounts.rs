@@ -1,5 +1,5 @@
 use crate::common::test_env::TestEnvironment;
-use crate::common::wait_until_backend_terminated;
+use crate::common::{wait_until_backend_ready, wait_until_backend_terminated};
 use plane_common::types::{
     ConnectRequest, DockerExecutorConfig, DronePoolName, KeyConfig, Mount, PullPolicy,
     ResourceLimits, SpawnConfig,
@@ -95,10 +95,9 @@ async fn volume_mounts(env: TestEnvironment) {
     tracing::info!("Got response for key mount.");
     assert!(response_key_mount.spawned);
 
-    // Wait for docker to create the folders. TODO: this seems long.
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    wait_until_backend_ready(&client, &response_custom_mount.backend_id).await;
+    wait_until_backend_ready(&client, &response_key_mount.backend_id).await;
 
-    // Ensure the mounted folders are created
     assert!(custom_mount_path.exists());
     assert!(key_mount_path.exists());
 

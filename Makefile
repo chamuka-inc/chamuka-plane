@@ -50,8 +50,12 @@ test: ## Run workspace tests (excludes Docker-dependent plane-tests).
 test-unit: ## Run only unit tests (no integration, no Docker).
 	$(CARGO) test $(CARGO_OPTS) --workspace --all-features --lib
 
+.PHONY: docker-check
+docker-check: ## Verify Docker is running.
+	@docker info >/dev/null 2>&1 || (echo "ERROR: Docker is not running." && exit 1)
+
 .PHONY: test-docker
-test-docker: test-image ## Run Docker-dependent integration tests.
+test-docker: docker-check test-image ## Run Docker-dependent integration tests.
 	$(CARGO) test $(CARGO_OPTS) -p plane-tests --all-features
 
 # ─── CI ─────────────────────────────────────────────────────────────
