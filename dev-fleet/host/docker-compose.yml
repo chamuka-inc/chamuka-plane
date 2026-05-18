@@ -3,6 +3,10 @@
 # Image and CLI flags verified against github.com/jamsocket/plane
 # (docker/docker-compose.yml, plane/src/controller/command.rs,
 # plane/src/proxy/command.rs).
+#
+# Services bind to 0.0.0.0 so they're reachable from both localhost
+# and the VirtualBox host-only network (192.168.56.1) without
+# requiring the vboxnet interface to exist at compose-up time.
 
 name: sandbox-platform-dev
 
@@ -12,13 +16,11 @@ services:
     container_name: sandbox-postgres
     restart: unless-stopped
     environment:
-      # Matches the upstream Plane dev compose: passwordless trust auth.
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "${HOST_BIND_IP:-192.168.56.1}:5432:5432"
-      - "127.0.0.1:5432:5432"
+      - "0.0.0.0:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -32,11 +34,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Verified flags from plane/src/controller/command.rs:
-    #   --db <pg url>             required
-    #   --host <ip>               default 127.0.0.1
-    #   --port <port>             default 8080
-    #   --default-cluster <name>  optional default cluster for connect
     command:
       - controller
       - --db
@@ -48,15 +45,13 @@ services:
       - --default-cluster
       - "${CLUSTER_NAME:-192.168.56.1:9090}"
     ports:
-      - "${HOST_BIND_IP:-192.168.56.1}:${CONTROLLER_PORT:-8080}:${CONTROLLER_PORT:-8080}"
-      - "127.0.0.1:${CONTROLLER_PORT:-8080}:${CONTROLLER_PORT:-8080}"
+      - "0.0.0.0:${CONTROLLER_PORT:-8080}:${CONTROLLER_PORT:-8080}"
     healthcheck:
-      # Verified: /pub/health is the public health route
-      # (plane/src/controller/mod.rs).
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:${CONTROLLER_PORT:-8080}/pub/health || exit 1"]
+      test: ["CMD", "/bin/wget", "-q", "--spider", "http://localhost:${CONTROLLER_PORT:-8080}/pub/health"]
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 10s
 
   proxy:
     image: chamuka-plane:latest
@@ -65,12 +60,6 @@ services:
     depends_on:
       controller:
         condition: service_healthy
-    # Verified flags from plane/src/proxy/command.rs:
-    #   --controller-url <ws url> required
-    #   --cluster <name>          required
-    #   --http-port <port>        default 9090 in non-HTTPS mode
-    # Note WebSocket scheme (ws://) — the proxy connects to the
-    # controller over a WS for coordination.
     command:
       - proxy
       - --controller-url
@@ -80,13 +69,8 @@ services:
       - --http-port
       - "${PROXY_PORT:-9090}"
     ports:
-      - "${HOST_BIND_IP:-192.168.56.1}:${PROXY_PORT:-9090}:${PROXY_PORT:-9090}"
-      - "127.0.0.1:${PROXY_PORT:-9090}:${PROXY_PORT:-9090}"
+      - "0.0.0.0:${PROXY_PORT:-9090}:${PROXY_PORT:-9090}"
 
-  # Local registry for drone image pulls. VMs pull from 192.168.56.1:5000.
-  # After `docker compose up`, push images with:
-  #   docker tag chamuka-plane:latest 192.168.56.1:5000/chamuka-plane:latest
-  #   docker push 192.168.56.1:5000/chamuka-plane:latest
   registry:
     image: registry:2
     container_name: sandbox-registry
@@ -94,8 +78,7 @@ services:
     volumes:
       - registry:/var/lib/registry
     ports:
-      - "${HOST_BIND_IP:-192.168.56.1}:5000:5000"
-      - "127.0.0.1:5000:5000"
+      - "0.0.0.0:5000:5000"
 
 volumes:
   pgdata:

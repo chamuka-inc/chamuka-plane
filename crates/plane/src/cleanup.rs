@@ -288,8 +288,8 @@ mod tests {
                      now() - interval '1 hour')",
         )
         .bind(format!("snap-old-{}", f.suffix))
-        .bind(&f.sandbox_id())
-        .bind(&f.tenant_id())
+        .bind(f.sandbox_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert expired snapshot");
@@ -301,8 +301,8 @@ mod tests {
                      now() + interval '1 hour')",
         )
         .bind(format!("snap-fresh-{}", f.suffix))
-        .bind(&f.sandbox_id())
-        .bind(&f.tenant_id())
+        .bind(f.sandbox_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert fresh snapshot");
@@ -313,7 +313,7 @@ mod tests {
 
         let remaining: i64 =
             sqlx::query_scalar("SELECT count(*) FROM snapshot WHERE sandbox_id = $1")
-                .bind(&f.sandbox_id())
+                .bind(f.sandbox_id())
                 .fetch_one(&pool)
                 .await
                 .expect("count");
@@ -340,8 +340,8 @@ mod tests {
                          now() - interval '1 hour')",
             )
             .bind(format!("snap-bat-{i}-{}", f.suffix))
-            .bind(&f.sandbox_id())
-            .bind(&f.tenant_id())
+            .bind(f.sandbox_id())
+            .bind(f.tenant_id())
             .execute(&pool)
             .await
             .expect("insert snapshot");
@@ -353,7 +353,7 @@ mod tests {
 
         let remaining: i64 =
             sqlx::query_scalar("SELECT count(*) FROM snapshot WHERE sandbox_id = $1")
-                .bind(&f.sandbox_id())
+                .bind(f.sandbox_id())
                 .fetch_one(&pool)
                 .await
                 .expect("count");
@@ -379,7 +379,7 @@ mod tests {
                      now() - interval '31 days')",
         )
         .bind(format!("sec-old-{}", f.suffix))
-        .bind(&f.tenant_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert old soft-deleted secret");
@@ -391,7 +391,7 @@ mod tests {
                      now() - interval '1 day')",
         )
         .bind(format!("sec-recent-{}", f.suffix))
-        .bind(&f.tenant_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert recent soft-deleted secret");
@@ -402,7 +402,7 @@ mod tests {
              VALUES ($1, $2, 'kms-1', '\\x00', '\\x00', '\\x00', '\\x00')",
         )
         .bind(format!("sec-active-{}", f.suffix))
-        .bind(&f.tenant_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert active secret");
@@ -458,7 +458,7 @@ mod tests {
                      now() - interval '60 days')",
         )
         .bind(&secret_id)
-        .bind(&f.tenant_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert bound secret");
@@ -469,7 +469,7 @@ mod tests {
              VALUES ($1, $2, $3, 'api.example.com', 'Authorization', '{value}')",
         )
         .bind(format!("cb-{}", f.suffix))
-        .bind(&f.sandbox_id())
+        .bind(f.sandbox_id())
         .bind(&secret_id)
         .execute(&pool)
         .await
@@ -513,8 +513,8 @@ mod tests {
                      now() - interval '3 days', now() - interval '2 days')",
         )
         .bind(format!("xak-old-{}", f.suffix))
-        .bind(&f.backend_id())
-        .bind(&f.sandbox_id())
+        .bind(f.backend_id())
+        .bind(f.sandbox_id())
         .bind(f.drone_id)
         .execute(&pool)
         .await
@@ -527,8 +527,8 @@ mod tests {
                      now() - interval '1 hour', now() - interval '30 minutes')",
         )
         .bind(format!("xak-recent-{}", f.suffix))
-        .bind(&f.backend_id())
-        .bind(&f.sandbox_id())
+        .bind(f.backend_id())
+        .bind(f.sandbox_id())
         .bind(f.drone_id)
         .execute(&pool)
         .await
@@ -539,8 +539,8 @@ mod tests {
              VALUES ($1, 'policy', $2, $3, $4, '{}'::jsonb)",
         )
         .bind(format!("xak-pending-{}", f.suffix))
-        .bind(&f.backend_id())
-        .bind(&f.sandbox_id())
+        .bind(f.backend_id())
+        .bind(f.sandbox_id())
         .bind(f.drone_id)
         .execute(&pool)
         .await
@@ -598,8 +598,8 @@ mod tests {
                      now() - interval '1 hour')",
         )
         .bind(format!("snap-gc-{}", f.suffix))
-        .bind(&f.sandbox_id())
-        .bind(&f.tenant_id())
+        .bind(f.sandbox_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert expired snapshot");
@@ -611,7 +611,7 @@ mod tests {
                      now() - interval '60 days')",
         )
         .bind(format!("sec-gc-{}", f.suffix))
-        .bind(&f.tenant_id())
+        .bind(f.tenant_id())
         .execute(&pool)
         .await
         .expect("insert old secret");
@@ -622,8 +622,8 @@ mod tests {
              VALUES ($1, 'policy', $2, $3, $4, '{}'::jsonb, now() - interval '2 days')",
         )
         .bind(format!("xak-gc-{}", f.suffix))
-        .bind(&f.backend_id())
-        .bind(&f.sandbox_id())
+        .bind(f.backend_id())
+        .bind(f.sandbox_id())
         .bind(f.drone_id)
         .execute(&pool)
         .await

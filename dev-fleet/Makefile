@@ -17,9 +17,12 @@ CONTROLLER_PORT ?= 8080
 PROXY_PORT      ?= 9090
 HOST_ONLY_IP    ?= 192.168.56.1
 CLUSTER_NAME    ?= $(HOST_ONLY_IP):$(PROXY_PORT)
+PLANE_IMAGE     ?= chamuka-plane:latest
+RUNTIME_IMAGE   ?= sandbox-runtime:node24-latest
+REGISTRY        ?= localhost:5000
 
 export DRONE_COUNT DRONE_VCPUS DRONE_MEM_MB CONTROLLER_PORT PROXY_PORT \
-       HOST_ONLY_IP CLUSTER_NAME
+       HOST_ONLY_IP CLUSTER_NAME PLANE_IMAGE RUNTIME_IMAGE REGISTRY
 
 # Cluster name URL-encoded (colon → %3A) for path segments.
 CLUSTER_ENC := $(subst :,%3A,$(CLUSTER_NAME))
@@ -29,7 +32,7 @@ CLUSTER_ENC := $(subst :,%3A,$(CLUSTER_NAME))
 .PHONY: help
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m\n"} \
-		/^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } \
+		/^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } \
 		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
 ##@ Lifecycle
@@ -38,8 +41,12 @@ help: ## Show this help.
 check: ## Verify prerequisites.
 	@bash scripts/check-prereqs.sh
 
+.PHONY: ensure-network
+ensure-network: ## Ensure VirtualBox host-only network is defined.
+	@bash scripts/ensure-hostonlynet.sh
+
 .PHONY: up
-up: check host-up drones-up ## Start host services and all drones.
+up: check ensure-network host-up registry-push drones-up ## Full cold-start: host services + registry + drones.
 	@echo ""
 	@echo "Fleet is up."
 	@echo "Controller:  http://$(HOST_ONLY_IP):$(CONTROLLER_PORT)"
@@ -94,6 +101,21 @@ logs: ## Tail controller logs.
 logs-all: ## Tail all host service logs.
 	@cd host && docker compose logs -f
 
+##@ Registry
+
+.PHONY: registry-push
+registry-push: ## Tag and push required images to local registry.
+	@echo "Pushing images to local registry ($(REGISTRY))..."
+	@for img in $(PLANE_IMAGE) $(RUNTIME_IMAGE); do \
+		if docker image inspect "$$img" >/dev/null 2>&1; then \
+			docker tag "$$img" "$(REGISTRY)/$$img" && \
+			docker push "$(REGISTRY)/$$img" && \
+			echo "  pushed $$img → $(REGISTRY)/$$img"; \
+		else \
+			echo "  SKIP: $$img not found locally"; \
+		fi; \
+	done
+
 ##@ Drones (VMs)
 
 .PHONY: drones-up
@@ -119,7 +141,7 @@ ssh-%: ## ssh into drone-N, e.g. make ssh-1.
 
 .PHONY: smoke
 smoke: ## End-to-end test: spawn demo backend, verify routing.
-	@bash scripts/smoke-test.sh
+	@CONTROLLER=127.0.0.1:$(CONTROLLER_PORT) PROXY=$(HOST_ONLY_IP):$(PROXY_PORT) CLUSTER=$(CLUSTER_NAME) IMAGE=$(HOST_ONLY_IP):5000/$(RUNTIME_IMAGE) bash scripts/smoke-test.sh
 
 .PHONY: cluster-state
 cluster-state: ## Show drones and proxies registered with the controller.
@@ -138,3 +160,6 @@ env: ## Print effective config.
 	@echo "PROXY_PORT      = $(PROXY_PORT)"
 	@echo "HOST_ONLY_IP    = $(HOST_ONLY_IP)"
 	@echo "CLUSTER_NAME    = $(CLUSTER_NAME)"
+	@echo "PLANE_IMAGE     = $(PLANE_IMAGE)"
+	@echo "RUNTIME_IMAGE   = $(RUNTIME_IMAGE)"
+	@echo "REGISTRY        = $(REGISTRY)"

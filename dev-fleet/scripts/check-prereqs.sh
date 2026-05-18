@@ -15,6 +15,8 @@ fail() { echo -e "  ${RED}✗${NC} $*"; FAILED=1; }
 warn() { echo -e "  ${YELLOW}!${NC} $*"; }
 
 FAILED=0
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+FLEET_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "Checking host prerequisites..."
 
@@ -23,7 +25,6 @@ echo "Checking host prerequisites..."
 if command -v VBoxManage >/dev/null 2>&1; then
     vbox_version=$(VBoxManage --version | awk -F'r' '{print $1}')
     ok "VirtualBox installed (version ${vbox_version})"
-    # 7.0+ is required for nested virt support.
     major=$(echo "$vbox_version" | cut -d. -f1)
     if [[ "${major}" -lt 7 ]]; then
         warn "VirtualBox 7.0+ is recommended for nested virtualization support."
@@ -74,30 +75,75 @@ fi
 # ---- Host-only network ---------------------------------------------------
 
 if command -v VBoxManage >/dev/null 2>&1; then
-    if VBoxManage list hostonlyifs | grep -q "192.168.56"; then
-        ok "Host-only network 192.168.56.0/24 exists"
+    vbox_major=$(VBoxManage --version | cut -d. -f1)
+    if [[ "${vbox_major}" -ge 7 ]]; then
+        if VBoxManage list hostonlynets 2>/dev/null | grep -q "vboxnet0"; then
+            ok "Host-only network vboxnet0 defined (VBox 7.x)"
+        else
+            warn "Host-only network vboxnet0 not defined. 'make ensure-network' will create it."
+        fi
     else
-        warn "Host-only network 192.168.56.0/24 does not exist. Vagrant will create it on 'vagrant up'."
-        warn "If creation fails, manually run: VBoxManage hostonlyif create"
+        if VBoxManage list hostonlyifs 2>/dev/null | grep -q "192.168.56"; then
+            ok "Host-only network 192.168.56.0/24 exists"
+        else
+            warn "Host-only network 192.168.56.0/24 does not exist. Vagrant will create it."
+        fi
     fi
+fi
+
+# ---- Conflicting fleet containers ----------------------------------------
+
+if docker compose -f "${FLEET_DIR}/docker-compose.yml" ps --status running -q 2>/dev/null | grep -q .; then
+    fail "The Docker-only dev fleet has running containers."
+    warn "Stop it first: cd dev-fleet && docker compose down"
 fi
 
 # ---- Port availability ---------------------------------------------------
 
 for port in 8080 9090 5432 5000; do
-    if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":${port}\$"; then
-        fail "Port ${port} is already in use on the host. Free it or override in .env."
+    if lsof -i ":${port}" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
+        owner=$(lsof -i ":${port}" -sTCP:LISTEN -P -n 2>/dev/null | awk 'NR==2{print $1}')
+        fail "Port ${port} is already in use (by ${owner:-unknown}). Free it or override in .env."
     else
         ok "Port ${port} is available"
     fi
 done
 
+# ---- Required images -----------------------------------------------------
+
+if docker image inspect chamuka-plane:latest >/dev/null 2>&1; then
+    ok "chamuka-plane:latest image exists"
+    if docker run --rm --entrypoint /bin/wget chamuka-plane:latest --help >/dev/null 2>&1; then
+        ok "chamuka-plane:latest has /bin/wget (health check will work)"
+    else
+        fail "chamuka-plane:latest lacks /bin/wget. Rebuild with: docker build -t chamuka-plane:latest -f plane/docker/Dockerfile crates/"
+    fi
+else
+    fail "chamuka-plane:latest image not found. Build it first: make -C .. build && docker build ..."
+fi
+
+for img in "sandbox-runtime:test-latest" "sandbox-runtime:node24-latest"; do
+    if docker image inspect "$img" >/dev/null 2>&1; then
+        ok "Image $img exists locally"
+    else
+        warn "Image $img not found locally (drones may fail to pull it)"
+    fi
+done
+
 # ---- IP forwarding -------------------------------------------------------
 
-if [[ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" == "1" ]]; then
-    ok "IPv4 forwarding is enabled"
+if [[ "$(uname)" == "Darwin" ]]; then
+    if sysctl -n net.inet.ip.forwarding 2>/dev/null | grep -q "1"; then
+        ok "IPv4 forwarding is enabled"
+    else
+        warn "IPv4 forwarding is disabled (not strictly required)"
+    fi
 else
-    warn "IPv4 forwarding is disabled (not strictly required, but useful for cross-VM testing)"
+    if [[ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" == "1" ]]; then
+        ok "IPv4 forwarding is enabled"
+    else
+        warn "IPv4 forwarding is disabled (not strictly required)"
+    fi
 fi
 
 # ---- Result --------------------------------------------------------------

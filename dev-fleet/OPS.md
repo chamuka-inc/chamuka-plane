@@ -11,11 +11,12 @@ Two images, two roles. Never mix them.
 
 | Image | Contents | Role |
 |---|---|---|
-| `chamuka-plane:latest` | `/bin/plane` only (no shell) | Controller, proxy, drones |
+| `chamuka-plane:latest` | `/bin/plane` + `/bin/wget` (no shell) | Controller, proxy, drones |
 | `sandbox-runtime:node24-latest` | agentd + Node 24 + tini | Sandbox backends |
 
-Build `chamuka-plane` with `SQLX_OFFLINE=true`. The image is minimal —
-no shell, no curl, no wget. Do not add healthchecks that require shell commands.
+Build `chamuka-plane` with `SQLX_OFFLINE=true`. The image is distroless —
+no shell, no curl. `/bin/wget` is copied from busybox for healthchecks.
+Use `CMD` format (not `CMD-SHELL`) since there is no shell.
 
 Other runtime variants: `sandbox-runtime:desktop-test` (with X11/VNC).
 
@@ -341,8 +342,14 @@ docker logs plane-{backend-id}
 - Fix: use `sandbox-runtime:node24-latest` (runs agentd, stays alive).
 
 **Healthcheck failures on controller/proxy**:
-- `chamuka-plane:latest` has no shell — `wget`/`curl` based healthchecks fail.
-- Fix: don't add healthchecks to controller/proxy services.
+- `chamuka-plane:latest` is distroless — no shell. `CMD-SHELL` healthchecks fail.
+- Fix: use `CMD` format with `/bin/wget`: `["CMD", "/bin/wget", "-q", "--spider", "http://localhost:8080/pub/health"]`.
+
+**Backend terminates instantly after spawn (deserialization error)**:
+- `pull_policy` values are PascalCase: `IfNotPresent`, `Always`, `Never`.
+- Kebab-case (`if-not-present`) or lowercase (`always`) causes a serde error
+  and immediate termination.
+- Fix: use `"pull_policy": "IfNotPresent"` in the executable block.
 
 **"KeyUnheldNoSpawnConfig"**:
 - `spawn_config` missing from the connect request body.

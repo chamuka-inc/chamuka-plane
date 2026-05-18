@@ -180,7 +180,7 @@ Source: `plane/src/controller/mod.rs` (router definition) and
     "pool": "pool-name",            // optional; routes to drones in this pool
     "executable": {                 // serialized DockerExecutorConfig
       "image": "ghcr.io/...",
-      "pull_policy": "always" | "if-not-present" | "never",  // optional
+      "pull_policy": "Always" | "IfNotPresent" | "Never",  // optional, PascalCase
       "credentials": {...},                                   // optional
       "env": {"KEY": "value"},                                // optional
       "resource_limits": {...},                               // optional

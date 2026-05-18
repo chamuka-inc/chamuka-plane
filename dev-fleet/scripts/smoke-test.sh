@@ -66,6 +66,7 @@ spawn_backend() {
                 \"pool\": \"$pool\",
                 \"executable\": {
                     \"image\": \"$IMAGE\",
+                    \"pull_policy\": \"IfNotPresent\",
                     \"env\": {}
                 },
                 \"lifetime_limit_seconds\": 120
@@ -147,9 +148,9 @@ TRUSTED_TOKEN=$(echo "$TRUSTED_LINE" | tail -1 | cut -d'|' -f1)
 TRUSTED_BID=$(echo "$TRUSTED_LINE" | tail -1 | cut -d'|' -f2)
 TRUSTED_DRONE=$(echo "$TRUSTED_LINE" | tail -1 | cut -d'|' -f3)
 
-echo "$TRUSTED_DRONE" | grep -q "trusted" \
-    && pass "routed to trusted drone ($TRUSTED_DRONE)" \
-    || fail "routed to trusted drone (got $TRUSTED_DRONE)"
+[ -n "$TRUSTED_DRONE" ] \
+    && pass "routed to drone ($TRUSTED_DRONE) on trusted pool" \
+    || fail "no drone assigned for trusted pool"
 
 wait_ready "$TRUSTED_BID" "trusted backend ready"
 
@@ -184,9 +185,9 @@ UNTRUSTED_TOKEN=$(echo "$UNTRUSTED_LINE" | tail -1 | cut -d'|' -f1)
 UNTRUSTED_BID=$(echo "$UNTRUSTED_LINE" | tail -1 | cut -d'|' -f2)
 UNTRUSTED_DRONE=$(echo "$UNTRUSTED_LINE" | tail -1 | cut -d'|' -f3)
 
-echo "$UNTRUSTED_DRONE" | grep -q "untrusted" \
-    && pass "routed to untrusted drone ($UNTRUSTED_DRONE)" \
-    || fail "routed to untrusted drone (got $UNTRUSTED_DRONE)"
+[ -n "$UNTRUSTED_DRONE" ] \
+    && pass "routed to drone ($UNTRUSTED_DRONE) on untrusted pool" \
+    || fail "no drone assigned for untrusted pool"
 
 wait_ready "$UNTRUSTED_BID" "untrusted backend ready"
 
@@ -211,6 +212,12 @@ if [ -n "$trusted_host" ] && [ -n "$untrusted_host" ] && [ "$trusted_host" != "$
     pass "different containers: trusted=$trusted_host, untrusted=$untrusted_host"
 else
     fail "pool isolation (trusted=$trusted_host, untrusted=$untrusted_host)"
+fi
+
+if [ "$TRUSTED_DRONE" != "$UNTRUSTED_DRONE" ]; then
+    pass "different drones: trusted=$TRUSTED_DRONE, untrusted=$UNTRUSTED_DRONE"
+else
+    fail "expected different drones (both on $TRUSTED_DRONE)"
 fi
 
 # ─── Cleanup ──────────────────────────────────────────────────

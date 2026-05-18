@@ -31,11 +31,21 @@ RUN mkdir -p /work/tools/generate-schemas/src && echo "fn main() {}" > /work/too
 ENV SQLX_OFFLINE=true
 RUN cargo build -p plane --release --locked 2>/dev/null || true
 
-# Copy real source
+# Copy real source — then remove stale compiled artifacts for local
+# crates so cargo rebuilds them from the real source rather than
+# using the stub .rlib from the dependency cache layer.
 COPY plane plane
 COPY plane-dynamic-proxy plane-dynamic-proxy
 COPY plane-common plane-common
 COPY common common
+RUN rm -rf target/release/.fingerprint/plane-* \
+           target/release/.fingerprint/plane_dynamic_proxy-* \
+           target/release/.fingerprint/plane_common-* \
+           target/release/.fingerprint/common-* \
+           target/release/deps/libplane* \
+           target/release/deps/libplane_dynamic_proxy* \
+           target/release/deps/libplane_common* \
+           target/release/deps/libcommon*
 
 # Build the plane binary
 RUN cargo build -p plane --release --locked
@@ -43,4 +53,5 @@ RUN cargo build -p plane --release --locked
 FROM gcr.io/distroless/cc-debian12
 
 COPY --from=builder /work/target/release/plane /bin/plane
+COPY --from=busybox:1.37-musl /bin/wget /bin/wget
 ENTRYPOINT ["/bin/plane"]
