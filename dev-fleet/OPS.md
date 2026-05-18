@@ -18,7 +18,8 @@ Build `chamuka-plane` with `SQLX_OFFLINE=true`. The image is distroless —
 no shell, no curl. `/bin/wget` is copied from busybox for healthchecks.
 Use `CMD` format (not `CMD-SHELL`) since there is no shell.
 
-Other runtime variants: `sandbox-runtime:desktop-test` (with X11/VNC).
+Other runtime variants: `sandbox-runtime:desktop-test` (with X11/VNC),
+`sandbox-runtime:ysweet-latest` (y-sweet 0.6.3 pre-installed on port 3000).
 
 ## Starting the fleet
 
