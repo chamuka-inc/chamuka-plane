@@ -21,6 +21,12 @@ describe("formatDuration", () => {
   it("formats days", () => {
     expect(formatDuration(86400 * 3)).toBe("3d");
   });
+  it("floors at minute boundary", () => {
+    expect(formatDuration(3599)).toBe("59m");
+  });
+  it("floors at hour boundary", () => {
+    expect(formatDuration(86399)).toBe("23h");
+  });
 });
 
 describe("formatBytes", () => {
@@ -76,5 +82,11 @@ describe("formatHeartbeatAge", () => {
   });
   it("marks disconnected heartbeats", () => {
     expect(formatHeartbeatAge(120)).toEqual({ text: "2m ago", status: "disconnected" });
+  });
+  it("exactly 30s is healthy", () => {
+    expect(formatHeartbeatAge(30)).toEqual({ text: "30s ago", status: "healthy" });
+  });
+  it("exactly 90s is stale", () => {
+    expect(formatHeartbeatAge(90)).toEqual({ text: "1m ago", status: "stale" });
   });
 });
