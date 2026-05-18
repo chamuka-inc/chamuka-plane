@@ -23,9 +23,9 @@ build_image() {
 }
 
 run_container() {
-    local extra_ports=("$@")
     local port_args=(-p 0:8080)
-    for p in "${extra_ports[@]}"; do
+    local p
+    for p in "$@"; do
         port_args+=(-p "0:$p")
     done
     echo "==> Running container..."
@@ -54,28 +54,6 @@ assert_exec() {
         exit 1
     fi
     echo "==> $label: OK"
-}
-
-assert_exec_ge() {
-    local label="$1" body="$2" minimum="$3"
-    echo "==> Testing $label..."
-    local resp
-    resp=$(curl -sf -X POST "http://localhost:$PORT/v1/exec" \
-        -H "Content-Type: application/json" \
-        -d "$body")
-    local exit_code stdout
-    exit_code=$(echo "$resp" | jq -r '.exit_code')
-    stdout=$(echo "$resp" | jq -r '.stdout' | tr -d '[:space:]')
-    if [[ "$exit_code" != "0" ]]; then
-        echo "FAILED: $label exit_code=$exit_code"
-        echo "$resp" | jq .
-        exit 1
-    fi
-    if [[ "$stdout" -lt "$minimum" ]]; then
-        echo "FAILED: $label got $stdout (expected >= $minimum)"
-        exit 1
-    fi
-    echo "==> $label: $stdout (>= $minimum OK)"
 }
 
 wait_for_health() {
