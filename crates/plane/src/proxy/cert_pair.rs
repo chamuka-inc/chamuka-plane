@@ -9,7 +9,7 @@ use plane_dynamic_proxy::tokio_rustls::rustls::sign::CertifiedKey;
 use rustls_pki_types::CertificateDer;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use std::{fs::Permissions, io, os::unix::fs::PermissionsExt, path::Path};
+use std::{fs::OpenOptions, io, os::unix::fs::OpenOptionsExt, path::Path};
 use time::OffsetDateTime;
 use x509_parser::{certificate::X509Certificate, oid_registry::asn1_rs::FromDer};
 
@@ -143,15 +143,15 @@ impl CertificatePair {
 
         let contents = serde_json::to_string_pretty(&cert_pair)?;
 
-        // If the file does not exist, we want to make sure it is created with specific
-        // permissions instead of the default system umask.
-        if !path.exists() {
-            std::fs::File::create(path)?;
-            let permissions = Permissions::from_mode(0o600);
-            std::fs::set_permissions(path, permissions)?;
-        }
-
-        std::fs::write(path, contents)?;
+        // Atomic create-with-permissions avoids a TOCTOU window where
+        // the file could be created world-readable between create and chmod.
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        std::io::Write::write_all(&mut file, contents.as_bytes())?;
 
         Ok(())
     }

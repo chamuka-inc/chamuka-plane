@@ -76,11 +76,7 @@ pub async fn run_cleanup_loop(
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::needless_borrows_for_generic_args
-    )]
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use crate::database::PlaneDatabase;
     use sqlx::PgPool;

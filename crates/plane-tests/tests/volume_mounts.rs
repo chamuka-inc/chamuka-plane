@@ -95,15 +95,16 @@ async fn volume_mounts(env: TestEnvironment) {
     tracing::info!("Got response for key mount.");
     assert!(response_key_mount.spawned);
 
-    wait_until_backend_ready(&client, &response_custom_mount.backend_id).await;
-    wait_until_backend_ready(&client, &response_key_mount.backend_id).await;
+    tokio::join!(
+        wait_until_backend_ready(&client, &response_custom_mount.backend_id),
+        wait_until_backend_ready(&client, &response_key_mount.backend_id),
+    );
 
     assert!(custom_mount_path.exists());
     assert!(key_mount_path.exists());
 
-    // Wait for the backends to terminate
-    tracing::info!("Waiting for backends to terminate.");
-    wait_until_backend_terminated(&client, &response_custom_mount.backend_id).await;
-    wait_until_backend_terminated(&client, &response_key_mount.backend_id).await;
-    tracing::info!("Backends terminated.");
+    tokio::join!(
+        wait_until_backend_terminated(&client, &response_custom_mount.backend_id),
+        wait_until_backend_terminated(&client, &response_key_mount.backend_id),
+    );
 }

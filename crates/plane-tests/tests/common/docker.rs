@@ -181,15 +181,15 @@ pub async fn pull_image(docker: &Docker, image: &str) -> Result<()> {
 }
 
 /// Build `sandbox-runtime:test-latest` once per test run.
+///
+/// Must be called from a synchronous context (before tokio runtime starts),
+/// as the blocking `docker build` would stall an async executor.
 pub fn ensure_test_image() {
     BUILD_TEST_IMAGE.call_once(|| {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("not in cargo project");
-        let dockerfile_dir = std::path::Path::new(&manifest_dir)
-            .parent()
-            .expect("plane-tests has parent")
-            .parent()
-            .expect("crates has parent")
-            .join("runtime-images/test");
+        let dockerfile_dir = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../runtime-images/test"
+        ));
 
         let output = std::process::Command::new("docker")
             .args(["build", "-t", super::TEST_IMAGE, "."])

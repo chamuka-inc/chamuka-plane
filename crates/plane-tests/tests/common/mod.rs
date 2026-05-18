@@ -59,8 +59,12 @@ where
     }
 }
 
-#[allow(dead_code)]
-pub async fn wait_until_backend_ready(client: &PlaneClient, backend_id: &BackendName) {
+async fn wait_until_backend_status(
+    client: &PlaneClient,
+    backend_id: &BackendName,
+    target: BackendStatus,
+    poll_timeout_secs: u32,
+) {
     let mut backend_status_stream = client
         .backend_status_stream(backend_id)
         .with_timeout(10)
@@ -68,27 +72,24 @@ pub async fn wait_until_backend_ready(client: &PlaneClient, backend_id: &Backend
         .unwrap()
         .unwrap();
 
-    while let Ok(Some(message)) = backend_status_stream.next().with_timeout(30).await {
+    while let Ok(Some(message)) = backend_status_stream
+        .next()
+        .with_timeout(poll_timeout_secs)
+        .await
+    {
         tracing::info!("Got status: {:?}", message);
-        if message.status == BackendStatus::Ready {
+        if message.status == target {
             break;
         }
     }
 }
 
 #[allow(dead_code)]
-pub async fn wait_until_backend_terminated(client: &PlaneClient, backend_id: &BackendName) {
-    let mut backend_status_stream = client
-        .backend_status_stream(backend_id)
-        .with_timeout(10)
-        .await
-        .unwrap()
-        .unwrap();
+pub async fn wait_until_backend_ready(client: &PlaneClient, backend_id: &BackendName) {
+    wait_until_backend_status(client, backend_id, BackendStatus::Ready, 30).await;
+}
 
-    while let Ok(Some(message)) = backend_status_stream.next().with_timeout(10).await {
-        tracing::info!("Got status: {:?}", message);
-        if message.status == BackendStatus::Terminated {
-            break;
-        }
-    }
+#[allow(dead_code)]
+pub async fn wait_until_backend_terminated(client: &PlaneClient, backend_id: &BackendName) {
+    wait_until_backend_status(client, backend_id, BackendStatus::Terminated, 10).await;
 }
