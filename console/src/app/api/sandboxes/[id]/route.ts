@@ -16,6 +16,14 @@ export async function GET(
     },
   });
 
-  const body = await res.json();
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    return NextResponse.json(
+      { error: { code: "UPSTREAM_ERROR", message: `Controller returned ${res.status}`, request_id: "" } },
+      { status: 502 },
+    );
+  }
   return NextResponse.json(body, { status: res.status });
 }
