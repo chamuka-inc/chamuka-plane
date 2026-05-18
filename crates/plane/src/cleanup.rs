@@ -79,8 +79,7 @@ mod tests {
     #![allow(
         clippy::unwrap_used,
         clippy::expect_used,
-        clippy::needless_borrows_for_generic_args,
-        clippy::await_holding_lock
+        clippy::needless_borrows_for_generic_args
     )]
 
     use crate::database::PlaneDatabase;
@@ -200,9 +199,7 @@ mod tests {
         }
     }
 
-    /// Delete all test data for a given suffix. Deletes in FK-dependency order
-    /// (children before parents) covering every table that references backend,
-    /// sandbox, tenant, controller, node, or drone.
+    /// FK-dependency order: children before parents to avoid constraint violations.
     async fn teardown(pool: &PgPool, suffix: &str) {
         let backend_id = id("bk", suffix);
         let sandbox_id = id("sb", suffix);
@@ -210,45 +207,32 @@ mod tests {
         let node_name = id("node", suffix);
         let controller_id = id("ctrl", suffix);
 
-        // Children of sandbox
-        for table in [
-            "extension_action",
-            "credential_binding",
-            "audit_egress",
-            "port_route",
-            "usage_record",
-            "network_policy",
-            "snapshot",
+        for (table, col, bind_val) in [
+            ("extension_action", "sandbox_id", &sandbox_id),
+            ("credential_binding", "sandbox_id", &sandbox_id),
+            ("audit_egress", "sandbox_id", &sandbox_id),
+            ("port_route", "sandbox_id", &sandbox_id),
+            ("usage_record", "sandbox_id", &sandbox_id),
+            ("network_policy", "sandbox_id", &sandbox_id),
+            ("snapshot", "sandbox_id", &sandbox_id),
+            ("backend_action", "backend_id", &backend_id),
+            ("backend_key", "id", &backend_id),
+            ("backend_state", "backend_id", &backend_id),
+            ("token", "backend_id", &backend_id),
         ] {
-            sqlx::query(&format!("DELETE FROM {table} WHERE sandbox_id = $1"))
-                .bind(&sandbox_id)
-                .execute(pool)
-                .await
-                .ok();
-        }
-
-        // Children of backend
-        for table in ["backend_action", "backend_key", "backend_state", "token"] {
-            let col = if table == "backend_key" {
-                "id"
-            } else {
-                "backend_id"
-            };
             sqlx::query(&format!("DELETE FROM {table} WHERE {col} = $1"))
-                .bind(&backend_id)
+                .bind(bind_val)
                 .execute(pool)
                 .await
                 .ok();
         }
 
-        // Children of tenant
         sqlx::query("DELETE FROM secret WHERE tenant = $1")
             .bind(&tenant_id)
             .execute(pool)
             .await
             .ok();
 
-        // Parents (FK order: sandbox → backend → drone → node → tenant/controller)
         sqlx::query("DELETE FROM sandbox WHERE id = $1")
             .bind(&sandbox_id)
             .execute(pool)
@@ -292,6 +276,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn snapshot_cleanup_deletes_expired() {
         let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
@@ -342,6 +327,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn snapshot_cleanup_respects_batch_size() {
         let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
@@ -381,6 +367,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn secret_cleanup_deletes_old_soft_deleted() {
         let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
@@ -458,6 +445,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn secret_cleanup_skips_with_active_bindings() {
         let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
@@ -513,6 +501,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn extension_action_cleanup_deletes_old_acked() {
         let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
@@ -597,6 +586,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn run_extension_cleanup_integration() {
         let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {

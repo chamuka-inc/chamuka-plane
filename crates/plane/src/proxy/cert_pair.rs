@@ -24,8 +24,6 @@ fn load_cert_ders(pem: &str) -> Result<Vec<CertificateDer<'static>>> {
     let results: Result<Vec<_>, _> = rustls_pemfile::certs(&mut bytes).collect();
     let results = results?;
 
-    let results: Vec<_> = results.into_iter().collect();
-
     Ok(results)
 }
 

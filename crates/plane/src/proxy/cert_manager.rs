@@ -268,7 +268,7 @@ async fn refresh_loop_step(
         Some(account) => account,
         None => {
             let mut builder =
-                reqwest::Client::builder().user_agent(concat!("plane/", env!("CARGO_PKG_VERSION")));
+                reqwest::Client::builder().user_agent(plane_common::version::SERVER_NAME);
             if acme_config.accept_insecure_certs_for_testing {
                 tracing::warn!("ACME server certificate chain will not be validated! This is ONLY for testing, and should not be used otherwise.");
                 builder = builder.danger_accept_invalid_certs(true);
