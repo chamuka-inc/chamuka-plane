@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useSandboxes, useFleet, useUsage } from "@/api/hooks";
 import { useRole } from "@/lib/role";
 import { StatCard } from "@/components/stat-card";
@@ -15,14 +16,19 @@ export default function Dashboard() {
   const { data: usageData } = useUsage({ period: "24h" });
 
   const sandboxes = sandboxData?.items ?? [];
-  const running = sandboxes.filter((s) => s.status === "ready").length;
-  const clusters = fleetData?.clusters ?? [];
-  const totalDrones = clusters.reduce((sum, c) => sum + c.drones.length, 0);
-  const healthyDrones = clusters.reduce(
-    (sum, c) => sum + c.drones.filter((d) => d.last_heartbeat_age <= 30).length,
-    0,
+  const readySandboxes = useMemo(
+    () => sandboxes.filter((s) => s.status === "ready"),
+    [sandboxes],
   );
-  const staleDrones = totalDrones - healthyDrones;
+  const clusters = fleetData?.clusters ?? [];
+  const { totalDrones, healthyDrones, staleDrones } = useMemo(() => {
+    const total = clusters.reduce((sum, c) => sum + c.drones.length, 0);
+    const healthy = clusters.reduce(
+      (sum, c) => sum + c.drones.filter((d) => d.last_heartbeat_age <= 30).length,
+      0,
+    );
+    return { totalDrones: total, healthyDrones: healthy, staleDrones: total - healthy };
+  }, [clusters]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
@@ -30,7 +36,7 @@ export default function Dashboard() {
         <div className={`grid ${isOperator ? "grid-cols-4" : "grid-cols-3"}`}>
           <StatCard
             label="Running Sandboxes"
-            value={String(running)}
+            value={String(readySandboxes.length)}
             sub={`${sandboxes.length} total`}
           />
           <StatCard
@@ -77,8 +83,7 @@ export default function Dashboard() {
         <div className="border border-border rounded-lg p-5">
           <h3 className="text-sm font-medium mb-4">Quick Access</h3>
           <div className="space-y-2">
-            {sandboxes
-              .filter((s) => s.status === "ready")
+            {readySandboxes
               .slice(0, 5)
               .map((s) => (
                 <Link

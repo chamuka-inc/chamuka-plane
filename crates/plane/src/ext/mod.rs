@@ -38,4 +38,5 @@ pub fn ext_routes() -> Router<Controller> {
         .route("/snapshots/:id", delete(api_v1::delete_snapshot))
         .route("/secrets", post(api_v1::create_secret))
         .route("/secrets/:id", delete(api_v1::delete_secret))
+        .route("/usage", get(api_v1::get_usage))
 }

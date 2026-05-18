@@ -1,6 +1,21 @@
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
 
+const SANDBOX_SELECT: &str = r#"
+    SELECT
+        s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
+        s.vcpus, s.memory_mb, s.ports, s.tags,
+        s.persistent, s.snapshot_source,
+        s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
+        b.last_status AS "live_status",
+        n.name AS "drone_name",
+        t.token AS "bearer_token"
+    FROM sandbox s
+    LEFT JOIN backend b ON b.id = s.backend_id
+    LEFT JOIN node n ON n.id = b.drone_id
+    LEFT JOIN token t ON t.backend_id = s.backend_id
+"#;
+
 pub struct SandboxDatabase<'a> {
     pool: &'a PgPool,
 }
@@ -10,7 +25,6 @@ impl<'a> SandboxDatabase<'a> {
         Self { pool }
     }
 
-    // Maps 1:1 to the INSERT column list; a wrapper struct would just duplicate these fields
     #[allow(clippy::too_many_arguments)]
     pub async fn insert(
         &self,
@@ -61,25 +75,12 @@ impl<'a> SandboxDatabase<'a> {
         id: &str,
         tenant: &str,
     ) -> Result<Option<SandboxRow>, sqlx::Error> {
-        let row = sqlx::query_as::<_, SandboxRow>(
-            r#"
-            SELECT
-                s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
-                s.vcpus, s.memory_mb, s.ports, s.tags,
-                s.persistent, s.snapshot_source,
-                s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
-                b.last_status AS "live_status",
-                n.name AS "drone_name"
-            FROM sandbox s
-            LEFT JOIN backend b ON b.id = s.backend_id
-            LEFT JOIN node n ON n.id = b.drone_id
-            WHERE s.id = $1 AND s.tenant = $2
-            "#,
-        )
-        .bind(id)
-        .bind(tenant)
-        .fetch_optional(self.pool)
-        .await?;
+        let sql = format!("{SANDBOX_SELECT} WHERE s.id = $1 AND s.tenant = $2");
+        let row = sqlx::query_as::<_, SandboxRow>(&sql)
+            .bind(id)
+            .bind(tenant)
+            .fetch_optional(self.pool)
+            .await?;
         Ok(row)
     }
 
@@ -129,18 +130,6 @@ impl<'a> SandboxDatabase<'a> {
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn get_token_for_backend(
-        &self,
-        backend_id: &str,
-    ) -> Result<Option<String>, sqlx::Error> {
-        let row: Option<(String,)> =
-            sqlx::query_as(r#"SELECT token FROM token WHERE backend_id = $1 LIMIT 1"#)
-                .bind(backend_id)
-                .fetch_optional(self.pool)
-                .await?;
-        Ok(row.map(|r| r.0))
-    }
-
     pub async fn get_drone_id_for_backend(
         &self,
         backend_id: &str,
@@ -159,50 +148,23 @@ impl<'a> SandboxDatabase<'a> {
         cursor: Option<DateTime<Utc>>,
     ) -> Result<Vec<SandboxRow>, sqlx::Error> {
         let rows = if let Some(before) = cursor {
-            sqlx::query_as::<_, SandboxRow>(
-                r#"
-                SELECT
-                    s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
-                    s.vcpus, s.memory_mb, s.ports, s.tags,
-                    s.persistent, s.snapshot_source,
-                    s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
-                    b.last_status AS "live_status",
-                    n.name AS "drone_name"
-                FROM sandbox s
-                LEFT JOIN backend b ON b.id = s.backend_id
-                LEFT JOIN node n ON n.id = b.drone_id
-                WHERE s.tenant = $1 AND s.created_at < $2
-                ORDER BY s.created_at DESC
-                LIMIT $3
-                "#,
-            )
-            .bind(tenant)
-            .bind(before)
-            .bind(limit)
-            .fetch_all(self.pool)
-            .await?
+            let sql = format!(
+                "{SANDBOX_SELECT} WHERE s.tenant = $1 AND s.created_at < $2 ORDER BY s.created_at DESC LIMIT $3"
+            );
+            sqlx::query_as::<_, SandboxRow>(&sql)
+                .bind(tenant)
+                .bind(before)
+                .bind(limit)
+                .fetch_all(self.pool)
+                .await?
         } else {
-            sqlx::query_as::<_, SandboxRow>(
-                r#"
-                SELECT
-                    s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
-                    s.vcpus, s.memory_mb, s.ports, s.tags,
-                    s.persistent, s.snapshot_source,
-                    s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
-                    b.last_status AS "live_status",
-                    n.name AS "drone_name"
-                FROM sandbox s
-                LEFT JOIN backend b ON b.id = s.backend_id
-                LEFT JOIN node n ON n.id = b.drone_id
-                WHERE s.tenant = $1
-                ORDER BY s.created_at DESC
-                LIMIT $2
-                "#,
-            )
-            .bind(tenant)
-            .bind(limit)
-            .fetch_all(self.pool)
-            .await?
+            let sql =
+                format!("{SANDBOX_SELECT} WHERE s.tenant = $1 ORDER BY s.created_at DESC LIMIT $2");
+            sqlx::query_as::<_, SandboxRow>(&sql)
+                .bind(tenant)
+                .bind(limit)
+                .fetch_all(self.pool)
+                .await?
         };
         Ok(rows)
     }
@@ -230,4 +192,5 @@ pub struct SandboxRow {
     pub terminated_at: Option<DateTime<Utc>>,
     pub live_status: Option<String>,
     pub drone_name: Option<String>,
+    pub bearer_token: Option<String>,
 }

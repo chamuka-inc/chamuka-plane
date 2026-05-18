@@ -8,6 +8,7 @@ import type {
   Sandbox,
   FleetResponse,
   UsageResponse,
+  UsagePeriod,
 } from "./types";
 
 const client = createBffClient();
@@ -16,6 +17,7 @@ export function useSandboxes(params?: { status?: string }) {
   return useQuery<ListSandboxesResponse>({
     queryKey: ["sandboxes", params?.status],
     queryFn: () => client.listSandboxes(params),
+    refetchInterval: 10_000,
   });
 }
 
@@ -24,6 +26,7 @@ export function useSandbox(id: string) {
     queryKey: ["sandbox", id],
     queryFn: () => client.getSandbox(id),
     enabled: !!id,
+    refetchInterval: 10_000,
   });
 }
 
@@ -31,13 +34,15 @@ export function useFleet() {
   return useQuery<FleetResponse>({
     queryKey: ["fleet"],
     queryFn: () => client.getFleetState(),
+    refetchInterval: 15_000,
   });
 }
 
-export function useUsage(params?: { period?: string; sandbox_id?: string }) {
+export function useUsage(params?: { period?: UsagePeriod; sandbox_id?: string }) {
   return useQuery<UsageResponse>({
     queryKey: ["usage", params?.period, params?.sandbox_id],
     queryFn: () => client.getUsage(params),
+    refetchInterval: 60_000,
   });
 }
 

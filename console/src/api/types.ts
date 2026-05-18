@@ -56,6 +56,8 @@ export type UsageSummary = {
   estimated_cost: number;
 };
 
+export type UsagePeriod = "1h" | "6h" | "24h" | "7d" | "30d";
+
 export type UsageResponse = {
   records: UsageRecord[];
   summary: UsageSummary;
@@ -78,13 +80,6 @@ export type NodeState = {
   controller: string;
   controller_heartbeat_age: number;
 };
-
-export function resolveNodeName(name: NodeName): string {
-  if (typeof name === "string") return name;
-  if ("Drone" in name) return name.Drone;
-  if ("Proxy" in name) return name.Proxy;
-  return String(name);
-}
 
 export type ClusterState = {
   name: string;

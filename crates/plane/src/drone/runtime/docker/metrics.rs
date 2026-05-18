@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tokio::time::{Duration, Instant};
 use tokio_stream::StreamExt;
 
-const METRICS_INTERVAL: Duration = Duration::from_secs(10);
+const METRICS_INTERVAL: Duration = Duration::from_secs(3);
 
 fn stream_metrics(
     docker: &Docker,
@@ -28,11 +28,11 @@ pub async fn metrics_loop(
     let container_id = ContainerId::from(&backend_id);
     let mut stream = stream_metrics(&docker, &container_id);
     let mut last_processed = Instant::now() - METRICS_INTERVAL;
+    let mut sent_first = false;
 
     while let Some(stats) = stream.next().await {
-        // These metrics come from Docker every second, so let's throttle them to be less frequent.
         let now = Instant::now();
-        if now.duration_since(last_processed) < METRICS_INTERVAL {
+        if sent_first && now.duration_since(last_processed) < METRICS_INTERVAL {
             continue;
         }
         last_processed = now;
@@ -72,6 +72,7 @@ pub async fn metrics_loop(
             match metrics_message_from_container_stats(stats, backend_id.clone()) {
                 Ok(Some(metrics_message)) => {
                     (callback)(metrics_message);
+                    sent_first = true;
                 }
                 Ok(None) => (),
                 Err(err) => {

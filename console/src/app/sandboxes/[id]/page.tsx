@@ -3,6 +3,8 @@
 import { use } from "react";
 import Link from "next/link";
 import { useSandbox } from "@/api/hooks";
+import { statusBorderColor, statusTextColor } from "@/components/sandbox-row";
+import { formatMemoryMb } from "@/lib/format";
 
 export default function SandboxDetailPage({
   params,
@@ -25,7 +27,7 @@ export default function SandboxDetailPage({
 
       <div className="flex items-center gap-4 mb-8">
         <h1 className="text-2xl font-semibold font-mono tracking-tight">{id}</h1>
-        <span className="text-xs px-2 py-0.5 rounded border border-status-green/30 text-status-green">
+        <span className={`text-xs px-2 py-0.5 rounded border ${statusBorderColor(sandbox.status)} ${statusTextColor(sandbox.status)}`}>
           {sandbox.status}
         </span>
         {sandbox.persistent && (
@@ -37,7 +39,7 @@ export default function SandboxDetailPage({
 
       <div className="flex gap-8 text-sm text-text-3 mb-8">
         <span>runtime <span className="text-text">{sandbox.runtime}</span></span>
-        <span>resources <span className="text-text">{sandbox.resources.vcpus} vCPU / {sandbox.resources.memory_mb / 1024} GB</span></span>
+        <span>resources <span className="text-text">{sandbox.resources.vcpus} vCPU / {formatMemoryMb(sandbox.resources.memory_mb)}</span></span>
         <span>arch <span className="text-text">{sandbox.arch}</span></span>
         <span>drone <span className="text-accent-blue">{sandbox.drone_name ?? "—"}</span></span>
         <span>trust <span className="text-text">{sandbox.trust}</span></span>

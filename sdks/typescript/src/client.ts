@@ -19,6 +19,7 @@ import type {
 export type ClientOptions = {
   controlUrl: string;
   token?: string;
+  tenant?: string;
 };
 
 export type ListOptions = {
@@ -42,7 +43,7 @@ export class SandboxClient {
   private readonly http: HttpClient;
 
   constructor(options: ClientOptions) {
-    this.http = createHttpClient(options.controlUrl, options.token);
+    this.http = createHttpClient(options.controlUrl, options.token, options.tenant);
   }
 
   async create(request: CreateSandboxRequest): Promise<CreateSandboxResponse> {
@@ -73,10 +74,11 @@ export class SandboxClient {
   }
 
   async get(sandboxId: string): Promise<Sandbox> {
-    return this.http.request<Sandbox>({
+    const result = await this.http.request<{ sandbox: Sandbox }>({
       method: "GET",
       path: `/pub/v1/sandboxes/${encodeURIComponent(sandboxId)}`,
     });
+    return result.sandbox;
   }
 
   async snapshot(

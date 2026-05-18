@@ -190,7 +190,7 @@ export class Sandbox {
   }
 
   async writeStdin(cmdId: string, data: string): Promise<void> {
-    await this.dataPlaneClient.request<unknown>({
+    await this.dataPlaneClient.requestRaw({
       method: "POST",
       path: `/v1/exec/${encodeURIComponent(cmdId)}/stdin`,
       body: { data },

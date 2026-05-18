@@ -3,7 +3,6 @@ import { createServer } from "http";
 
 const RELAY_PORT = parseInt(process.env.WS_RELAY_PORT ?? "3101", 10);
 const BFF_URL = process.env.BFF_URL ?? "http://localhost:3100";
-const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:8080";
 
 const server = createServer((_req, res) => {
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -137,7 +136,10 @@ async function handleTerminalRelay(clientWs: WebSocket, params: URLSearchParams)
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ signal: "KILL" }),
-    }).catch(() => {});
+    }).catch((err) => {
+    // Best-effort cleanup; sandbox TTL will eventually reap the process
+    console.warn(`[ws-relay] signal KILL failed for cmd_id=${cmdId}:`, err instanceof Error ? err.message : err);
+  });
   });
 
   logsWs.on("close", () => {

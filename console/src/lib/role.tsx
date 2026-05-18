@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react";
 
 type Role = "developer" | "operator";
 
@@ -19,8 +19,13 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     setRole((r) => (r === "operator" ? "developer" : "operator"));
   }, []);
 
+  const value = useMemo<RoleContextValue>(
+    () => ({ role, isOperator: role === "operator", toggleRole }),
+    [role, toggleRole],
+  );
+
   return (
-    <RoleContext.Provider value={{ role, isOperator: role === "operator", toggleRole }}>
+    <RoleContext.Provider value={value}>
       {children}
     </RoleContext.Provider>
   );

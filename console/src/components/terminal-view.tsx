@@ -11,10 +11,12 @@ type TerminalViewProps = {
 export function TerminalView({ sandboxId }: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
-  const [errorMsg, setErrorMsg] = useState<string>("");
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const connect = useCallback(async () => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+
     if (!terminalRef.current) return;
 
     setStatus("connecting");
@@ -75,7 +77,7 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             cmd: "/bin/bash",
-            args: ["-c", cmd],
+            args: ["-c", `${cmd}; echo __CWD__; pwd`],
             cwd,
             timeout_ms: 30000,
             env: { TERM: "xterm-256color" },
@@ -88,7 +90,12 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
         }
 
         const data = await res.json();
-        if (data.stdout) terminal.write(data.stdout);
+        if (data.stdout) {
+          const parts = data.stdout.split("__CWD__\n");
+          const output = parts[0];
+          if (output) terminal.write(output);
+          if (parts[1]) cwd = parts[1].trim();
+        }
         if (data.stderr) terminal.write(`\x1b[31m${data.stderr}\x1b[0m`);
         if (data.exit_code !== 0) {
           terminal.write(`\x1b[33m[exit ${data.exit_code}]\x1b[0m\r\n`);
@@ -97,22 +104,6 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
         terminal.write(`\x1b[31m${err instanceof Error ? err.message : "request failed"}\x1b[0m\r\n`);
       } finally {
         busy = false;
-      }
-    }
-
-    async function updateCwd() {
-      try {
-        const res = await fetch(execUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cmd: "pwd", args: [], cwd, timeout_ms: 5000 }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.stdout) cwd = data.stdout.trim();
-        }
-      } catch {
-        // keep current cwd
       }
     }
 
@@ -138,20 +129,7 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
             return;
           }
 
-          if (cmd.startsWith("cd ") || cmd === "cd") {
-            const dir = cmd === "cd" ? "~" : cmd.slice(3).trim();
-            (async () => {
-              await execCommand(`cd ${dir} && pwd`);
-              await updateCwd();
-              writePrompt();
-            })();
-          } else {
-            (async () => {
-              await execCommand(cmd);
-              await updateCwd();
-              writePrompt();
-            })();
-          }
+          execCommand(cmd).then(writePrompt).catch(() => writePrompt());
         } else if (ch === "\x7f") {
           if (inputBuffer.length > 0) {
             inputBuffer = inputBuffer.slice(0, -1);
@@ -168,12 +146,15 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
       }
     });
 
+    let resizeTimer: ReturnType<typeof setTimeout>;
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => fitAddon.fit(), 100);
     });
     resizeObserver.observe(terminalRef.current!);
 
     cleanupRef.current = () => {
+      clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       terminal.dispose();
     };
@@ -194,21 +175,12 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
         </span>
         <span
           className={`text-xs ${
-            status === "connected"
-              ? "text-status-green"
-              : status === "error"
-                ? "text-status-red"
-                : "text-status-amber"
+            { connecting: "text-status-amber", connected: "text-status-green", error: "text-status-red" }[status]
           }`}
         >
           {status}
         </span>
       </div>
-      {status === "error" && errorMsg && (
-        <div className="px-4 py-3 bg-status-red/10 border-b border-status-red/20 text-sm text-status-red">
-          {errorMsg}
-        </div>
-      )}
       <div ref={terminalRef} className="flex-1 min-h-0 bg-bg-1" />
     </div>
   );

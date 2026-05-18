@@ -21,7 +21,7 @@ const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 
-export function createHttpClient(baseUrl: string, token?: string): HttpClient {
+export function createHttpClient(baseUrl: string, token?: string, tenant?: string): HttpClient {
   const normalizedBase = normalizeBaseUrl(baseUrl);
 
   async function doFetch(options: RequestOptions): Promise<Response> {
@@ -38,6 +38,9 @@ export function createHttpClient(baseUrl: string, token?: string): HttpClient {
     const headers: Record<string, string> = { ...options.headers };
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
+    }
+    if (tenant) {
+      headers["X-Auth-Tenant"] = tenant;
     }
     if (options.body !== undefined) {
       headers["Content-Type"] = "application/json";

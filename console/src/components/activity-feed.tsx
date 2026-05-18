@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Sandbox } from "@/api/types";
 import { formatAge } from "@/lib/format";
 import Link from "next/link";
@@ -36,7 +37,7 @@ type ActivityFeedProps = {
 };
 
 export function ActivityFeed({ sandboxes }: ActivityFeedProps) {
-  const items = deriveActivity(sandboxes);
+  const items = useMemo(() => deriveActivity(sandboxes), [sandboxes]);
 
   return (
     <div className="border border-border rounded-lg p-5">

@@ -1,6 +1,5 @@
 import type { DroneState } from "@/api/types";
-import { resolveNodeName } from "@/api/types";
-import { formatHeartbeatAge } from "@/lib/format";
+import { formatHeartbeatAge, resolveNodeName } from "@/lib/format";
 
 type DroneTableProps = {
   drones: DroneState[];

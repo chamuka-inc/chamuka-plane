@@ -189,3 +189,28 @@ pub struct CredentialBinding {
     pub secret_id: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UsageRecord {
+    pub sandbox_id: String,
+    pub bucket_start: chrono::DateTime<chrono::Utc>,
+    pub cpu_nsec: i64,
+    pub memory_mb_seconds: i64,
+    pub rx_bytes: i64,
+    pub tx_bytes: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UsageSummary {
+    pub total_cpu_hours: f64,
+    pub total_memory_gb_hours: f64,
+    pub total_rx_bytes: i64,
+    pub total_tx_bytes: i64,
+    pub estimated_cost: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UsageResponse {
+    pub records: Vec<UsageRecord>,
+    pub summary: UsageSummary,
+}

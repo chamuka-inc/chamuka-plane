@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:8080";
-const AUTH_TENANT = process.env.AUTH_TENANT ?? "tenant-default";
-const AUTH_USER = process.env.AUTH_USER ?? "admin";
+import { CONTROLLER_URL, authHeaders } from "@/lib/controller";
 
 const EMPTY_USAGE = {
   records: [],
@@ -25,25 +22,22 @@ export async function GET(request: NextRequest) {
 
   try {
     const res = await fetch(`${CONTROLLER_URL}/pub/v1/usage?${params}`, {
-      headers: {
-        "X-Auth-Tenant": AUTH_TENANT,
-        "X-Auth-User": AUTH_USER,
-      },
+      headers: authHeaders,
     });
 
     let body;
     try {
       body = await res.json();
     } catch {
-      return NextResponse.json(EMPTY_USAGE);
+      return NextResponse.json(EMPTY_USAGE, { status: 502 });
     }
 
     if (!res.ok) {
-      return NextResponse.json(EMPTY_USAGE);
+      return NextResponse.json(EMPTY_USAGE, { status: res.status });
     }
 
     return NextResponse.json(body);
   } catch {
-    return NextResponse.json(EMPTY_USAGE);
+    return NextResponse.json(EMPTY_USAGE, { status: 502 });
   }
 }

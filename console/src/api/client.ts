@@ -2,6 +2,7 @@ import type {
   ListSandboxesResponse,
   Sandbox,
   UsageResponse,
+  UsagePeriod,
   FleetResponse,
   ApiError,
 } from "./types";
@@ -81,7 +82,7 @@ export function createBffClient() {
       return request("/api/fleet");
     },
 
-    getUsage(params?: { period?: string; sandbox_id?: string }): Promise<UsageResponse> {
+    getUsage(params?: { period?: UsagePeriod; sandbox_id?: string }): Promise<UsageResponse> {
       const sp = new URLSearchParams();
       if (params?.period) sp.set("period", params.period);
       if (params?.sandbox_id) sp.set("sandbox_id", params.sandbox_id);

@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setConnectionUrl } from "@/lib/connection-cache";
-
-const CONTROLLER_URL = process.env.CONTROLLER_URL ?? "http://localhost:8080";
-const AUTH_TENANT = process.env.AUTH_TENANT ?? "tenant-default";
-const AUTH_USER = process.env.AUTH_USER ?? "admin";
-
-const authHeaders = {
-  "x-auth-tenant": AUTH_TENANT,
-  "x-auth-user": AUTH_USER,
-};
+import {
+  CONTROLLER_URL,
+  authHeaders,
+  bffError,
+  cacheConnectionFromResponse,
+} from "@/lib/controller";
 
 export async function GET(
   _request: NextRequest,
@@ -25,15 +21,10 @@ export async function GET(
   try {
     body = await res.json();
   } catch {
-    return NextResponse.json(
-      { error: { code: "UPSTREAM_ERROR", message: `Controller returned ${res.status}`, request_id: "" } },
-      { status: 502 },
-    );
+    return bffError("UPSTREAM_ERROR", `Controller returned ${res.status}`, 502);
   }
 
-  if (res.ok && body.sandbox?.id && body.connection?.url) {
-    setConnectionUrl(body.sandbox.id, body.connection.url);
-  }
+  if (res.ok) cacheConnectionFromResponse(body);
 
   return NextResponse.json(body, { status: res.status });
 }

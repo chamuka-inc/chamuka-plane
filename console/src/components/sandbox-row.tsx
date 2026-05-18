@@ -1,28 +1,34 @@
 import Link from "next/link";
 import type { Sandbox, BackendStatus } from "@/api/types";
-import { formatAge } from "@/lib/format";
+import { formatAge, formatMemoryMb } from "@/lib/format";
 
-const statusColor: Record<string, string> = {
-  ready: "text-status-green",
-  starting: "text-status-amber",
-  loading: "text-status-amber",
-  waiting: "text-status-amber",
-  scheduled: "text-status-amber",
-  terminating: "text-status-red",
-  "hard-terminating": "text-status-red",
-  terminated: "text-text-4",
+type Severity = "green" | "amber" | "red" | "muted";
+
+const statusSeverity: Record<BackendStatus, Severity> = {
+  ready: "green",
+  starting: "amber",
+  loading: "amber",
+  waiting: "amber",
+  scheduled: "amber",
+  terminating: "red",
+  "hard-terminating": "red",
+  terminated: "muted",
 };
 
-const dotColor: Record<string, string> = {
-  ready: "bg-status-green",
-  starting: "bg-status-amber",
-  loading: "bg-status-amber",
-  waiting: "bg-status-amber",
-  scheduled: "bg-status-amber",
-  terminating: "bg-status-red",
-  "hard-terminating": "bg-status-red",
-  terminated: "bg-text-4",
+const severityStyles: Record<Severity, { text: string; dot: string; border: string }> = {
+  green:  { text: "text-status-green", dot: "bg-status-green", border: "border-status-green/30" },
+  amber:  { text: "text-status-amber", dot: "bg-status-amber", border: "border-status-amber/30" },
+  red:    { text: "text-status-red",   dot: "bg-status-red",   border: "border-status-red/30" },
+  muted:  { text: "text-text-4",       dot: "bg-text-4",       border: "border-border" },
 };
+
+export function statusTextColor(status: BackendStatus): string {
+  return severityStyles[statusSeverity[status] ?? "muted"].text;
+}
+
+export function statusBorderColor(status: BackendStatus): string {
+  return severityStyles[statusSeverity[status] ?? "muted"].border;
+}
 
 function isActionable(status: BackendStatus): boolean {
   return status === "ready" || status === "waiting";
@@ -37,6 +43,7 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
   const actionable = isActionable(sandbox.status);
   const tags = Object.entries(sandbox.tags);
   const isDesktop = sandbox.runtime === "desktop";
+  const severity = statusSeverity[sandbox.status] ?? "muted";
 
   return (
     <div
@@ -53,8 +60,8 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
             {sandbox.id}
           </Link>
           <span className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${dotColor[sandbox.status]}`} />
-            <span className={`text-xs ${statusColor[sandbox.status]}`}>
+            <span className={`w-2 h-2 rounded-full ${severityStyles[severity].dot}`} />
+            <span className={`text-xs ${severityStyles[severity].text}`}>
               {sandbox.status}
             </span>
           </span>
@@ -66,9 +73,7 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
         </div>
         <div className="text-xs text-text-3 mt-1">
           {sandbox.runtime} · {sandbox.trust} · {sandbox.resources.vcpus} vCPU /{" "}
-          {sandbox.resources.memory_mb >= 1024
-            ? `${sandbox.resources.memory_mb / 1024} GB`
-            : `${sandbox.resources.memory_mb} MB`}{" "}
+          {formatMemoryMb(sandbox.resources.memory_mb)}{" "}
           · {sandbox.drone_name ?? "unassigned"} · {formatAge(sandbox.created_at)}
         </div>
       </div>
@@ -80,7 +85,7 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
           </span>
         )}
 
-        {actionable && !terminated && (
+        {actionable && (
           <>
             {isDesktop && (
               <Link

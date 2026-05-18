@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -9,21 +10,25 @@ import {
   Tooltip,
 } from "recharts";
 import type { UsageRecord } from "@/api/types";
-import { formatCpuHours } from "@/lib/format";
+import { cpuNsecToHours } from "@/lib/format";
 
 type UsageChartProps = {
   records: UsageRecord[];
 };
 
 export function UsageChart({ records }: UsageChartProps) {
-  const data = records.map((r) => ({
-    time: new Date(r.bucket_start).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }),
-    cpuHours: r.cpu_nsec / 3_600_000_000_000,
-  }));
+  const data = useMemo(
+    () =>
+      records.map((r) => ({
+        time: new Date(r.bucket_start).toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }),
+        cpuHours: cpuNsecToHours(r.cpu_nsec),
+      })),
+    [records],
+  );
 
   return (
     <div className="border border-border rounded-lg p-5">
@@ -59,7 +64,7 @@ export function UsageChart({ records }: UsageChartProps) {
               fontSize: "12px",
               color: "#ededed",
             }}
-            formatter={(value: number) => [formatCpuHours(value * 3_600_000_000_000), "CPU"]}
+            formatter={(value: number) => [`${value.toFixed(1)}h`, "CPU"]}
           />
           <Area
             type="monotone"

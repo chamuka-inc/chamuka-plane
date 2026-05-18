@@ -4,8 +4,10 @@ type ClusterCardProps = {
   cluster: ClusterState;
 };
 
+const BACKENDS_PER_DRONE = 12;
+
 export function ClusterCard({ cluster }: ClusterCardProps) {
-  const totalSlots = cluster.drones.length * 12;
+  const totalSlots = cluster.drones.length * BACKENDS_PER_DRONE;
   const usedSlots = cluster.drones.reduce((sum, d) => sum + d.backend_count, 0);
   const pct = totalSlots > 0 ? (usedSlots / totalSlots) * 100 : 0;
 

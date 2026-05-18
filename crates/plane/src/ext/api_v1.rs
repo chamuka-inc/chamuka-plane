@@ -9,7 +9,7 @@ use chamuka_common::ext::api::{
     CreateCredentialBindingRequest, CreateSandboxRequest, CreateSandboxResponse,
     CreateSecretRequest, CreateSecretResponse, CredentialBinding, ExtendTimeoutRequest,
     GetSandboxResponse, ListSandboxesResponse, SandboxConnection, SnapshotRequest,
-    SnapshotResponse,
+    SnapshotResponse, UsageRecord, UsageResponse, UsageSummary,
 };
 use chamuka_common::ext::network::NetworkPolicy;
 use chamuka_common::ext::sandbox::{Arch, Sandbox, SandboxResources, TrustLevel};
@@ -114,7 +114,8 @@ pub async fn create_sandbox(
         }
     });
 
-    let lifetime_limit_seconds = request.timeout_ms.map(|ms| ms.div_ceil(1000) as i32);
+    let timeout_ms = request.timeout_ms.unwrap_or(300_000);
+    let lifetime_limit_seconds = Some(timeout_ms.div_ceil(1000) as i32);
 
     let spawn_config = SpawnConfig {
         id: None,
@@ -151,7 +152,6 @@ pub async fn create_sandbox(
 
     let sandbox_id = SandboxId::new();
     let now = chrono::Utc::now();
-    let timeout_ms = request.timeout_ms.unwrap_or(300_000);
     let expires_at = now + chrono::Duration::milliseconds(timeout_ms as i64);
 
     let cluster = controller
@@ -239,33 +239,28 @@ pub async fn get_sandbox(
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &id, &tenant).await?;
     let backend_id = row.backend_id.clone();
-    let sandbox = sandbox_from_row(row, &controller);
+    let token = row.bearer_token.clone();
+    let now = chrono::Utc::now();
+    let sandbox = sandbox_from_row(row, &controller, now);
 
-    let connection = controller
-        .db
-        .sandbox()
-        .get_token_for_backend(&backend_id)
-        .await
-        .ok()
-        .flatten()
-        .map(|token| {
-            let cluster = controller
-                .default_cluster
-                .as_ref()
-                .map(|c| c.to_string())
-                .unwrap_or_default();
-            let url = format!("http://{}/{}/", cluster, token);
-            let status_url = plane_common::names::BackendName::try_from(backend_id.clone())
-                .ok()
-                .map(|bn| controller.client.backend_status_url(&bn).to_string())
-                .unwrap_or_default();
-            SandboxConnection {
-                token,
-                url,
-                secret_token: None,
-                status_url,
-            }
-        });
+    let connection = token.map(|token| {
+        let cluster = controller
+            .default_cluster
+            .as_ref()
+            .map(|c| c.to_string())
+            .unwrap_or_default();
+        let url = format!("http://{}/{}/", cluster, token);
+        let status_url = plane_common::names::BackendName::try_from(backend_id.clone())
+            .ok()
+            .map(|bn| controller.client.backend_status_url(&bn).to_string())
+            .unwrap_or_default();
+        SandboxConnection {
+            token,
+            url,
+            secret_token: None,
+            status_url,
+        }
+    });
 
     Ok(Json(GetSandboxResponse {
         sandbox,
@@ -306,11 +301,12 @@ pub async fn list_sandboxes(
             ApiError::internal("Failed to list sandboxes")
         })?;
 
+    let now = chrono::Utc::now();
     let has_more = rows.len() as i64 > limit;
     let items: Vec<Sandbox> = rows
         .into_iter()
         .take(limit as usize)
-        .map(|r| sandbox_from_row(r, &controller))
+        .map(|r| sandbox_from_row(r, &controller, now))
         .collect();
 
     let next_cursor = if has_more {
@@ -376,7 +372,7 @@ pub async fn extend_sandbox(
         })?
         .ok_or_else(|| ApiError::not_found("Sandbox not found"))?;
 
-    Ok(Json(sandbox_from_row(row, &controller)))
+    Ok(Json(sandbox_from_row(row, &controller, chrono::Utc::now())))
 }
 
 #[derive(Debug, Deserialize)]
@@ -761,6 +757,74 @@ pub async fn delete_secret(
     }
 }
 
+const COST_PER_CPU_HOUR: f64 = 0.20;
+const NSEC_PER_HOUR: f64 = 3_600_000_000_000.0;
+const MB_SEC_PER_GB_HOUR: f64 = 3_600.0 * 1024.0;
+
+#[derive(Deserialize)]
+pub struct UsageQuery {
+    period: Option<String>,
+    sandbox_id: Option<String>,
+}
+
+pub async fn get_usage(
+    State(controller): State<Controller>,
+    headers: HeaderMap,
+    Query(query): Query<UsageQuery>,
+) -> Result<Json<UsageResponse>, ApiError> {
+    let tenant = extract_tenant(&headers)?;
+
+    let hours = match query.period.as_deref() {
+        Some("1h") => 1,
+        Some("6h") => 6,
+        Some("7d") => 168,
+        Some("30d") => 720,
+        _ => 24,
+    };
+    let since = chrono::Utc::now() - chrono::Duration::hours(hours);
+
+    let rows = controller
+        .db
+        .usage_record()
+        .query_by_tenant(&tenant, since, query.sandbox_id.as_deref())
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to query usage records");
+            ApiError::internal("Failed to query usage")
+        })?;
+
+    let records: Vec<UsageRecord> = rows
+        .into_iter()
+        .map(|r| UsageRecord {
+            sandbox_id: r.sandbox_id,
+            bucket_start: r.bucket_start,
+            cpu_nsec: r.cpu_nsec,
+            memory_mb_seconds: r.memory_mb_seconds,
+            rx_bytes: r.rx_bytes,
+            tx_bytes: r.tx_bytes,
+        })
+        .collect();
+
+    let total_cpu_nsec: i64 = records.iter().map(|r| r.cpu_nsec).sum();
+    let total_mem_mb_sec: i64 = records.iter().map(|r| r.memory_mb_seconds).sum();
+    let total_rx: i64 = records.iter().map(|r| r.rx_bytes).sum();
+    let total_tx: i64 = records.iter().map(|r| r.tx_bytes).sum();
+
+    let total_cpu_hours = total_cpu_nsec as f64 / NSEC_PER_HOUR;
+    let total_memory_gb_hours = total_mem_mb_sec as f64 / MB_SEC_PER_GB_HOUR;
+
+    Ok(Json(UsageResponse {
+        records,
+        summary: UsageSummary {
+            total_cpu_hours,
+            total_memory_gb_hours,
+            total_rx_bytes: total_rx,
+            total_tx_bytes: total_tx,
+            estimated_cost: total_cpu_hours * COST_PER_CPU_HOUR,
+        },
+    }))
+}
+
 async fn enqueue_extension_action(
     controller: &Controller,
     kind: super::types::ExtensionActionKind,
@@ -807,7 +871,11 @@ async fn enqueue_extension_action(
     }
 }
 
-fn sandbox_from_row(row: SandboxRow, controller: &Controller) -> Sandbox {
+fn sandbox_from_row(
+    row: SandboxRow,
+    controller: &Controller,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Sandbox {
     let trust = row.trust_tier.parse().unwrap_or(TrustLevel::Untrusted);
     let arch = row.arch.parse().unwrap_or(Arch::Amd64);
     let cluster = controller
@@ -827,9 +895,19 @@ fn sandbox_from_row(row: SandboxRow, controller: &Controller) -> Sandbox {
         .live_status
         .as_deref()
         .and_then(|s| {
-            serde_json::from_value::<BackendStatus>(serde_json::Value::String(s.to_owned())).ok()
+            use serde::de::{value::Error as DeError, IntoDeserializer};
+            BackendStatus::deserialize::<serde::de::value::StrDeserializer<'_, DeError>>(
+                s.into_deserializer(),
+            )
+            .ok()
         })
         .unwrap_or(BackendStatus::Scheduled);
+
+    let status = if row.expires_at < now && status != BackendStatus::Terminated {
+        BackendStatus::Terminated
+    } else {
+        status
+    };
 
     let drone_name = row.drone_name;
 

@@ -1,28 +1,42 @@
 "use client";
 
+import { useMemo } from "react";
 import { useUsage } from "@/api/hooks";
 import { StatCard } from "@/components/stat-card";
 import { UsageChart } from "@/components/usage-chart";
-import { formatBytes, formatCpuHours, formatCost } from "@/lib/format";
+import {
+  formatBytes,
+  formatCpuHours,
+  formatCost,
+  formatMemoryGbHours,
+  estimateSandboxCost,
+} from "@/lib/format";
 
 export default function AnalyticsPage() {
   const { data, isLoading, error } = useUsage({ period: "24h" });
+
+  const { bySandbox, costPerSandbox, sortedEntries } = useMemo(() => {
+    const records = data?.records ?? [];
+    const estimatedCost = data?.summary.estimated_cost ?? 0;
+    const map = new Map<string, { cpu_nsec: number; memory_mb_seconds: number; rx_bytes: number; tx_bytes: number }>();
+    for (const r of records) {
+      const existing = map.get(r.sandbox_id) ?? { cpu_nsec: 0, memory_mb_seconds: 0, rx_bytes: 0, tx_bytes: 0 };
+      existing.cpu_nsec += r.cpu_nsec;
+      existing.memory_mb_seconds += r.memory_mb_seconds;
+      existing.rx_bytes += r.rx_bytes;
+      existing.tx_bytes += r.tx_bytes;
+      map.set(r.sandbox_id, existing);
+    }
+    const cost = map.size > 0 ? estimatedCost / map.size : 0;
+    const sorted = Array.from(map.entries()).sort(([, a], [, b]) => b.cpu_nsec - a.cpu_nsec);
+    return { bySandbox: map, costPerSandbox: cost, sortedEntries: sorted };
+  }, [data?.records, data?.summary.estimated_cost]);
 
   if (isLoading) return <div className="p-8 text-text-3">Loading usage data...</div>;
   if (error) return <div className="p-8 text-status-red">Failed to load usage data</div>;
   if (!data) return null;
 
   const { summary, records } = data;
-
-  const bySandbox = new Map<string, { cpu_nsec: number; memory_mb_seconds: number; rx_bytes: number; tx_bytes: number }>();
-  for (const r of records) {
-    const existing = bySandbox.get(r.sandbox_id) ?? { cpu_nsec: 0, memory_mb_seconds: 0, rx_bytes: 0, tx_bytes: 0 };
-    existing.cpu_nsec += r.cpu_nsec;
-    existing.memory_mb_seconds += r.memory_mb_seconds;
-    existing.rx_bytes += r.rx_bytes;
-    existing.tx_bytes += r.tx_bytes;
-    bySandbox.set(r.sandbox_id, existing);
-  }
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
@@ -38,7 +52,7 @@ export default function AnalyticsPage() {
           <StatCard
             label="CPU Hours"
             value={summary.total_cpu_hours.toFixed(1)}
-            sub="+12% vs yesterday"
+            sub={`across ${bySandbox.size} sandbox${bySandbox.size === 1 ? "" : "es"}`}
           />
           <StatCard
             label="Memory"
@@ -58,7 +72,7 @@ export default function AnalyticsPage() {
           <StatCard
             label="Est. Cost"
             value={formatCost(summary.estimated_cost)}
-            sub="$0.20/CPU-hour"
+            sub={bySandbox.size > 0 ? `~${formatCost(costPerSandbox)}/sandbox` : ""}
           />
         </div>
       </div>
@@ -79,22 +93,20 @@ export default function AnalyticsPage() {
             </tr>
           </thead>
           <tbody>
-            {Array.from(bySandbox.entries())
-              .sort(([, a], [, b]) => b.cpu_nsec - a.cpu_nsec)
-              .map(([sandboxId, usage]) => (
+            {sortedEntries.map(([sandboxId, usage]) => (
                 <tr key={sandboxId} className="border-b border-border hover:bg-bg-hover">
                   <td className="px-6 py-3 text-sm font-mono">{sandboxId}</td>
                   <td className="px-6 py-3 text-sm text-text-2">
                     {formatCpuHours(usage.cpu_nsec)}
                   </td>
                   <td className="px-6 py-3 text-sm text-text-2">
-                    {(usage.memory_mb_seconds / 3600 / 1024).toFixed(1)} GBh
+                    {formatMemoryGbHours(usage.memory_mb_seconds)}
                   </td>
                   <td className="px-6 py-3 text-sm text-text-2">
                     {formatBytes(usage.rx_bytes + usage.tx_bytes)}
                   </td>
                   <td className="px-6 py-3 text-sm text-text-2">
-                    {formatCost(usage.cpu_nsec / 3_600_000_000_000 * 0.20)}
+                    {formatCost(estimateSandboxCost(usage.cpu_nsec, summary.total_cpu_hours, summary.estimated_cost))}
                   </td>
                 </tr>
               ))}
