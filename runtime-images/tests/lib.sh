@@ -23,10 +23,59 @@ build_image() {
 }
 
 run_container() {
+    local extra_ports=("$@")
+    local port_args=(-p 0:8080)
+    for p in "${extra_ports[@]}"; do
+        port_args+=(-p "0:$p")
+    done
     echo "==> Running container..."
-    docker run -d --name "$CONTAINER_NAME" -p 0:8080 "$IMAGE"
+    docker run -d --name "$CONTAINER_NAME" "${port_args[@]}" "$IMAGE"
     PORT=$(docker port "$CONTAINER_NAME" 8080 | head -1 | cut -d: -f2)
     echo "==> Container running on port $PORT"
+}
+
+assert_exec() {
+    local label="$1" body="$2" expected="$3" expected_exit="${4:-0}"
+    echo "==> Testing $label..."
+    local resp
+    resp=$(curl -sf -X POST "http://localhost:$PORT/v1/exec" \
+        -H "Content-Type: application/json" \
+        -d "$body")
+    local exit_code stdout
+    exit_code=$(echo "$resp" | jq -r '.exit_code')
+    stdout=$(echo "$resp" | jq -r '.stdout' | tr -d '\n')
+    if [[ "$exit_code" != "$expected_exit" ]]; then
+        echo "FAILED: $label exit_code=$exit_code (expected $expected_exit)"
+        echo "$resp" | jq .
+        exit 1
+    fi
+    if [[ -n "$expected" && "$stdout" != "$expected" ]]; then
+        echo "FAILED: $label stdout='$stdout' (expected '$expected')"
+        exit 1
+    fi
+    echo "==> $label: OK"
+}
+
+assert_exec_ge() {
+    local label="$1" body="$2" minimum="$3"
+    echo "==> Testing $label..."
+    local resp
+    resp=$(curl -sf -X POST "http://localhost:$PORT/v1/exec" \
+        -H "Content-Type: application/json" \
+        -d "$body")
+    local exit_code stdout
+    exit_code=$(echo "$resp" | jq -r '.exit_code')
+    stdout=$(echo "$resp" | jq -r '.stdout' | tr -d '[:space:]')
+    if [[ "$exit_code" != "0" ]]; then
+        echo "FAILED: $label exit_code=$exit_code"
+        echo "$resp" | jq .
+        exit 1
+    fi
+    if [[ "$stdout" -lt "$minimum" ]]; then
+        echo "FAILED: $label got $stdout (expected >= $minimum)"
+        exit 1
+    fi
+    echo "==> $label: $stdout (>= $minimum OK)"
 }
 
 wait_for_health() {

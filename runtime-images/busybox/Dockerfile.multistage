@@ -30,10 +30,10 @@ COPY --from=libs /lib/x86_64-linux-gnu/libjq.so.1 /lib/x86_64-linux-gnu/
 COPY --from=libs /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/
 COPY --from=libs /lib/x86_64-linux-gnu/libgcc_s.so.1 /lib/x86_64-linux-gnu/
 
-RUN ["busybox", "ln", "-sf", "/usr/bin/bash", "/bin/bash"]
-RUN ["busybox", "ln", "-sf", "/usr/bin/bash", "/bin/sh"]
-RUN ["busybox", "adduser", "-D", "-s", "/bin/bash", "-h", "/home/sandbox", "sandbox"]
-RUN ["busybox", "mkdir", "-p", "/workspace"]
+RUN busybox ln -sf /usr/bin/bash /bin/bash && \
+    busybox ln -sf /usr/bin/bash /bin/sh && \
+    busybox adduser -D -s /bin/bash -h /home/sandbox sandbox && \
+    busybox mkdir -p /workspace
 
 WORKDIR /workspace
 
