@@ -64,3 +64,5 @@ lcov.info
 .local/
 tmp/
 test-scratch/
+
+.superpowers
