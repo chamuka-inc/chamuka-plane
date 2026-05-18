@@ -1,47 +1,63 @@
 #!/usr/bin/env bash
-# Smoke test for sandbox-runtime:ysweet-latest
-# Verifies: agentd healthy, y-sweet doc creation, y-sweet persistence
+# Smoke test for sandbox-runtime:ysweet
+# Verifies: agentd healthy, y-sweet doc creation, y-sweet auth
 set -euo pipefail
 
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-IMAGE="sandbox-runtime:ysweet-latest"
-CONTAINER="test-ysweet-$$"
-AGENTD_PORT=18080
-YSWEET_PORT=13000
+setup_test "ysweet"
+build_image "ysweet/Dockerfile.multistage"
 
-cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+echo "==> Running container (agentd:8080 + y-sweet:3000)..."
+docker run -d --name "$CONTAINER_NAME" -p 0:8080 -p 0:3000 "$IMAGE"
+PORT=$(docker port "$CONTAINER_NAME" 8080 | head -1 | cut -d: -f2)
+YSWEET_PORT=$(docker port "$CONTAINER_NAME" 3000 | head -1 | cut -d: -f2)
+echo "==> Container running on agentd=$PORT, y-sweet=$YSWEET_PORT"
 
-section "Starting $IMAGE"
-docker run -d --name "$CONTAINER" \
-    -p "$AGENTD_PORT":8080 \
-    -p "$YSWEET_PORT":3000 \
-    "$IMAGE" >/dev/null
+wait_for_health 30
 
-wait_for "http://localhost:$AGENTD_PORT/health" 15
+echo "==> Testing y-sweet doc creation..."
 
-section "agentd health"
-check "agentd responds" \
-    "$(curl -sf http://localhost:$AGENTD_PORT/health)" '{"status":"ready"}'
+for _ in $(seq 1 30); do
+    if curl -sf -X POST -H "Content-Type: application/json" -d '{}' \
+        "http://localhost:$YSWEET_PORT/doc/new" > /dev/null 2>&1; then
+        break
+    fi
+    sleep 0.5
+done
 
-section "y-sweet doc creation"
 DOC=$(curl -sf -X POST -H "Content-Type: application/json" -d '{}' \
     "http://localhost:$YSWEET_PORT/doc/new")
-DOC_ID=$(echo "$DOC" | python3 -c "import sys,json; print(json.load(sys.stdin)['docId'])")
-check "doc created" "$([ -n "$DOC_ID" ] && echo ok)" "ok"
+DOC_ID=$(echo "$DOC" | jq -r '.docId')
 
-section "y-sweet auth"
+if [[ -z "$DOC_ID" || "$DOC_ID" == "null" ]]; then
+    echo "FAILED: y-sweet doc creation (response: $DOC)"
+    exit 1
+fi
+echo "==> doc created: $DOC_ID"
+
+echo "==> Testing y-sweet auth..."
 AUTH=$(curl -sf -X POST -H "Content-Type: application/json" -d '{}' \
     "http://localhost:$YSWEET_PORT/doc/$DOC_ID/auth")
-WS_URL=$(echo "$AUTH" | python3 -c "import sys,json; print(json.load(sys.stdin)['url'])")
-check "auth returns ws url" "$(echo "$WS_URL" | grep -q 'ws://' && echo ok)" "ok"
+WS_URL=$(echo "$AUTH" | jq -r '.url')
 
-section "y-sweet data dir exists"
-EXEC=$(curl -sf -X POST -H "Content-Type: application/json" \
-    -d '{"cmd":"/bin/sh","args":["-c","ls -la /data"],"timeout_ms":3000}' \
-    "http://localhost:$AGENTD_PORT/v1/exec")
-check "data dir accessible" \
-    "$(echo "$EXEC" | python3 -c "import sys,json; r=json.load(sys.stdin); print('ok' if r['exit_code']==0 else 'fail')")" "ok"
+if ! echo "$WS_URL" | grep -q 'ws://'; then
+    echo "FAILED: auth did not return ws:// URL (response: $AUTH)"
+    exit 1
+fi
+echo "==> auth returned ws URL: $WS_URL"
 
-summary
+echo "==> Testing data dir via agentd exec..."
+RESP=$(curl -sf -X POST "http://localhost:$PORT/v1/exec" \
+    -H "Content-Type: application/json" \
+    -d '{"cmd":"/bin/sh","args":["-c","ls -la /data"],"timeout_ms":3000}')
+
+EXIT_CODE=$(echo "$RESP" | jq -r '.exit_code')
+if [[ "$EXIT_CODE" != "0" ]]; then
+    echo "FAILED: /data dir not accessible (exit_code=$EXIT_CODE)"
+    echo "$RESP" | jq .
+    exit 1
+fi
+echo "==> /data dir accessible"
+
+echo "==> PASSED: ysweet image smoke test"
