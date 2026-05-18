@@ -103,7 +103,7 @@ async fn proxy_https_bearer_token_routing(env: TestEnvironment) {
 async fn proxy_https_subdomain_routing(env: TestEnvironment) {
     let server = SimpleAxumServer::new().await;
     let (resolver, cert) = TestCertResolver::new();
-    let mut proxy = MockProxy::new_with_https(CERT_DOMAIN, resolver, cert.clone()).await;
+    let proxy = MockProxy::new_with_https(CERT_DOMAIN, resolver, cert.clone()).await;
     let port = proxy.port();
 
     proxy
