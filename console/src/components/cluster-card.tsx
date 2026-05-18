@@ -12,7 +12,7 @@ export function ClusterCard({ cluster }: ClusterCardProps) {
   const pct = totalSlots > 0 ? (usedSlots / totalSlots) * 100 : 0;
 
   return (
-    <div className="border border-border rounded-lg p-5">
+    <div className="border border-border rounded-lg p-4 sm:p-5">
       <div className="text-xs text-text-3 mb-1">{cluster.name}</div>
       <div className="flex items-baseline gap-2 mb-3">
         <span className="text-2xl font-semibold">{cluster.drones.length}</span>

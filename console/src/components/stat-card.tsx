@@ -8,14 +8,14 @@ type StatCardProps = {
 
 export function StatCard({ label, value, suffix, sub, subColor }: StatCardProps) {
   return (
-    <div className="px-6 py-5 border-r border-border last:border-r-0">
+    <div className="bg-bg px-4 py-4 sm:px-6 sm:py-5">
       <div className="text-sm text-text-3 mb-1">{label}</div>
-      <div className="text-4xl font-semibold tracking-tighter leading-none">
+      <div className="text-2xl sm:text-4xl font-semibold tracking-tighter leading-none">
         {value}
-        {suffix && <span className="text-lg font-normal text-text-3 ml-0.5">{suffix}</span>}
+        {suffix && <span className="text-base sm:text-lg font-normal text-text-3 ml-0.5">{suffix}</span>}
       </div>
       {sub && (
-        <div className={`text-sm mt-1 ${subColor ?? "text-text-4"}`}>{sub}</div>
+        <div className={`text-xs sm:text-sm mt-1 truncate ${subColor ?? "text-text-4"}`}>{sub}</div>
       )}
     </div>
   );

@@ -47,15 +47,15 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
 
   return (
     <div
-      className={`flex items-center justify-between px-6 py-4 border-b border-border hover:bg-bg-hover transition-colors ${
+      className={`flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 py-4 border-b border-border hover:bg-bg-hover transition-colors ${
         terminated ? "opacity-50" : ""
       }`}
     >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-3 flex-wrap">
           <Link
             href={`/sandboxes/${sandbox.id}`}
-            className="font-mono text-sm font-medium hover:underline"
+            className="font-mono text-sm font-medium hover:underline truncate"
           >
             {sandbox.id}
           </Link>
@@ -66,21 +66,21 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
             </span>
           </span>
           {sandbox.persistent && (
-            <span className="text-xs bg-accent-pink/15 text-accent-pink px-2 py-0.5 rounded">
+            <span className="text-xs bg-accent-pink/15 text-accent-pink px-2 py-0.5 rounded-md">
               persistent
             </span>
           )}
         </div>
-        <div className="text-xs text-text-3 mt-1">
+        <div className="text-xs text-text-3 mt-1 truncate">
           {sandbox.runtime} · {sandbox.trust} · {sandbox.resources.vcpus} vCPU /{" "}
           {formatMemoryMb(sandbox.resources.memory_mb)}{" "}
           · {sandbox.drone_name ?? "unassigned"} · {formatAge(sandbox.created_at)}
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 mt-3 sm:mt-0 shrink-0">
         {tags.length > 0 && (
-          <span className="text-xs font-mono text-text-4">
+          <span className="text-xs font-mono text-text-4 hidden sm:inline">
             {tags.map(([k, v]) => `${k}:${v}`).join(", ")}
           </span>
         )}
@@ -90,14 +90,14 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
             {isDesktop && (
               <Link
                 href={`/sandboxes/${sandbox.id}?tab=vnc`}
-                className="text-xs px-3 py-1 rounded border border-border text-text-2 hover:border-border-light transition-colors"
+                className="text-xs px-3 py-1 rounded-md border border-border text-text-2 hover:border-border-light transition-colors"
               >
                 VNC
               </Link>
             )}
             <Link
               href={`/sandboxes/${sandbox.id}/terminal`}
-              className="text-xs px-3 py-1 rounded border border-border text-text-2 hover:border-border-light transition-colors"
+              className="text-xs px-3 py-1 rounded-md border border-border text-text-2 hover:border-border-light transition-colors"
             >
               Terminal
             </Link>

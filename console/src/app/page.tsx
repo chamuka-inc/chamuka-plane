@@ -31,9 +31,9 @@ export default function Dashboard() {
   }, [clusters]);
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="border border-border rounded-lg overflow-hidden mb-8">
-        <div className={`grid ${isOperator ? "grid-cols-4" : "grid-cols-3"}`}>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <div className="border border-border rounded-lg overflow-hidden bg-border mb-6 sm:mb-8">
+        <div className={`grid ${isOperator ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-1 sm:grid-cols-3"} gap-px`}>
           <StatCard
             label="Running Sandboxes"
             value={String(readySandboxes.length)}
@@ -67,9 +67,9 @@ export default function Dashboard() {
       </div>
 
       {isOperator && clusters.length > 0 && (
-        <div className="mb-8">
+        <div className="mb-6 sm:mb-8">
           <h2 className="text-sm font-medium mb-4">Cluster Capacity</h2>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {clusters.map((cluster) => (
               <ClusterCard key={cluster.name} cluster={cluster} />
             ))}
@@ -77,10 +77,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ActivityFeed sandboxes={sandboxes} />
 
-        <div className="border border-border rounded-lg p-5">
+        <div className="border border-border rounded-lg p-4 sm:p-5">
           <h3 className="text-sm font-medium mb-4">Quick Access</h3>
           <div className="space-y-2">
             {readySandboxes
@@ -89,11 +89,14 @@ export default function Dashboard() {
                 <Link
                   key={s.id}
                   href={`/sandboxes/${s.id}`}
-                  className="flex items-center justify-between px-3 py-2 rounded hover:bg-bg-hover transition-colors"
+                  className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-bg-hover transition-colors gap-3"
                 >
-                  <span className="font-mono text-sm">{s.id}</span>
-                  <span className="text-xs text-text-3">
+                  <span className="font-mono text-sm truncate">{s.id}</span>
+                  <span className="text-xs text-text-3 shrink-0 hidden sm:inline">
                     {s.runtime} · {s.trust} · {formatAge(s.created_at)}
+                  </span>
+                  <span className="text-xs text-text-3 shrink-0 sm:hidden">
+                    {formatAge(s.created_at)}
                   </span>
                 </Link>
               ))}

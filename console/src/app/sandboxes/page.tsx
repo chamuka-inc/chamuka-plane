@@ -24,12 +24,12 @@ export default function SandboxListPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-xl font-semibold tracking-tight">Sandboxes</h1>
         <div className="flex items-center gap-3">
           {data && (
-            <span className="text-sm text-text-3">
+            <span className="text-sm text-text-3 hidden sm:inline">
               {data.items.length} sandboxes ·{" "}
               {data.items.filter((s) => s.status === "ready").length} running
             </span>
@@ -41,7 +41,7 @@ export default function SandboxListPage() {
             >
               {creating ? "Creating..." : "New sandbox"}
             </button>
-            <div className="absolute right-0 top-full mt-1 bg-bg border border-border rounded-lg shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-10">
+            <div className="absolute right-0 top-full mt-1 bg-bg border border-border rounded-lg shadow-dropdown opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-10">
               {PRESETS.map((p) => (
                 <button
                   key={p.runtime}
@@ -56,6 +56,13 @@ export default function SandboxListPage() {
           </div>
         </div>
       </div>
+
+      {data && (
+        <div className="text-sm text-text-3 mb-4 sm:hidden">
+          {data.items.length} sandboxes ·{" "}
+          {data.items.filter((s) => s.status === "ready").length} running
+        </div>
+      )}
 
       {createSandbox.error && (
         <div className="mb-4 px-4 py-3 text-sm bg-status-red/10 text-status-red border border-status-red/20 rounded-lg">

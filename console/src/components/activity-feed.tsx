@@ -40,7 +40,7 @@ export function ActivityFeed({ sandboxes }: ActivityFeedProps) {
   const items = useMemo(() => deriveActivity(sandboxes), [sandboxes]);
 
   return (
-    <div className="border border-border rounded-lg p-5">
+    <div className="border border-border rounded-lg p-4 sm:p-5">
       <h3 className="text-sm font-medium mb-4">Activity</h3>
       <div className="space-y-4">
         {items.map((item, i) => (

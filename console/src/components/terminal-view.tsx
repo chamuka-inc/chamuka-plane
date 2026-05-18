@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { tokens } from "@/lib/theme";
 import "@xterm/xterm/css/xterm.css";
 
 type TerminalViewProps = {
@@ -33,18 +34,18 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
       fontSize: 13,
       lineHeight: 1.4,
       theme: {
-        background: "#0a0a0a",
-        foreground: "#ededed",
-        cursor: "#ededed",
-        selectionBackground: "rgba(0,112,243,0.3)",
-        black: "#000000",
-        red: "#ee0000",
-        green: "#0cce6b",
-        yellow: "#f5a623",
-        blue: "#0070f3",
-        magenta: "#f81ce5",
-        cyan: "#50e3c2",
-        white: "#ededed",
+        background: tokens.bg1,
+        foreground: tokens.text,
+        cursor: tokens.text,
+        selectionBackground: `${tokens.accentBlue}4d`,
+        black: tokens.bg,
+        red: tokens.statusRed,
+        green: tokens.statusGreen,
+        yellow: tokens.statusAmber,
+        blue: tokens.accentBlue,
+        magenta: tokens.accentPink,
+        cyan: tokens.accentCyan,
+        white: tokens.text,
       },
       cursorBlink: true,
       scrollback: 5000,
@@ -167,17 +168,19 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
     };
   }, [connect]);
 
+  const statusColor = {
+    connecting: "text-status-amber",
+    connected: "text-status-green",
+    error: "text-status-red",
+  }[status];
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <span className="text-xs text-text-3 font-mono">
           agentd /v1/exec
         </span>
-        <span
-          className={`text-xs ${
-            { connecting: "text-status-amber", connected: "text-status-green", error: "text-status-red" }[status]
-          }`}
-        >
+        <span className={`text-xs ${statusColor}`}>
           {status}
         </span>
       </div>

@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import type { UsageRecord } from "@/api/types";
 import { cpuNsecToHours } from "@/lib/format";
+import { tokens } from "@/lib/theme";
 
 type UsageChartProps = {
   records: UsageRecord[];
@@ -31,45 +32,45 @@ export function UsageChart({ records }: UsageChartProps) {
   );
 
   return (
-    <div className="border border-border rounded-lg p-5">
+    <div className="border border-border rounded-lg p-4 sm:p-5">
       <div className="flex items-center gap-3 mb-4">
         <span className="text-sm font-medium">CPU Usage</span>
-        <span className="text-xs text-text-4 font-mono">usage_record.cpu_nsec</span>
+        <span className="text-xs text-text-4 font-mono hidden sm:inline">usage_record.cpu_nsec</span>
       </div>
       <ResponsiveContainer width="100%" height={200}>
         <AreaChart data={data}>
           <defs>
             <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ededed" stopOpacity={0.15} />
-              <stop offset="100%" stopColor="#ededed" stopOpacity={0} />
+              <stop offset="0%" stopColor={tokens.text} stopOpacity={0.15} />
+              <stop offset="100%" stopColor={tokens.text} stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="time"
-            tick={{ fill: "#444", fontSize: 11 }}
-            axisLine={{ stroke: "#222" }}
+            tick={{ fill: tokens.text4, fontSize: 11 }}
+            axisLine={{ stroke: tokens.border }}
             tickLine={false}
           />
           <YAxis
-            tick={{ fill: "#444", fontSize: 11 }}
+            tick={{ fill: tokens.text4, fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             tickFormatter={(v: number) => `${v.toFixed(0)}h`}
           />
           <Tooltip
             contentStyle={{
-              background: "#111",
-              border: "1px solid #222",
-              borderRadius: "6px",
+              background: tokens.bg2,
+              border: `1px solid ${tokens.border}`,
+              borderRadius: tokens.radiusMd,
               fontSize: "12px",
-              color: "#ededed",
+              color: tokens.text,
             }}
             formatter={(value: number) => [`${value.toFixed(1)}h`, "CPU"]}
           />
           <Area
             type="monotone"
             dataKey="cpuHours"
-            stroke="#ededed"
+            stroke={tokens.text}
             strokeWidth={1.5}
             fill="url(#cpuGrad)"
           />

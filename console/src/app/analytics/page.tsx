@@ -39,16 +39,16 @@ export default function AnalyticsPage() {
   const { summary, records } = data;
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold tracking-tight">Usage</h1>
-        <span className="text-sm text-text-3 border border-border rounded px-3 py-1">
+        <span className="text-sm text-text-3 border border-border rounded-md px-3 py-1">
           Last 24h
         </span>
       </div>
 
-      <div className="border border-border rounded-lg overflow-hidden mb-8">
-        <div className="grid grid-cols-4">
+      <div className="border border-border rounded-lg overflow-hidden bg-border mb-6 sm:mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-px">
           <StatCard
             label="CPU Hours"
             value={summary.total_cpu_hours.toFixed(1)}
@@ -77,41 +77,43 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="mb-8">
+      <div className="mb-6 sm:mb-8">
         <UsageChart records={records} />
       </div>
 
       <div className="border border-border rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-left text-xs text-text-4 uppercase tracking-wider px-6 py-3">Sandbox</th>
-              <th className="text-left text-xs text-text-4 uppercase tracking-wider px-6 py-3">CPU</th>
-              <th className="text-left text-xs text-text-4 uppercase tracking-wider px-6 py-3">Memory</th>
-              <th className="text-left text-xs text-text-4 uppercase tracking-wider px-6 py-3">Network</th>
-              <th className="text-left text-xs text-text-4 uppercase tracking-wider px-6 py-3">Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedEntries.map(([sandboxId, usage]) => (
-                <tr key={sandboxId} className="border-b border-border hover:bg-bg-hover">
-                  <td className="px-6 py-3 text-sm font-mono">{sandboxId}</td>
-                  <td className="px-6 py-3 text-sm text-text-2">
-                    {formatCpuHours(usage.cpu_nsec)}
-                  </td>
-                  <td className="px-6 py-3 text-sm text-text-2">
-                    {formatMemoryGbHours(usage.memory_mb_seconds)}
-                  </td>
-                  <td className="px-6 py-3 text-sm text-text-2">
-                    {formatBytes(usage.rx_bytes + usage.tx_bytes)}
-                  </td>
-                  <td className="px-6 py-3 text-sm text-text-2">
-                    {formatCost(estimateSandboxCost(usage.cpu_nsec, summary.total_cpu_hours, summary.estimated_cost))}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[600px]">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left text-xs text-text-4 uppercase tracking-wider px-4 sm:px-6 py-3">Sandbox</th>
+                <th className="text-left text-xs text-text-4 uppercase tracking-wider px-4 sm:px-6 py-3">CPU</th>
+                <th className="text-left text-xs text-text-4 uppercase tracking-wider px-4 sm:px-6 py-3">Memory</th>
+                <th className="text-left text-xs text-text-4 uppercase tracking-wider px-4 sm:px-6 py-3">Network</th>
+                <th className="text-left text-xs text-text-4 uppercase tracking-wider px-4 sm:px-6 py-3">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEntries.map(([sandboxId, usage]) => (
+                  <tr key={sandboxId} className="border-b border-border hover:bg-bg-hover">
+                    <td className="px-4 sm:px-6 py-3 text-sm font-mono">{sandboxId}</td>
+                    <td className="px-4 sm:px-6 py-3 text-sm text-text-2">
+                      {formatCpuHours(usage.cpu_nsec)}
+                    </td>
+                    <td className="px-4 sm:px-6 py-3 text-sm text-text-2">
+                      {formatMemoryGbHours(usage.memory_mb_seconds)}
+                    </td>
+                    <td className="px-4 sm:px-6 py-3 text-sm text-text-2">
+                      {formatBytes(usage.rx_bytes + usage.tx_bytes)}
+                    </td>
+                    <td className="px-4 sm:px-6 py-3 text-sm text-text-2">
+                      {formatCost(estimateSandboxCost(usage.cpu_nsec, summary.total_cpu_hours, summary.estimated_cost))}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

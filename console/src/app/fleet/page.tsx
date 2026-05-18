@@ -17,14 +17,14 @@ export default function FleetPage() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-xl font-semibold tracking-tight mb-6">Fleet</h1>
 
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 sm:mb-8">
         {clusters.map((cluster) => (
           <ClusterCard key={cluster.name} cluster={cluster} />
         ))}
-        <div className="border border-border rounded-lg p-5">
+        <div className="border border-border rounded-lg p-4 sm:p-5">
           <div className="text-xs text-text-3 mb-1">Total Fleet</div>
           <div className="flex items-baseline gap-2 mb-3">
             <span className="text-2xl font-semibold">{allDrones.length}</span>
