@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 mod common;
 
-#[plane_test]
+#[plane_test(120)]
 async fn cert_manager_does_refresh(env: TestEnvironment) {
     let controller = env.controller().await;
 
@@ -49,7 +49,7 @@ async fn cert_manager_does_refresh(env: TestEnvironment) {
     );
     cert_watcher
         .wait_for_initial_cert()
-        .with_timeout(60)
+        .with_timeout(110)
         .await
         .unwrap()
         .unwrap();

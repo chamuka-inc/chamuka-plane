@@ -267,14 +267,13 @@ async fn refresh_loop_step(
     let account = match maybe_account {
         Some(account) => account,
         None => {
-            let client = if acme_config.accept_insecure_certs_for_testing {
+            let mut builder =
+                reqwest::Client::builder().user_agent(concat!("plane/", env!("CARGO_PKG_VERSION")));
+            if acme_config.accept_insecure_certs_for_testing {
                 tracing::warn!("ACME server certificate chain will not be validated! This is ONLY for testing, and should not be used otherwise.");
-                reqwest::Client::builder()
-                    .danger_accept_invalid_certs(true)
-                    .build()?
-            } else {
-                reqwest::Client::new()
-            };
+                builder = builder.danger_accept_invalid_certs(true);
+            }
+            let client = builder.build()?;
 
             let dir = DirectoryBuilder::new(acme_config.endpoint.to_string())
                 .http_client(client)
@@ -365,6 +364,7 @@ pub async fn refresh_loop(
 
         if let Err(err) = result {
             tracing::error!(?err, "Error refreshing certificate.");
+            tokio::time::sleep(FAILURE_SLEEP_TIME).await;
         }
     }
 }

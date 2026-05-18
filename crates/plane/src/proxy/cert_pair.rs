@@ -65,13 +65,19 @@ impl CertificatePair {
                 .first()
                 .ok_or_else(|| anyhow!("Error getting first cert."))?,
         )?;
-        let common_name = parsed_cert
-            .subject()
-            .iter_common_name()
-            .next()
-            .ok_or(anyhow!("No common name found"))?
-            .as_str()?
-            .to_string();
+        let common_name = if let Some(cn) = parsed_cert.subject().iter_common_name().next() {
+            cn.as_str()?.to_string()
+        } else {
+            parsed_cert
+                .subject_alternative_name()?
+                .and_then(|san| {
+                    san.value.general_names.iter().find_map(|name| match name {
+                        x509_parser::extensions::GeneralName::DNSName(dns) => Some(dns.to_string()),
+                        _ => None,
+                    })
+                })
+                .ok_or_else(|| anyhow!("Certificate has no CN or DNS SAN"))?
+        };
 
         let validity = parsed_cert.validity();
         let validity_start = validity.not_before.to_datetime();

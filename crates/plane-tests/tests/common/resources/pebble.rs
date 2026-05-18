@@ -14,7 +14,13 @@ use url::Url;
 const POLL_LOOP_SLEEP: u64 = 100;
 const PEBBLE_IMAGE: &str = "ghcr.io/letsencrypt/pebble:latest";
 
-const DNS_IP: &str = "172.18.0.1";
+// Pebble (inside Docker) must reach the test's DNS server on the host.
+// Docker Desktop for Mac uses a VM — containers reach the host via
+// host.docker.internal, not the bridge gateway IP.
+#[cfg(target_os = "macos")]
+const DNS_IP: &str = "host.docker.internal";
+#[cfg(not(target_os = "macos"))]
+const DNS_IP: &str = "172.17.0.1";
 pub struct Pebble {
     container: Container,
     #[allow(dead_code)] // Used in tests
