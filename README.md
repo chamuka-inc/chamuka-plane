@@ -72,6 +72,8 @@ Run `./scripts/status.sh` — it reads the latest commit trailers to show the cu
 
 All design decisions live in `docs/`. The [discipline doc](./docs/sandbox-platform-discipline.md) governs how code arrives in the tree (TDD layers, code rules, commit discipline, session handoff). It is imported every session via [CLAUDE.md](./CLAUDE.md).
 
+- [Build conversation](https://claude.ai/chat/fc9f54d0-62bc-48d6-a5d0-0c9936e7c1fa) — the Claude Code session that scaffolded this project
+
 ## License
 
 Not yet determined.
