@@ -79,11 +79,20 @@ mod tests {
     #![allow(
         clippy::unwrap_used,
         clippy::expect_used,
-        clippy::needless_borrows_for_generic_args
+        clippy::needless_borrows_for_generic_args,
+        clippy::await_holding_lock
     )]
 
     use crate::database::PlaneDatabase;
     use sqlx::PgPool;
+    use std::sync::Mutex;
+
+    // Cleanup functions are global — they delete all eligible rows, not just
+    // those belonging to the calling test. Serialization is the structurally
+    // correct constraint: global operations on shared state require mutual
+    // exclusion. std::sync::Mutex (not tokio) because we need cross-thread
+    // serialization (cargo test runs each test on its own thread).
+    static DB_LOCK: Mutex<()> = Mutex::new(());
 
     async fn test_pool() -> Option<PgPool> {
         let url = std::env::var("TEST_DATABASE_URL")
@@ -113,7 +122,7 @@ mod tests {
     }
 
     async fn setup(pool: &PgPool, suffix: &str) -> TestFixture {
-        teardown_by_suffix(pool, suffix).await;
+        teardown(pool, suffix).await;
 
         let controller_id = id("ctrl", suffix);
         let node_name = id("node", suffix);
@@ -191,34 +200,55 @@ mod tests {
         }
     }
 
-    // Intentionally ignores errors: teardown is best-effort; rows may not exist
-    async fn teardown_by_suffix(pool: &PgPool, suffix: &str) {
+    /// Delete all test data for a given suffix. Deletes in FK-dependency order
+    /// (children before parents) covering every table that references backend,
+    /// sandbox, tenant, controller, node, or drone.
+    async fn teardown(pool: &PgPool, suffix: &str) {
         let backend_id = id("bk", suffix);
         let sandbox_id = id("sb", suffix);
         let tenant_id = id("tenant", suffix);
         let node_name = id("node", suffix);
         let controller_id = id("ctrl", suffix);
 
-        sqlx::query("DELETE FROM extension_action WHERE backend_id = $1")
-            .bind(&backend_id)
-            .execute(pool)
-            .await
-            .ok();
-        sqlx::query("DELETE FROM credential_binding WHERE sandbox_id = $1")
-            .bind(&sandbox_id)
-            .execute(pool)
-            .await
-            .ok();
-        sqlx::query("DELETE FROM snapshot WHERE sandbox_id = $1")
-            .bind(&sandbox_id)
-            .execute(pool)
-            .await
-            .ok();
+        // Children of sandbox
+        for table in [
+            "extension_action",
+            "credential_binding",
+            "audit_egress",
+            "port_route",
+            "usage_record",
+            "network_policy",
+            "snapshot",
+        ] {
+            sqlx::query(&format!("DELETE FROM {table} WHERE sandbox_id = $1"))
+                .bind(&sandbox_id)
+                .execute(pool)
+                .await
+                .ok();
+        }
+
+        // Children of backend
+        for table in ["backend_action", "backend_key", "backend_state", "token"] {
+            let col = if table == "backend_key" {
+                "id"
+            } else {
+                "backend_id"
+            };
+            sqlx::query(&format!("DELETE FROM {table} WHERE {col} = $1"))
+                .bind(&backend_id)
+                .execute(pool)
+                .await
+                .ok();
+        }
+
+        // Children of tenant
         sqlx::query("DELETE FROM secret WHERE tenant = $1")
             .bind(&tenant_id)
             .execute(pool)
             .await
             .ok();
+
+        // Parents (FK order: sandbox → backend → drone → node → tenant/controller)
         sqlx::query("DELETE FROM sandbox WHERE id = $1")
             .bind(&sandbox_id)
             .execute(pool)
@@ -229,6 +259,7 @@ mod tests {
             .execute(pool)
             .await
             .ok();
+
         let did: Option<i32> = sqlx::query_scalar("SELECT id FROM node WHERE name = $1")
             .bind(&node_name)
             .fetch_optional(pool)
@@ -247,6 +278,7 @@ mod tests {
                 .await
                 .ok();
         }
+
         sqlx::query("DELETE FROM tenant WHERE id = $1")
             .bind(&tenant_id)
             .execute(pool)
@@ -261,6 +293,7 @@ mod tests {
 
     #[tokio::test]
     async fn snapshot_cleanup_deletes_expired() {
+        let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
             Some(p) => p,
             None => return,
@@ -305,11 +338,12 @@ mod tests {
                 .expect("count");
         assert_eq!(remaining, 1);
 
-        teardown_by_suffix(&pool, &f.suffix).await;
+        teardown(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
     async fn snapshot_cleanup_respects_batch_size() {
+        let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
             Some(p) => p,
             None => return,
@@ -343,11 +377,12 @@ mod tests {
                 .expect("count");
         assert!(remaining <= 3);
 
-        teardown_by_suffix(&pool, &f.suffix).await;
+        teardown(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
     async fn secret_cleanup_deletes_old_soft_deleted() {
+        let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
             Some(p) => p,
             None => return,
@@ -419,11 +454,12 @@ mod tests {
                 .expect("check active");
         assert!(active_exists, "active secret should survive");
 
-        teardown_by_suffix(&pool, &f.suffix).await;
+        teardown(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
     async fn secret_cleanup_skips_with_active_bindings() {
+        let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
             Some(p) => p,
             None => return,
@@ -473,11 +509,12 @@ mod tests {
             "secret with active binding should not be deleted (got deleted={deleted})"
         );
 
-        teardown_by_suffix(&pool, &f.suffix).await;
+        teardown(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
     async fn extension_action_cleanup_deletes_old_acked() {
+        let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
             Some(p) => p,
             None => return,
@@ -556,11 +593,12 @@ mod tests {
                 .expect("check pending");
         assert!(pending_exists);
 
-        teardown_by_suffix(&pool, &f.suffix).await;
+        teardown(&pool, &f.suffix).await;
     }
 
     #[tokio::test]
     async fn run_extension_cleanup_integration() {
+        let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
             Some(p) => p,
             None => return,
@@ -634,6 +672,6 @@ mod tests {
                 .expect("check");
         assert!(act_gone, "old acked action should be cleaned up");
 
-        teardown_by_suffix(&pool, &f.suffix).await;
+        teardown(&pool, &f.suffix).await;
     }
 }

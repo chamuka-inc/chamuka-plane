@@ -144,7 +144,7 @@ impl Pebble {
                         "14000/tcp".to_string(),
                         Some(vec![bollard::service::PortBinding {
                             host_ip: Some("0.0.0.0".to_string()),
-                            host_port: Some("14000".to_string()),
+                            host_port: None,
                         }]),
                     )]
                     .into_iter()

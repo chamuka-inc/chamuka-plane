@@ -29,7 +29,7 @@ use plane_common::{
 use plane_dynamic_proxy::server::{HttpsConfig, SimpleHttpServer};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::net::TcpListener;
@@ -378,22 +378,9 @@ impl Drop for DnsServer {
     }
 }
 
-fn get_project_root() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("not in cargo project");
-    let manifest_dir_path = Path::new(&manifest_dir);
-    let project_root = manifest_dir_path
-        .ancestors()
-        .find(|e| e.join(".git").exists())
-        .expect("not in git repo");
-    project_root.to_path_buf()
-}
-
 fn create_scratch_dir(name: &str) -> PathBuf {
-    let scratch_dir = {
-        let mut dir = get_project_root();
-        dir.push(format!("test-scratch/{}", name));
-        dir
-    };
+    // Use temp_dir to keep Unix socket paths under macOS SUN_LEN (104 bytes)
+    let scratch_dir = std::env::temp_dir().join(format!("plane-test/{name}"));
     std::fs::remove_dir_all(&scratch_dir).unwrap_or(());
     std::fs::create_dir_all(&scratch_dir).unwrap();
     scratch_dir
