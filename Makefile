@@ -12,6 +12,11 @@ CARGO      := SQLX_OFFLINE=true cargo
 CARGO_OPTS := --manifest-path crates/Cargo.toml
 CRATES     := crates
 
+# Disable incremental compilation for test targets — parallel test binaries
+# race on target/debug/incremental/*.part.bin files, causing sporadic
+# "failed to create dependency graph" errors on macOS APFS.
+CARGO_TEST := CARGO_INCREMENTAL=0 $(CARGO)
+
 .DEFAULT_GOAL := help
 
 # ─── Help ───────────────────────────────────────────────────────────
@@ -44,11 +49,11 @@ lint: ## Run clippy with deny warnings.
 
 .PHONY: test
 test: ## Run workspace tests (excludes Docker-dependent plane-tests).
-	$(CARGO) test $(CARGO_OPTS) --workspace --all-features --exclude plane-tests
+	$(CARGO_TEST) test $(CARGO_OPTS) --workspace --all-features --exclude plane-tests
 
 .PHONY: test-unit
 test-unit: ## Run only unit tests (no integration, no Docker).
-	$(CARGO) test $(CARGO_OPTS) --workspace --all-features --lib
+	$(CARGO_TEST) test $(CARGO_OPTS) --workspace --all-features --lib
 
 .PHONY: docker-check
 docker-check: ## Verify Docker is running.
@@ -56,7 +61,7 @@ docker-check: ## Verify Docker is running.
 
 .PHONY: test-docker
 test-docker: docker-check test-image ## Run Docker-dependent integration tests.
-	$(CARGO) test $(CARGO_OPTS) -p plane-tests --all-features
+	$(CARGO_TEST) test $(CARGO_OPTS) -p plane-tests --all-features
 
 # ─── CI ─────────────────────────────────────────────────────────────
 
