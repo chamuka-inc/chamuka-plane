@@ -11,6 +11,9 @@ build/
 .pnpm-store/
 .npm/
 
+# Next.js
+.next/
+
 # Python
 __pycache__/
 *.py[cod]
