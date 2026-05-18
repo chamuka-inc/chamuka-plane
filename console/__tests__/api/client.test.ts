@@ -120,6 +120,40 @@ describe("BffClient", () => {
     expect(result.summary.total_cpu_hours).toBe(4.2);
   });
 
+  it("fetches single sandbox by id", async () => {
+    const mockSandbox = {
+      id: "sb-7f3d1a",
+      backend_id: "bk-abc",
+      tenant: "tenant-default",
+      status: "ready",
+      runtime: "node24",
+      trust: "untrusted",
+      arch: "amd64",
+      image: "sandbox-runtime:node24",
+      resources: { vcpus: 2, memory_mb: 4096 },
+      ports: [3000],
+      tags: {},
+      persistent: false,
+      created_at: "2026-05-18T14:00:00Z",
+      updated_at: "2026-05-18T14:02:00Z",
+      expires_at: "2026-05-18T14:05:00Z",
+      cluster: "iad-x86-default",
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockSandbox),
+    });
+
+    const client = createBffClient();
+    const result = await client.getSandbox("sb-7f3d1a");
+
+    expect(fetch).toHaveBeenCalledWith("/api/sandboxes/sb-7f3d1a", {
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(result.id).toBe("sb-7f3d1a");
+  });
+
   it("throws on non-ok response", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,

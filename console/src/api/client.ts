@@ -22,13 +22,16 @@ const headers = { "Content-Type": "application/json" };
 async function request<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers });
   if (!res.ok) {
-    const body = (await res.json()) as ApiError;
-    // Message includes code so callers can match on it; detail follows.
-    throw new BffError(
-      body.error.code,
-      `${body.error.code}: ${body.error.message}`,
-      res.status,
-    );
+    let code = "UNKNOWN";
+    let msg = res.statusText;
+    try {
+      const body = (await res.json()) as ApiError;
+      code = body.error.code;
+      msg = body.error.message;
+    } catch {
+      // Non-JSON error response (proxy 502, etc.)
+    }
+    throw new BffError(code, `${code}: ${msg}`, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -48,7 +51,7 @@ export function createBffClient() {
     },
 
     getSandbox(id: string): Promise<Sandbox> {
-      return request(`/api/sandboxes/${id}`);
+      return request(`/api/sandboxes/${encodeURIComponent(id)}`);
     },
 
     getFleetState(): Promise<FleetResponse> {
