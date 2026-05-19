@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { Sandbox } from "../../src/index.js";
 import { SandboxClient } from "../../src/client.js";
-import type { ManagedSandbox } from "../../src/managed-sandbox.js";
 
 const CONTROL_URL = process.env.CONTROL_URL ?? "http://localhost:8080";
 const IMAGE = process.env.SANDBOX_IMAGE ?? "localhost:5000/sandbox-runtime:node24-latest";
@@ -9,20 +9,23 @@ const RUN_ID = process.env.RUN_ID ?? String(Date.now());
 const seed = parseInt(RUN_ID.replace(/\D/g, "").slice(-6), 10) || 123456;
 
 let client: SandboxClient;
-let sandbox: ManagedSandbox;
+let sandbox: Sandbox;
 
 beforeAll(async () => {
   client = new SandboxClient({ controlUrl: CONTROL_URL, tenant: "tenant-default" });
 
-  sandbox = await client.createSandbox({
-    runtime: "node24",
-    image: IMAGE,
-    trust: "untrusted",
-    resources: { vcpus: 1, memory_mb: 512 },
-    timeout_ms: TIMEOUT_MS,
-    env: { NODE_ENV: "test", RUN_ID },
-    tags: { purpose: "e2e-cluster", run_id: RUN_ID },
-  });
+  sandbox = await Sandbox.create(
+    {
+      runtime: "node24",
+      image: IMAGE,
+      trust: "untrusted",
+      resources: { vcpus: 1, memory_mb: 512 },
+      timeout_ms: TIMEOUT_MS,
+      env: { NODE_ENV: "test", RUN_ID },
+      tags: { purpose: "e2e-cluster", run_id: RUN_ID },
+    },
+    { controlUrl: CONTROL_URL, tenant: "tenant-default" },
+  );
 
   await waitForReady(sandbox.url, 30_000);
 }, 60_000);
@@ -417,8 +420,9 @@ console.log("done:" + workerId);
       const start = i * rangeSize;
       const end = Math.min((i + 1) * rangeSize, 5000);
       spawns.push(
-        sandbox.spawn("node", {
+        sandbox.runCommand("node", {
           args: [`${ws}/worker.js`, String(i), String(start), String(end)],
+          detached: true,
         }),
       );
     }
@@ -487,7 +491,7 @@ console.log(JSON.stringify({ count, sum }));
     const msg = `task-${RUN_ID}`;
     const outPath = `${ws}/stdin-result.json`;
 
-    const spawned = await sandbox.spawn("node", {
+    const spawned = await sandbox.runCommand("node", {
       args: [
         "-e",
         `
@@ -509,6 +513,7 @@ process.stdin.on("data", chunk => {
 });
 `,
       ],
+      detached: true,
     });
 
     const lines = [`${msg}-alpha`, `${msg}-beta-longer`, `${msg}-gamma`];
@@ -741,7 +746,7 @@ server.listen(${port}, () => console.log("up"));
 `,
     );
 
-    const spawned = await sandbox.spawn("node", { args: [`${ws}/server.js`] });
+    const spawned = await sandbox.runCommand("node", { args: [`${ws}/server.js`], detached: true });
 
     await waitFor(async () => {
       const r = await sandbox.runCommand("sh", {
