@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { useCreateSandbox, useTerminateSandbox } from "@/api/hooks";
+import { useCreateSandbox, useTerminateSandbox, useBindSecrets } from "@/api/hooks";
 import type { ExecEntry } from "@/api/types";
 import { TerminalView } from "@/components/terminal-view";
 import { SdkSnippet } from "@/components/sdk-snippet";
@@ -28,6 +28,7 @@ type ActiveSandbox = {
 export default function Playground() {
   const createSandbox = useCreateSandbox();
   const terminateSandbox = useTerminateSandbox();
+  const bindSecrets = useBindSecrets();
   const [active, setActive] = useState<ActiveSandbox | null>(null);
   const [booting, setBooting] = useState(false);
   const [showSnippet, setShowSnippet] = useState(false);
@@ -62,6 +63,16 @@ export default function Playground() {
               runtime: preset.runtime,
               image: preset.image,
             });
+            if (config.secrets.length > 0) {
+              bindSecrets.mutate(
+                { sandboxId: data.sandbox.id, secrets: config.secrets },
+                {
+                  onError: (err) => {
+                    console.error("Failed to bind secrets:", err);
+                  },
+                },
+              );
+            }
             setBooting(false);
           },
           onError: () => {
@@ -71,7 +82,7 @@ export default function Playground() {
         },
       );
     },
-    [createSandbox, config],
+    [createSandbox, config, bindSecrets],
   );
 
   const handleStop = useCallback(() => {

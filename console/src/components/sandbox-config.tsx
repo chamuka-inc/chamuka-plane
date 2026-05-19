@@ -3,12 +3,20 @@
 import { useState, useCallback } from "react";
 import { ChevronRight, Plus, X, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 
+export type SecretEntry = {
+  destination: string;
+  header_name: string;
+  header_format: string;
+  value: string;
+};
+
 export type SandboxConfigValues = {
   trust: "trusted" | "untrusted" | "paranoid";
   vcpus: number;
   timeout_ms: number;
   max_idle_ms: number;
   env: Record<string, string>;
+  secrets: SecretEntry[];
   persistent: boolean;
 };
 
@@ -18,6 +26,7 @@ export const DEFAULT_CONFIG: SandboxConfigValues = {
   timeout_ms: 300_000,
   max_idle_ms: 60_000,
   env: {},
+  secrets: [],
   persistent: false,
 };
 
@@ -114,6 +123,104 @@ function EnvEditor({
   );
 }
 
+function SecretEditor({
+  secrets,
+  onChange,
+}: {
+  secrets: SecretEntry[];
+  onChange: (secrets: SecretEntry[]) => void;
+}) {
+  const [draftDest, setDraftDest] = useState("");
+  const [draftHeader, setDraftHeader] = useState("");
+  const [draftValue, setDraftValue] = useState("");
+
+  const handleAdd = useCallback(() => {
+    const dest = draftDest.trim();
+    const val = draftValue;
+    if (!dest || !val) return;
+
+    let headerFormat = "{value}";
+    let storedValue = val;
+    if (val.startsWith("Bearer ")) {
+      headerFormat = "Bearer {value}";
+      storedValue = val.slice(7);
+    }
+
+    onChange([
+      ...secrets,
+      {
+        destination: dest,
+        header_name: draftHeader.trim() || "Authorization",
+        header_format: headerFormat,
+        value: storedValue,
+      },
+    ]);
+    setDraftDest("");
+    setDraftHeader("");
+    setDraftValue("");
+  }, [draftDest, draftHeader, draftValue, secrets, onChange]);
+
+  const handleRemove = useCallback(
+    (index: number) => {
+      onChange(secrets.filter((_, i) => i !== index));
+    },
+    [secrets, onChange],
+  );
+
+  return (
+    <div className="space-y-1.5">
+      {secrets.map((s, i) => (
+        <div key={`${s.destination}-${s.header_name}-${i}`} className="flex items-center gap-1.5">
+          <span className="text-xs font-mono text-accent-cyan truncate min-w-0">{s.destination}</span>
+          <span className="text-xs text-text-4">/</span>
+          <span className="text-xs text-text-2 truncate">{s.header_name}</span>
+          <span className="text-xs text-text-4">=</span>
+          <span className="text-xs font-mono text-text-3 truncate flex-1 min-w-0">{"********"}</span>
+          <button
+            onClick={() => handleRemove(i)}
+            className="text-text-4 hover:text-status-red transition-colors shrink-0 p-0.5"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          value={draftDest}
+          onChange={(e) => setDraftDest(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          placeholder="api.example.com"
+          className="w-28 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+        />
+        <input
+          type="text"
+          value={draftHeader}
+          onChange={(e) => setDraftHeader(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          placeholder="Authorization"
+          className="w-20 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+        />
+        <input
+          type="password"
+          value={draftValue}
+          onChange={(e) => setDraftValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          placeholder="secret value"
+          className="flex-1 min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!draftDest.trim() || !draftValue}
+          className="text-text-3 hover:text-text disabled:text-text-4 transition-colors shrink-0 p-0.5"
+        >
+          <Plus size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function isDefault(config: SandboxConfigValues): boolean {
   return (
     config.trust === DEFAULT_CONFIG.trust &&
@@ -121,6 +228,7 @@ function isDefault(config: SandboxConfigValues): boolean {
     config.timeout_ms === DEFAULT_CONFIG.timeout_ms &&
     config.max_idle_ms === DEFAULT_CONFIG.max_idle_ms &&
     Object.keys(config.env).length === 0 &&
+    config.secrets.length === 0 &&
     !config.persistent
   );
 }
@@ -132,6 +240,7 @@ function countOverrides(config: SandboxConfigValues): number {
   if (config.timeout_ms !== DEFAULT_CONFIG.timeout_ms) n++;
   if (config.max_idle_ms !== DEFAULT_CONFIG.max_idle_ms) n++;
   if (Object.keys(config.env).length > 0) n++;
+  if (config.secrets.length > 0) n++;
   if (config.persistent) n++;
   return n;
 }
@@ -237,6 +346,15 @@ export function SandboxConfig({ value, onChange }: SandboxConfigProps) {
           <div className="p-3 space-y-2">
             <label className="text-xs text-text-3 font-medium">Environment</label>
             <EnvEditor env={value.env} onChange={(env) => update({ env })} />
+          </div>
+
+          {/* Secrets */}
+          <div className="p-3 space-y-2">
+            <div>
+              <label className="text-xs text-text-3 font-medium">Secrets</label>
+              <span className="text-[10px] text-text-4 ml-2">Injected by proxy — sandbox never sees these</span>
+            </div>
+            <SecretEditor secrets={value.secrets} onChange={(secrets) => update({ secrets })} />
           </div>
 
           {/* Persistent toggle */}

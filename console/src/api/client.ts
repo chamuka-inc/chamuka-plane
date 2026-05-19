@@ -98,6 +98,28 @@ export function createBffClient() {
         throw new BffError(code, `${code}: ${msg}`, res.status);
       }
     },
+
+    createSecret(body: { value: string; name?: string }): Promise<{ id: string; created_at: string }> {
+      return request("/api/secrets", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+
+    createCredentialBinding(
+      sandboxId: string,
+      body: {
+        secret_id: string;
+        destination: string;
+        header_name: string;
+        header_format?: string;
+      },
+    ): Promise<{ id: string }> {
+      return request(`/api/sandboxes/${encodeURIComponent(sandboxId)}/credentials`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
   };
 }
 

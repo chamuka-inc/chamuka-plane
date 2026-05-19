@@ -17,6 +17,17 @@ type SdkSnippetProps = {
   config?: SandboxConfigValues;
 };
 
+function deriveEnvVarName(destination: string): string {
+  const parts = destination.replace(/^api\./, "").split(".");
+  const base = parts[0].toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  return `${base}_API_KEY`;
+}
+
+function varName(destination: string): string {
+  const parts = destination.replace(/^api\./, "").split(".");
+  return parts[0].replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
 function hasConfigOverrides(c?: SandboxConfigValues): boolean {
   if (!c) return false;
   return (
@@ -24,6 +35,7 @@ function hasConfigOverrides(c?: SandboxConfigValues): boolean {
     c.vcpus !== DEFAULT_CONFIG.vcpus ||
     c.timeout_ms !== DEFAULT_CONFIG.timeout_ms ||
     Object.keys(c.env).length > 0 ||
+    (c.secrets?.length ?? 0) > 0 ||
     c.persistent
   );
 }
@@ -31,6 +43,7 @@ function hasConfigOverrides(c?: SandboxConfigValues): boolean {
 function generateTs(props: SdkSnippetProps): string {
   const c = props.config;
   const hasOverrides = hasConfigOverrides(c);
+  const hasSecrets = (c?.secrets?.length ?? 0) > 0;
 
   const vcpus = c?.vcpus ?? DEFAULT_CONFIG.vcpus;
   const createArgs: string[] = [
@@ -60,12 +73,42 @@ function generateTs(props: SdkSnippetProps): string {
   }
 
   const lines = [
-    `import { Sandbox } from "@sandbox-platform/sdk";`,
+    hasSecrets
+      ? `import { Sandbox, SandboxClient } from "@sandbox-platform/sdk";`
+      : `import { Sandbox } from "@sandbox-platform/sdk";`,
     ``,
+  ];
+
+  if (hasSecrets) {
+    lines.push(`const client = new SandboxClient({ token: process.env.SANDBOX_TOKEN! });`);
+    lines.push(``);
+  }
+
+  lines.push(
     `const sandbox = await Sandbox.create({`,
     ...createArgs,
     `});`,
-  ];
+  );
+
+  if (c?.secrets?.length) {
+    lines.push(``);
+    for (const s of c.secrets) {
+      const envVar = deriveEnvVarName(s.destination);
+      const vn = varName(s.destination);
+      lines.push(`const { id: ${vn}SecretId } = await client.createSecret({`);
+      lines.push(`  value: process.env.${envVar}!,`);
+      if (s.destination) lines.push(`  name: ${JSON.stringify(s.destination)},`);
+      lines.push(`});`);
+      lines.push(`await sandbox.createCredential({`);
+      lines.push(`  secret_id: ${vn}SecretId,`);
+      lines.push(`  destination: ${JSON.stringify(s.destination)},`);
+      lines.push(`  header_name: ${JSON.stringify(s.header_name)},`);
+      if (s.header_format !== "{value}") {
+        lines.push(`  header_format: ${JSON.stringify(s.header_format)},`);
+      }
+      lines.push(`});`);
+    }
+  }
 
   const cmds = props.commands?.length ? props.commands : props.lastCommand ? [props.lastCommand] : [];
 
@@ -94,6 +137,7 @@ function generateTs(props: SdkSnippetProps): string {
 function generatePy(props: SdkSnippetProps): string {
   const c = props.config;
   const hasOverrides = hasConfigOverrides(c);
+  const hasSecrets = (c?.secrets?.length ?? 0) > 0;
 
   const kwargs: string[] = [
     `runtime="${props.runtime}"`,
@@ -112,16 +156,48 @@ function generatePy(props: SdkSnippetProps): string {
     }
   }
 
-  const lines = [
-    `from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec`,
-    ``,
-    `sandbox = Sandbox.create(CreateSandboxRequest(`,
+  const imports = [
+    hasSecrets
+      ? `from sandbox_platform import Sandbox, SandboxClient, CreateSandboxRequest, ResourcesSpec`
+      : `from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec`,
   ];
+  if (hasSecrets) {
+    imports.push(`from sandbox_platform import CreateSecretRequest, CreateCredentialBindingRequest`);
+    imports.push(`import os`);
+  }
+
+  const lines = [...imports, ``];
+
+  if (hasSecrets) {
+    lines.push(`client = SandboxClient(token=os.environ["SANDBOX_TOKEN"])`);
+    lines.push(``);
+  }
+
+  lines.push(`sandbox = Sandbox.create(CreateSandboxRequest(`);
 
   for (const kw of kwargs) {
     lines.push(`    ${kw},`);
   }
   lines.push(`))`);
+
+  if (c?.secrets?.length) {
+    lines.push(``);
+    for (const s of c.secrets) {
+      const envVar = deriveEnvVarName(s.destination);
+      lines.push(`secret = client.create_secret(CreateSecretRequest(`);
+      lines.push(`    value=os.environ[${JSON.stringify(envVar)}],`);
+      if (s.destination) lines.push(`    name=${JSON.stringify(s.destination)},`);
+      lines.push(`))`);
+      lines.push(`sandbox.create_credential(CreateCredentialBindingRequest(`);
+      lines.push(`    secret_id=secret.id,`);
+      lines.push(`    destination=${JSON.stringify(s.destination)},`);
+      lines.push(`    header_name=${JSON.stringify(s.header_name)},`);
+      if (s.header_format !== "{value}") {
+        lines.push(`    header_format=${JSON.stringify(s.header_format)},`);
+      }
+      lines.push(`))`);
+    }
+  }
 
   appendPyExecs(lines, props);
   return lines.join("\n");
@@ -191,7 +267,7 @@ export function SdkSnippet(props: SdkSnippetProps) {
         </button>
       </div>
       <pre className="p-3 text-xs leading-relaxed overflow-x-auto font-mono text-text-2">
-        <code>{code}</code>
+        <code role="code">{code}</code>
       </pre>
     </div>
   );
