@@ -1,9 +1,0 @@
-FROM node:24-slim
-
-COPY bin/agentd /usr/local/bin/agentd
-RUN chmod +x /usr/local/bin/agentd
-
-ENV PORT=8080
-EXPOSE 8080
-
-ENTRYPOINT ["/usr/local/bin/agentd"]
