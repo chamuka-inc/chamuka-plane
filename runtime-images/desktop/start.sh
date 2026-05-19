@@ -24,4 +24,6 @@ if [[ "${VNC_ENABLED:-0}" == "1" ]]; then
     websockify --web /usr/share/novnc 6080 localhost:5900 &
 fi
 
+chromium --start-maximized about:blank &
+
 exec agentd

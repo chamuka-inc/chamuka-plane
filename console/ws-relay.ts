@@ -18,6 +18,10 @@ server.on("upgrade", (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) => {
       handleTerminalRelay(ws, url.searchParams);
     });
+  } else if (url.pathname === "/vnc") {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      handleVncRelay(ws, url.searchParams);
+    });
   } else {
     socket.destroy();
   }
@@ -160,6 +164,64 @@ async function handleTerminalRelay(clientWs: WebSocket, params: URLSearchParams)
   clientWs.on("error", (err) => {
     console.error(`[ws-relay] client error: sandbox=${sandboxId}:`, err.message);
     logsWs.close();
+  });
+}
+
+async function handleVncRelay(clientWs: WebSocket, params: URLSearchParams) {
+  const sandboxId = params.get("sandbox");
+
+  if (!sandboxId) {
+    clientWs.close(1008, "missing sandbox param");
+    return;
+  }
+
+  let proxyUrl: string;
+  try {
+    proxyUrl = await resolveProxyUrl(sandboxId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "failed to resolve sandbox";
+    clientWs.close(1011, msg);
+    return;
+  }
+
+  const upstreamUrl = `${proxyUrl.replace(/^http/, "ws")}/v1/vnc`;
+  const upstreamWs = new WebSocket(upstreamUrl);
+  upstreamWs.binaryType = "arraybuffer";
+
+  upstreamWs.on("open", () => {
+    console.log(`[ws-relay] vnc connected: sandbox=${sandboxId}`);
+  });
+
+  upstreamWs.on("message", (data: Buffer | ArrayBuffer, isBinary: boolean) => {
+    if (clientWs.readyState !== WebSocket.OPEN) return;
+    clientWs.send(data, { binary: isBinary });
+  });
+
+  clientWs.on("message", (data: Buffer | ArrayBuffer, isBinary: boolean) => {
+    if (upstreamWs.readyState !== WebSocket.OPEN) return;
+    upstreamWs.send(data, { binary: isBinary });
+  });
+
+  clientWs.on("close", () => {
+    upstreamWs.close();
+  });
+
+  upstreamWs.on("close", (code: number, reason: Buffer) => {
+    if (clientWs.readyState !== WebSocket.OPEN) return;
+    const safeCode = code >= 1000 && code <= 4999 && code !== 1005 && code !== 1006 ? code : 1011;
+    clientWs.close(safeCode, reason.toString().slice(0, 123));
+  });
+
+  upstreamWs.on("error", (err: Error) => {
+    console.error(`[ws-relay] vnc upstream error: sandbox=${sandboxId}:`, err.message);
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.close(1011, `upstream: ${err.message}`);
+    }
+  });
+
+  clientWs.on("error", (err: Error) => {
+    console.error(`[ws-relay] vnc client error: sandbox=${sandboxId}:`, err.message);
+    upstreamWs.close();
   });
 }
 

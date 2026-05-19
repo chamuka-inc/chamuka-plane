@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useSandbox, useTerminateSandbox } from "@/api/hooks";
 import type { ExecEntry } from "@/api/types";
 import { TerminalView } from "@/components/terminal-view";
+import { DesktopView } from "@/components/desktop-view";
+import { TerminalDrawer } from "@/components/terminal-drawer";
 import { SdkSnippet } from "@/components/sdk-snippet";
 import { ExecutionHistory } from "@/components/execution-history";
 import { statusBorderColor, statusTextColor } from "@/lib/sandbox-status";
@@ -47,12 +49,21 @@ export default function SandboxDetailPage({
     terminateSandbox.mutate({ id });
   }, [id, terminateSandbox]);
 
+  const handleCommand = useCallback((cmd: string) => {
+    lastCommandRef.current = cmd;
+  }, []);
+
+  const handleExecComplete = useCallback((entry: ExecEntry) => {
+    setExecHistory((prev) => [...prev, entry]);
+  }, []);
+
   if (isLoading) return <div className="p-8 text-text-3">Loading...</div>;
   if (error || !sandbox) return <div className="p-8 text-status-red">Sandbox not found</div>;
 
   const isLive = sandbox.status === "ready" || sandbox.status === "waiting";
   const isBooting = sandbox.status === "scheduled" || sandbox.status === "loading" || sandbox.status === "starting";
   const isStopping = stopping && sandbox.status !== "terminated";
+  const isDesktop = sandbox.runtime === "desktop";
 
   if (sandbox.status === "terminated") {
     isTransitioning.current = false;
@@ -142,15 +153,20 @@ export default function SandboxDetailPage({
               <div className="w-2 h-2 rounded-full bg-status-red animate-pulse" />
               <p className="text-sm text-text-2">Stopping sandbox…</p>
             </div>
+          ) : isLive && isDesktop ? (
+            <div className="flex flex-col h-full">
+              <DesktopView sandboxId={id} />
+              <TerminalDrawer
+                sandboxId={id}
+                onCommand={handleCommand}
+                onExecComplete={handleExecComplete}
+              />
+            </div>
           ) : isLive ? (
             <TerminalView
               sandboxId={id}
-              onCommand={(cmd) => {
-                lastCommandRef.current = cmd;
-              }}
-              onExecComplete={(entry) => {
-                setExecHistory((prev) => [...prev, entry]);
-              }}
+              onCommand={handleCommand}
+              onExecComplete={handleExecComplete}
             />
           ) : isBooting ? (
             <div className="flex flex-col items-center justify-center h-full gap-3">

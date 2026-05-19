@@ -60,4 +60,26 @@ describe("BootSandboxPanel", () => {
       image: "sandbox-runtime:node24-latest",
     });
   });
+
+  it("injects VNC env vars when booting desktop runtime", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole("button", { name: /Desktop/i }));
+
+    const callArgs = mockMutate.mock.calls[0][0];
+    expect(callArgs.env).toBeDefined();
+    expect(callArgs.env.VNC_ENABLED).toBe("1");
+    expect(callArgs.env.VNC_VIEWONLY).toBe("0");
+  });
+
+  it("does not inject VNC env vars for non-desktop runtimes", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole("button", { name: /Node.js 24/i }));
+
+    const callArgs = mockMutate.mock.calls[0][0];
+    expect(callArgs.env?.VNC_ENABLED).toBeUndefined();
+  });
 });

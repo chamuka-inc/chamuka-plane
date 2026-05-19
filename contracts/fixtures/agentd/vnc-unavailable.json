@@ -1,0 +1,4 @@
+{
+  "error": "vnc_not_available",
+  "message": "VNC is not enabled on this sandbox"
+}

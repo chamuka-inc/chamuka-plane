@@ -1093,6 +1093,7 @@ WS is byte-piped through the proxy: client opens `wss://<cluster>/<token>/v1/exe
 | GET | `/v1/ports` | List listening sockets |
 | GET | `/v1/processes` | ps-style list |
 | POST | `/v1/computer` | Computer-use action (desktop variant only) |
+| GET (WS) | `/v1/vnc` | VNC WebSocket relay (desktop variant only) |
 
 ### 10.2 `GET /health`
 
@@ -1252,6 +1253,26 @@ type ComputerOutput =
   | { type: "text"; text: string }
   | { type: "ok" };
 ```
+
+### 10.9 `GET /v1/vnc` (WS, desktop variant)
+
+WebSocket upgrade. Relays binary VNC/RFB frames between the caller and local websockify (`ws://127.0.0.1:6080/websockify`). No protocol interpretation — agentd is a transparent byte relay.
+
+**Upgrade:** Standard WebSocket handshake. On success, binary frames flow bidirectionally. Either side closing terminates both connections.
+
+**503 when websockify not running:**
+
+```ts
+// HTTP 503 Service Unavailable
+type VncUnavailableResponse = {
+  error: "vnc_not_available";
+  message: string;
+}
+```
+
+This doubles as a VNC readiness probe. The console retries with backoff until the upgrade succeeds.
+
+**Note:** Only meaningful on desktop sandboxes where `VNC_ENABLED=1`. Non-desktop sandboxes have no websockify process; the endpoint will always return 503.
 
 ---
 

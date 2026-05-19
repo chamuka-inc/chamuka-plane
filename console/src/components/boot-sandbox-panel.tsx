@@ -29,7 +29,6 @@ export function BootSandboxPanel({ onBooted }: BootSandboxPanelProps) {
 
   const handleBoot = useCallback(
     (preset: (typeof BOOT_RUNTIMES)[number]) => {
-      const envKeys = Object.keys(config.env);
       createSandbox.mutate(
         {
           image: preset.image,
@@ -39,7 +38,14 @@ export function BootSandboxPanel({ onBooted }: BootSandboxPanelProps) {
           timeout_ms: config.timeout_ms,
           max_idle_ms: config.max_idle_ms,
           persistent: config.persistent || undefined,
-          ...(envKeys.length > 0 ? { env: config.env } : {}),
+          ...(() => {
+            const env = { ...config.env };
+            if (preset.runtime === "desktop") {
+              env.VNC_ENABLED = "1";
+              env.VNC_VIEWONLY = "0";
+            }
+            return Object.keys(env).length > 0 ? { env } : {};
+          })(),
         },
         {
           onSuccess: (data) => {

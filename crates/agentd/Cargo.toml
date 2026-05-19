@@ -22,14 +22,14 @@ libc = "0.2"
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio-tungstenite = "0.26"
+futures-util = "0.3"
 
 [dev-dependencies]
 common = { path = "../common", features = ["test-stubs"] }
 reqwest = { version = "0.12", features = ["json", "multipart"] }
 tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }
-tokio-tungstenite = "0.26"
-futures-util = "0.3"
 
 [lints]
 workspace = true

@@ -35,6 +35,9 @@ RUN useradd -m -s /bin/bash sandbox
 ENV DISPLAY=:99
 ENV RESOLUTION=1280x800x24
 ENV VNC_ENABLED=0
+RUN echo 'CHROMIUM_FLAGS="${CHROMIUM_FLAGS} --no-sandbox"' > /etc/chromium.d/no-sandbox \
+    && mkdir -p /etc/chromium/policies/managed \
+    && printf '{"CommandLineFlagSecurityWarningsEnabled": false}\n' > /etc/chromium/policies/managed/sandbox-policy.json
 
 WORKDIR /workspace
 
