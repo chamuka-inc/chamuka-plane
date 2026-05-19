@@ -18,12 +18,14 @@ WORKDIR /workspace
 COPY agentd /usr/local/bin/agentd
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
+COPY sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
+RUN chmod +x /usr/local/bin/sandbox-entrypoint.sh
 
 ENV YSWEET_HOST=0.0.0.0
 ENV YSWEET_PORT=3000
 ENV YSWEET_DATA_DIR=/data
 
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]
 CMD ["start.sh"]
 
 EXPOSE 8080 3000

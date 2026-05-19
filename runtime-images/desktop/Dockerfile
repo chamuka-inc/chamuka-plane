@@ -34,8 +34,10 @@ WORKDIR /workspace
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 COPY agentd /usr/local/bin/agentd
+COPY sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
+RUN chmod +x /usr/local/bin/sandbox-entrypoint.sh
 
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]
 CMD ["/usr/local/bin/start.sh"]
 
 EXPOSE 8080 6080

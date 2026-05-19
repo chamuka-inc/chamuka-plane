@@ -139,10 +139,14 @@ pub fn get_container_config_from_executor_config(
     static_token: Option<&BearerToken>,
     log_config: Option<&HostConfigLogConfig>,
     mount_base: Option<&PathBuf>,
-    egress_proxy: bool,
+    egress_proxy_addr: Option<&str>,
 ) -> Result<bollard::container::Config<String>> {
     let mut env = exec_config.env;
     env.insert("PORT".to_string(), CONTAINER_PORT.to_string());
+
+    if let Some(addr) = egress_proxy_addr {
+        env.insert("SANDBOX_EGRESS_PROXY".to_string(), addr.to_string());
+    }
 
     if let Some(backend_id) = backend_id {
         env.insert("SESSION_BACKEND_ID".to_string(), backend_id.to_string());
@@ -249,7 +253,7 @@ pub fn get_container_config_from_executor_config(
                 hm.insert("size".to_string(), lim.to_string());
                 hm
             }),
-            cap_add: if egress_proxy {
+            cap_add: if egress_proxy_addr.is_some() {
                 Some(vec!["NET_ADMIN".to_string()])
             } else {
                 None
@@ -284,7 +288,7 @@ pub async fn run_container(
         static_token,
         docker.config.log_config.as_ref(),
         docker.config.mount_base.as_ref(),
-        egress_proxy_addr.is_some(),
+        egress_proxy_addr,
     )?;
 
     docker
@@ -297,91 +301,7 @@ pub async fn run_container(
         .start_container::<String>(&container_id.to_string(), None)
         .await?;
 
-    if let Some(proxy_addr) = egress_proxy_addr {
-        if let Err(e) = setup_transparent_proxy(&docker.docker, &container_id, proxy_addr).await {
-            tracing::warn!(error = ?e, %container_id, "Failed to set up transparent proxy; falling back to direct");
-        }
-    }
-
     Ok(container_id)
-}
-
-async fn setup_transparent_proxy(
-    docker: &Docker,
-    container_id: &ContainerId,
-    proxy_addr: &str,
-) -> Result<()> {
-    let (proxy_ip, proxy_port_str) = proxy_addr
-        .rsplit_once(':')
-        .ok_or_else(|| anyhow::anyhow!("Invalid proxy address: {proxy_addr}"))?;
-
-    let proxy_port: u16 = proxy_port_str
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid port in proxy address: {proxy_addr}"))?;
-
-    // Port layout: admin = transparent - 1, HTTPS = transparent + 1
-    // (matches dev-fleet/docker-compose.yml: 3129/3130/3131)
-    let admin_port = proxy_port.saturating_sub(1);
-    let https_port = proxy_port.saturating_add(1);
-
-    let setup_script = format!(
-        concat!(
-            "set -e; ",
-            // Only install packages if iptables is missing (runtime images pre-install it)
-            "if ! command -v iptables >/dev/null 2>&1; then ",
-            "apt-get update -qq && apt-get install -y -qq iptables ca-certificates curl > /dev/null 2>&1 || ",
-            "apk add --no-cache iptables ca-certificates curl > /dev/null 2>&1 || true; ",
-            "fi; ",
-            "PROXY_IP=$(getent ahostsv4 {proxy_host} 2>/dev/null | head -1 | awk '{{print $1}}'); ",
-            "[ -z \"$PROXY_IP\" ] && PROXY_IP={proxy_host}; ",
-            "curl -sf http://$PROXY_IP:{admin_port}/admin/ca.crt -o /usr/local/share/ca-certificates/egress-proxy.crt 2>/dev/null && ",
-            "update-ca-certificates > /dev/null 2>&1 || true; ",
-            "iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination $PROXY_IP:{http_port}; ",
-            "iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination $PROXY_IP:{https_port}; ",
-            "echo 'transparent proxy configured'",
-        ),
-        proxy_host = proxy_ip,
-        admin_port = admin_port,
-        http_port = proxy_port,
-        https_port = https_port,
-    );
-
-    let exec = docker
-        .create_exec::<String>(
-            &container_id.to_string(),
-            bollard::exec::CreateExecOptions {
-                cmd: Some(vec!["/bin/sh".to_string(), "-c".to_string(), setup_script]),
-                attach_stdout: Some(true),
-                attach_stderr: Some(true),
-                ..Default::default()
-            },
-        )
-        .await?;
-
-    let output = docker
-        .start_exec(&exec.id, None::<bollard::exec::StartExecOptions>)
-        .await?;
-
-    if let bollard::exec::StartExecResults::Attached { mut output, .. } = output {
-        while let Some(msg) = StreamExt::next(&mut output).await {
-            match msg {
-                Ok(m) => tracing::debug!(%container_id, "[proxy-setup] {}", m),
-                Err(e) => tracing::warn!(%container_id, error = ?e, "proxy setup output error"),
-            }
-        }
-    }
-
-    let inspect = docker.inspect_exec(&exec.id).await?;
-    if let Some(code) = inspect.exit_code {
-        if code != 0 {
-            return Err(anyhow::anyhow!(
-                "Transparent proxy setup failed with exit code {code}"
-            ));
-        }
-    }
-
-    tracing::info!(%container_id, proxy_addr, "Transparent proxy configured");
-    Ok(())
 }
 
 #[cfg(test)]
@@ -426,7 +346,7 @@ mod tests {
             None,
             None,
             Some(&PathBuf::from(mount_base)),
-            false,
+            None,
         )
     }
 
@@ -460,7 +380,7 @@ mod tests {
             None,
             None,
             None,
-            false,
+            None,
         )
     }
 

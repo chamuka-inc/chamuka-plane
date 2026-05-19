@@ -19,8 +19,10 @@ RUN useradd -m -s /bin/bash sandbox || true
 WORKDIR /workspace
 
 COPY agentd /usr/local/bin/agentd
+COPY sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
+RUN chmod +x /usr/local/bin/sandbox-entrypoint.sh
 
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]
 CMD ["agentd"]
 
 EXPOSE 8080
