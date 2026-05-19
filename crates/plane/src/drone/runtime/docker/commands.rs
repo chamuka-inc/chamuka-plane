@@ -56,12 +56,12 @@ fn create_labels() -> HashMap<String, String> {
     HashMap::from([(super::PLANE_DOCKER_LABEL.to_string(), "true".to_string())])
 }
 
-fn create_port_bindings() -> HashMap<String, Option<Vec<PortBinding>>> {
+fn create_port_bindings(host_port: Option<u16>) -> HashMap<String, Option<Vec<PortBinding>>> {
     vec![(
         format!("{}/tcp", CONTAINER_PORT),
         Some(vec![bollard::models::PortBinding {
             host_ip: None,
-            host_port: None,
+            host_port: host_port.map(|p| p.to_string()),
         }]),
     )]
     .into_iter()
@@ -140,6 +140,7 @@ pub fn get_container_config_from_executor_config(
     log_config: Option<&HostConfigLogConfig>,
     mount_base: Option<&PathBuf>,
     egress_proxy_addr: Option<&str>,
+    host_port: Option<u16>,
 ) -> Result<bollard::container::Config<String>> {
     let mut env = exec_config.env;
     env.insert("PORT".to_string(), CONTAINER_PORT.to_string());
@@ -217,7 +218,7 @@ pub fn get_container_config_from_executor_config(
                 .collect(),
         ),
         host_config: Some(HostConfig {
-            port_bindings: Some(create_port_bindings()),
+            port_bindings: Some(create_port_bindings(host_port)),
             runtime: runtime.map(|s| s.to_string()),
             memory: exec_config.resource_limits.memory_limit_bytes,
             log_config: log_config.cloned(),
@@ -272,6 +273,7 @@ pub async fn run_container(
     acquired_key: Option<&AcquiredKey>,
     static_token: Option<&BearerToken>,
     egress_proxy_addr: Option<&str>,
+    host_port: Option<u16>,
 ) -> Result<ContainerId> {
     let container_id: ContainerId = backend_id.into();
 
@@ -289,6 +291,7 @@ pub async fn run_container(
         docker.config.log_config.as_ref(),
         docker.config.mount_base.as_ref(),
         egress_proxy_addr,
+        host_port,
     )?;
 
     docker
@@ -347,6 +350,7 @@ mod tests {
             None,
             Some(&PathBuf::from(mount_base)),
             None,
+            None,
         )
     }
 
@@ -377,6 +381,7 @@ mod tests {
             exec_config,
             None,
             acquired_key.as_ref(),
+            None,
             None,
             None,
             None,

@@ -1,8 +1,4 @@
-use self::{
-    commands::{get_port, run_container},
-    types::ContainerId,
-    wait_backend::wait_for_backend,
-};
+use self::{commands::run_container, types::ContainerId, wait_backend::wait_for_backend};
 use crate::{
     drone::runtime::{docker::metrics::metrics_loop, Runtime},
     heartbeat_consts::KILL_AFTER_SOFT_TERMINATE_SECONDS,
@@ -23,10 +19,17 @@ use plane_common::{
     types::{backend_state::BackendError, BearerToken, DockerExecutorConfig, PullPolicy},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, pin::Pin};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    pin::Pin,
+};
 use std::{
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        Arc, Mutex,
+    },
 };
 use tokio::sync::broadcast::Sender;
 use tokio_stream::wrappers::BroadcastStream;
@@ -34,6 +37,10 @@ use tokio_stream::{Stream, StreamExt};
 
 /// Clean up containers and images every minute.
 const CLEANUP_INTERVAL_SECS: i64 = 60;
+
+/// Ephemeral port range for pre-assigned container host ports (IANA dynamic range).
+const PORT_RANGE_START: u16 = 49152;
+const PORT_RANGE_END: u16 = 65535;
 
 pub mod commands;
 pub mod metrics;
@@ -65,6 +72,8 @@ pub struct DockerRuntime {
     pub egress_proxy_addr: Option<String>,
     metrics_callback: Arc<Mutex<Option<MetricsCallback>>>,
     events_sender: Sender<TerminateEvent>,
+    port_allocator: AtomicU16,
+    image_cache: Mutex<HashSet<String>>,
     _events_loop_handle: GuardHandle,
     _cleanup_handle: GuardHandle,
 }
@@ -161,12 +170,22 @@ impl Runtime for DockerRuntime {
             PullPolicy::IfNotPresent => false,
             PullPolicy::Always => true,
             PullPolicy::Never => {
-                // Skip the loading step.
                 return Ok(());
             }
         };
 
+        if !force {
+            let cache = self.image_cache.lock().expect("Image cache lock poisoned");
+            if cache.contains(image) {
+                tracing::debug!(image, "Image already cached, skipping Docker API check");
+                return Ok(());
+            }
+        }
+
         commands::pull_image(&self.docker, image, credentials.as_ref(), force).await?;
+
+        let mut cache = self.image_cache.lock().expect("Image cache lock poisoned");
+        cache.insert(image.clone());
         Ok(())
     }
 
@@ -178,6 +197,7 @@ impl Runtime for DockerRuntime {
         static_token: Option<&BearerToken>,
     ) -> Result<SpawnResult> {
         let executable: DockerExecutorConfig = serde_json::from_value(executable.clone())?;
+        let port = self.next_port();
         let container_id = run_container(
             self,
             backend_id,
@@ -185,14 +205,11 @@ impl Runtime for DockerRuntime {
             acquired_key,
             static_token,
             self.egress_proxy_addr.as_deref(),
+            Some(port),
         )
         .await?;
-        let port = get_port(&self.docker, &container_id).await?;
 
-        Ok(SpawnResult {
-            container_id: container_id.clone(),
-            port,
-        })
+        Ok(SpawnResult { container_id, port })
     }
 
     async fn terminate(&self, backend_id: &BackendName, hard: bool) -> Result<bool, anyhow::Error> {
@@ -336,9 +353,17 @@ impl DockerRuntime {
             egress_proxy_addr: None,
             metrics_callback,
             events_sender,
+            port_allocator: AtomicU16::new(0),
+            image_cache: Mutex::new(HashSet::new()),
             _events_loop_handle: event_loop_handle,
             _cleanup_handle: cleanup_handle,
         })
+    }
+
+    fn next_port(&self) -> u16 {
+        let idx = self.port_allocator.fetch_add(1, Ordering::Relaxed);
+        let range = PORT_RANGE_END - PORT_RANGE_START + 1;
+        PORT_RANGE_START + (idx % range)
     }
 }
 
