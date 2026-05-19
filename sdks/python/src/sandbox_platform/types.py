@@ -5,6 +5,13 @@ from sandbox_platform.generated.types import CreateSandboxResponse as _CSR
 __all__ = [  # noqa: F405
     "Arch",
     "BackendStatus",
+    "ComputerAction",
+    "ComputerActionRequest",
+    "ComputerActionResponse",
+    "ComputerOutput",
+    "ComputerOutputImage",
+    "ComputerOutputOk",
+    "ComputerOutputText",
     "CreateCredentialBindingRequest",
     "CreateSandboxRequest",
     "CreateSandboxResponse",

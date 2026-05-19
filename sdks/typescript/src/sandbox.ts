@@ -4,7 +4,11 @@ import { normalizeBaseUrl, sleep } from "./utils.js";
 import { resolveAuth, type SandboxAuth } from "./auth.js";
 import { SandboxClient, type SnapshotOptions, type StopOptions, type ListOptions } from "./client.js";
 import type {
+  ComputerActionRequest,
+  ComputerOutput,
   CreateSandboxRequest,
+  CreateSecretRequest,
+  CreateSecretResponse,
   DirEntry,
   ExecSyncResponse,
   ExecDetachedResponse,
@@ -427,6 +431,52 @@ export class Sandbox {
     const client = this.requireClient("stop");
     const id = this.requireId("stop");
     return client.stop(id, options);
+  }
+
+  // --- Secrets (control-plane) ---
+
+  static async createSecret(
+    request: CreateSecretRequest,
+    auth?: SandboxAuth,
+  ): Promise<CreateSecretResponse> {
+    const resolved = resolveAuth(auth);
+    const client = new SandboxClient(resolved);
+    return client.createSecret(request);
+  }
+
+  // --- Computer use (desktop variant) ---
+
+  async computer(
+    request: ComputerActionRequest,
+  ): Promise<ComputerOutput> {
+    const response = await this.dataPlaneClient.request<{
+      output: ComputerOutput;
+    }>({
+      method: "POST",
+      path: "/v1/computer",
+      body: request,
+    });
+    return response.output;
+  }
+
+  async screenshot(): Promise<Uint8Array> {
+    const output = await this.computer({ action: "screenshot" });
+    if (output.type !== "image") {
+      throw new SandboxError("screenshot returned non-image output");
+    }
+    return new Uint8Array(Buffer.from(output.base64, "base64"));
+  }
+
+  async click(coordinate: [number, number]): Promise<void> {
+    await this.computer({ action: "left_click", coordinate });
+  }
+
+  async type(text: string): Promise<void> {
+    await this.computer({ action: "type", text });
+  }
+
+  async sendKeys(keys: string): Promise<void> {
+    await this.computer({ action: "key", text: keys });
   }
 }
 

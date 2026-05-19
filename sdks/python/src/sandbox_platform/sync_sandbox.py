@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from typing import Any
 
 from sandbox_platform.sandbox import AsyncSandbox
 from sandbox_platform.types import (
+    ComputerActionRequest,
+    ComputerActionResponse,
     CreateCredentialBindingRequest,
     CreateSandboxRequest,
+    CreateSecretRequest,
+    CreateSecretResponse,
     CredentialBinding,
     ListSandboxesResponse,
     NetworkPolicy,
@@ -190,6 +193,37 @@ class Sandbox:
 
     def stop(self, *, force: bool = False) -> None:
         self._run(self._async.stop(force=force))
+
+    @classmethod
+    def create_secret(
+        cls,
+        request: CreateSecretRequest,
+        *,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> CreateSecretResponse:
+        loop = _get_loop()
+        try:
+            return loop.run_until_complete(
+                AsyncSandbox.create_secret(request, control_url=control_url, token=token)
+            )
+        finally:
+            loop.close()
+
+    def computer(self, request: ComputerActionRequest) -> ComputerActionResponse:
+        return self._run(self._async.computer(request))
+
+    def screenshot(self) -> bytes:
+        return self._run(self._async.screenshot())
+
+    def click(self, *, x: int, y: int) -> None:
+        self._run(self._async.click(x=x, y=y))
+
+    def type_text(self, text: str) -> None:
+        self._run(self._async.type_text(text))
+
+    def send_keys(self, keys: str) -> None:
+        self._run(self._async.send_keys(keys))
 
     def close(self) -> None:
         self._run(self._async.close())

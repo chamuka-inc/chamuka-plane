@@ -170,7 +170,7 @@ hooks: ## Configure git hooks.
 clean: ## Remove build artifacts.
 	$(CARGO) clean $(CARGO_OPTS)
 
-# Console (Next.js :3100 + ws-relay :3101)
+# Console (Next.js :3000 + ws-relay :3101)
 .PHONY: console-dev console-dev-next console-dev-relay console-build console-test console-lint
 
 console-dev:

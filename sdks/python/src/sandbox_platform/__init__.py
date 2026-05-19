@@ -3,6 +3,9 @@ from sandbox_platform.sync_sandbox import Sandbox
 from sandbox_platform.auth import SandboxAuth
 from sandbox_platform.types import (
     BackendStatus,
+    ComputerAction,
+    ComputerActionRequest,
+    ComputerOutput,
     CreateSandboxRequest,
     CreateSandboxResponse,
     CredentialBinding,
@@ -31,6 +34,9 @@ __all__ = [
     "Sandbox",
     "SandboxAuth",
     "BackendStatus",
+    "ComputerAction",
+    "ComputerActionRequest",
+    "ComputerOutput",
     "CreateSandboxRequest",
     "CreateSandboxResponse",
     "CredentialBinding",

@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"next dev --port 3100\" \"tsx watch ws-relay.ts\"",
-    "dev:next": "next dev --port 3100",
+    "dev": "concurrently \"next dev --port 3000\" \"tsx watch ws-relay.ts\"",
+    "dev:next": "next dev --port 3000",
     "dev:relay": "tsx watch ws-relay.ts",
     "build": "next build",
-    "start": "next start --port 3100",
+    "start": "next start --port 3000",
     "start:relay": "tsx ws-relay.ts",
     "lint": "next lint",
     "test": "vitest run",
@@ -21,6 +21,7 @@
     "@xterm/xterm": "^5.5.0",
     "lucide-react": "^1.16.0",
     "next": "^15.1.0",
+    "prism-react-renderer": "^2.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "ws": "^8.18.0"

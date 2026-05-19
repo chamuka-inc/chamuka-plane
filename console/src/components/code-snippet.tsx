@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { Copy, Check } from "lucide-react";
+import { Highlight, themes } from "prism-react-renderer";
 import type { SnippetLanguage } from "@/lib/use-persisted-language";
 
 type CodeSnippetProps = {
@@ -65,9 +66,21 @@ export function CodeSnippet({
           {copied ? <Check size={14} className="text-status-green" /> : <Copy size={14} />}
         </button>
       </div>
-      <pre className="p-3 text-xs leading-relaxed overflow-x-auto font-mono text-text-2">
-        <code role="code">{code}</code>
-      </pre>
+      <Highlight theme={themes.oneDark} code={code.trim()} language={language}>
+        {({ tokens, getLineProps, getTokenProps }) => (
+          <pre className="p-3 text-xs leading-relaxed overflow-x-auto font-mono bg-transparent">
+            <code role="code">
+              {tokens.map((line, i) => (
+                <div key={i} {...getLineProps({ line })}>
+                  {line.map((token, j) => (
+                    <span key={j} {...getTokenProps({ token })} />
+                  ))}
+                </div>
+              ))}
+            </code>
+          </pre>
+        )}
+      </Highlight>
     </div>
   );
 }

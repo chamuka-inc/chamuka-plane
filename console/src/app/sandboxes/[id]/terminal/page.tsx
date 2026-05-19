@@ -18,7 +18,7 @@ export default function TerminalPage({
     <div className="flex flex-col h-[calc(100dvh-4rem)]">
       <div className="px-4 sm:px-6 py-3 border-b border-border">
         <div className="text-sm text-text-3 truncate">
-          <Link href="/quickstart" className="hover:text-text">Quickstart</Link>
+          <Link href="/" className="hover:text-text">Home</Link>
           {" / "}
           <Link href={`/sandboxes/${id}`} className="hover:text-text">{id}</Link>
           {" / "}

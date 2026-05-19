@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 
 const RELAY_PORT = parseInt(process.env.WS_RELAY_PORT ?? "3101", 10);
-const BFF_URL = process.env.BFF_URL ?? "http://localhost:3100";
+const BFF_URL = process.env.BFF_URL ?? "http://localhost:3000";
 
 const server = createServer((_req, res) => {
   res.writeHead(200, { "Content-Type": "application/json" });

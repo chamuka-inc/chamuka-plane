@@ -45,7 +45,6 @@ function hasConfigOverrides(c?: SandboxConfigValues): boolean {
 function generateTs(props: SdkSnippetProps): string {
   const c = props.config;
   const hasOverrides = hasConfigOverrides(c);
-  const hasSecrets = (c?.secrets?.length ?? 0) > 0;
 
   const vcpus = c?.vcpus ?? DEFAULT_CONFIG.vcpus;
   const createArgs: string[] = [
@@ -75,16 +74,9 @@ function generateTs(props: SdkSnippetProps): string {
   }
 
   const lines = [
-    hasSecrets
-      ? `import { Sandbox, SandboxClient } from "@sandbox-platform/sdk";`
-      : `import { Sandbox } from "@sandbox-platform/sdk";`,
+    `import { Sandbox } from "@sandbox-platform/sdk";`,
     ``,
   ];
-
-  if (hasSecrets) {
-    lines.push(`const client = new SandboxClient({ token: process.env.SANDBOX_TOKEN! });`);
-    lines.push(``);
-  }
 
   lines.push(
     `const sandbox = await Sandbox.create({`,
@@ -97,7 +89,7 @@ function generateTs(props: SdkSnippetProps): string {
     for (const s of c.secrets) {
       const envVar = deriveEnvVarName(s.destination);
       const vn = varName(s.destination);
-      lines.push(`const { id: ${vn}SecretId } = await client.createSecret({`);
+      lines.push(`const { id: ${vn}SecretId } = await Sandbox.createSecret({`);
       lines.push(`  value: process.env.${envVar}!,`);
       if (s.destination) lines.push(`  name: ${JSON.stringify(s.destination)},`);
       lines.push(`});`);
@@ -159,9 +151,7 @@ function generatePy(props: SdkSnippetProps): string {
   }
 
   const imports = [
-    hasSecrets
-      ? `from sandbox_platform import Sandbox, SandboxClient, CreateSandboxRequest, ResourcesSpec`
-      : `from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec`,
+    `from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec`,
   ];
   if (hasSecrets) {
     imports.push(`from sandbox_platform import CreateSecretRequest, CreateCredentialBindingRequest`);
@@ -169,11 +159,6 @@ function generatePy(props: SdkSnippetProps): string {
   }
 
   const lines = [...imports, ``];
-
-  if (hasSecrets) {
-    lines.push(`client = SandboxClient(token=os.environ["SANDBOX_TOKEN"])`);
-    lines.push(``);
-  }
 
   lines.push(`sandbox = Sandbox.create(CreateSandboxRequest(`);
 
@@ -186,7 +171,7 @@ function generatePy(props: SdkSnippetProps): string {
     lines.push(``);
     for (const s of c.secrets) {
       const envVar = deriveEnvVarName(s.destination);
-      lines.push(`secret = client.create_secret(CreateSecretRequest(`);
+      lines.push(`secret = Sandbox.create_secret(CreateSecretRequest(`);
       lines.push(`    value=os.environ[${JSON.stringify(envVar)}],`);
       if (s.destination) lines.push(`    name=${JSON.stringify(s.destination)},`);
       lines.push(`))`);

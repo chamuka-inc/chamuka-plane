@@ -6,9 +6,13 @@ from typing import TYPE_CHECKING, Any
 from sandbox_platform.auth import resolve_auth
 from sandbox_platform.http import HttpClient
 from sandbox_platform.types import (
+    ComputerActionRequest,
+    ComputerActionResponse,
     CreateCredentialBindingRequest,
     CreateSandboxRequest,
     CreateSandboxResponse,
+    CreateSecretRequest,
+    CreateSecretResponse,
     CredentialBinding,
     GetSandboxResponse,
     ListSandboxesResponse,
@@ -44,6 +48,17 @@ class AsyncSandbox:
     # --- Static factory methods ---
 
     @classmethod
+    def _make_client(
+        cls,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> SandboxClient:
+        from sandbox_platform.client import SandboxClient
+
+        url, resolved_token = resolve_auth(control_url=control_url, token=token)
+        return SandboxClient(url, resolved_token)
+
+    @classmethod
     async def create(
         cls,
         request: CreateSandboxRequest,
@@ -51,10 +66,7 @@ class AsyncSandbox:
         control_url: str | None = None,
         token: str | None = None,
     ) -> AsyncSandbox:
-        from sandbox_platform.client import SandboxClient
-
-        url, resolved_token = resolve_auth(control_url=control_url, token=token)
-        client = SandboxClient(url, resolved_token)
+        client = cls._make_client(control_url, token)
         response = await client.create(request)
         return cls._from_create_response(response, client)
 
@@ -66,15 +78,11 @@ class AsyncSandbox:
         control_url: str | None = None,
         token: str | None = None,
     ) -> AsyncSandbox:
-        from sandbox_platform.client import SandboxClient
-
-        url, resolved_token = resolve_auth(control_url=control_url, token=token)
-        client = SandboxClient(url, resolved_token)
+        client = cls._make_client(control_url, token)
         response = await client.get_with_connection(sandbox_id)
         connection = response.connection
         data_plane_url = connection.url if connection else ""
-        instance = cls(response.sandbox, data_plane_url, client)
-        return instance
+        return cls(response.sandbox, data_plane_url, client)
 
     @classmethod
     async def list(
@@ -87,10 +95,7 @@ class AsyncSandbox:
         control_url: str | None = None,
         token: str | None = None,
     ) -> ListSandboxesResponse:
-        from sandbox_platform.client import SandboxClient
-
-        url, resolved_token = resolve_auth(control_url=control_url, token=token)
-        client = SandboxClient(url, resolved_token)
+        client = cls._make_client(control_url, token)
         return await client.list(status=status, limit=limit, cursor=cursor, tag=tag)
 
     # --- Properties ---
@@ -244,6 +249,42 @@ class AsyncSandbox:
     async def stop(self, *, force: bool = False) -> None:
         client = self._require_client("stop")
         await client.stop(self.id, force=force)
+
+    # --- Secrets (control-plane) ---
+
+    @classmethod
+    async def create_secret(
+        cls,
+        request: CreateSecretRequest,
+        *,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> CreateSecretResponse:
+        client = cls._make_client(control_url, token)
+        return await client.create_secret(request)
+
+    # --- Computer use (desktop variant) ---
+
+    async def computer(self, request: ComputerActionRequest) -> ComputerActionResponse:
+        dp = self._require_data_plane("computer")
+        data = await dp.request("POST", "/v1/computer", body=request.model_dump(exclude_none=True))
+        return ComputerActionResponse.model_validate(data)
+
+    async def screenshot(self) -> bytes:
+        response = await self.computer(ComputerActionRequest(action="screenshot"))
+        if response.output.type != "image":
+            msg = "screenshot returned non-image output"
+            raise RuntimeError(msg)
+        return base64.b64decode(response.output.base64)
+
+    async def click(self, *, x: int, y: int) -> None:
+        await self.computer(ComputerActionRequest(action="left_click", coordinate=[x, y]))
+
+    async def type_text(self, text: str) -> None:
+        await self.computer(ComputerActionRequest(action="type", text=text))
+
+    async def send_keys(self, keys: str) -> None:
+        await self.computer(ComputerActionRequest(action="key", text=keys))
 
     async def close(self) -> None:
         if self._data_plane:

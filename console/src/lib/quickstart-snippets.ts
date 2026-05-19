@@ -44,13 +44,13 @@ const CLI_STEP2_PY = `result = sandbox.run_command("/bin/bash", args=["-c", "nod
 print(result["stdout"])  # "42\\n"`;
 
 const CLI_STEP3_TS = `await sandbox.writeFile("/app/index.js", code);
-const contents = await sandbox.readFile("/app/index.js");
+const contents = await sandbox.readTextFile("/app/index.js");
 await sandbox.runCommand("/bin/bash", {
   args: ["-c", "cd /app && npm install && node index.js"],
 });`;
 
 const CLI_STEP3_PY = `sandbox.write_file("/app/index.js", code)
-contents = sandbox.read_file("/app/index.js")
+contents = sandbox.read_text_file("/app/index.js")
 sandbox.run_command("/bin/bash", args=["-c", "cd /app && npm install && node index.js"])`;
 
 const DESKTOP_STEP1_TS = `import { Sandbox } from "@sandbox-platform/sdk";
@@ -76,13 +76,13 @@ const DESKTOP_STEP2_PY = `screenshot = desktop.screenshot()
 with open("screen.png", "wb") as f:
     f.write(screenshot)`;
 
-const DESKTOP_STEP3_TS = `await desktop.click({ x: 512, y: 384 });
+const DESKTOP_STEP3_TS = `await desktop.click([512, 384]);
 await desktop.type("Hello, world!");
 await desktop.sendKeys("ctrl+s");
 const after = await desktop.screenshot();`;
 
 const DESKTOP_STEP3_PY = `desktop.click(x=512, y=384)
-desktop.type("Hello, world!")
+desktop.type_text("Hello, world!")
 desktop.send_keys("ctrl+s")
 after = desktop.screenshot()`;
 
