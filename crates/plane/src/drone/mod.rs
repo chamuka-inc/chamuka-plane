@@ -11,8 +11,8 @@ use self::{
     state_store::StateStore,
 };
 use crate::signals::wait_for_shutdown_signal;
-use anyhow::{anyhow, Result};
-use chrono::{Duration, Utc};
+use anyhow::Result;
+use chrono::Utc;
 use plane_common::{
     names::DroneName,
     protocol::{
@@ -252,43 +252,14 @@ impl Drone {
     pub async fn run(config: DroneConfig) -> Result<Self> {
         let client = PlaneClient::new(config.controller_url);
 
-        #[allow(deprecated)]
-        let runtime: Box<dyn Runtime> = match (config.docker_config, config.executor_config) {
-            (Some(_), Some(_)) => {
-                tracing::error!(
-                    "Only one of `docker_config` and `executor_config` may be provided."
-                );
-                return Err(anyhow!(
-                    "Only one of `docker_config` and `executor_config` may be provided."
-                ));
-            }
-            (Some(mut docker_config), None) => {
-                tracing::warn!("`docker_config` is deprecated. Use `executor_config` instead.");
-                docker_config.auto_prune = docker_config.auto_prune.or(config.auto_prune);
-                docker_config.cleanup_min_age =
-                    docker_config.cleanup_min_age.or(config.cleanup_min_age);
-
+        let runtime: Box<dyn Runtime> = match config.executor_config {
+            ExecutorConfig::Docker(docker_config) => {
                 let mut rt = DockerRuntime::new(docker_config).await?;
                 rt.egress_proxy_addr = config.egress_proxy_addr.clone();
                 Box::new(rt)
             }
-            (None, Some(ExecutorConfig::Docker(mut docker_config))) => {
-                docker_config.auto_prune = docker_config.auto_prune.or(config.auto_prune);
-                docker_config.cleanup_min_age =
-                    docker_config.cleanup_min_age.or(config.cleanup_min_age);
-
-                let mut rt = DockerRuntime::new(docker_config).await?;
-                rt.egress_proxy_addr = config.egress_proxy_addr.clone();
-                Box::new(rt)
-            }
-            (None, Some(ExecutorConfig::UnixSocket(unix_socket_config))) => {
+            ExecutorConfig::UnixSocket(unix_socket_config) => {
                 Box::new(UnixSocketRuntime::new(unix_socket_config).await?)
-            }
-            (None, None) => {
-                tracing::error!("Neither `docker_config` nor `executor_config` provided.");
-                return Err(anyhow!(
-                    "Neither `docker_config` nor `executor_config` provided."
-                ));
             }
         };
 
@@ -345,11 +316,7 @@ pub enum ExecutorConfig {
 pub struct DroneConfig {
     pub name: DroneName,
 
-    #[deprecated(since = "0.4.12", note = "Use `executor_config` instead.")]
-    pub docker_config: Option<DockerRuntimeConfig>,
-
-    // This will become non-optional when docker_config is removed.
-    pub executor_config: Option<ExecutorConfig>,
+    pub executor_config: ExecutorConfig,
 
     pub controller_url: Url,
     pub cluster: ClusterName,
@@ -359,18 +326,6 @@ pub struct DroneConfig {
 
     pub egress_proxy_url: Option<Url>,
     pub egress_proxy_addr: Option<String>,
-
-    #[deprecated(
-        since = "0.4.12",
-        note = "Moved to `executor_config` (only applies to DockerRuntimeConfig)."
-    )]
-    pub auto_prune: Option<bool>,
-    #[serde(with = "plane_common::serialization::serialize_optional_duration_as_seconds")]
-    #[deprecated(
-        since = "0.4.12",
-        note = "Moved to `executor_config` (only applies to DockerRuntimeConfig)."
-    )]
-    pub cleanup_min_age: Option<Duration>,
 }
 
 pub async fn run_drone(config: DroneConfig) -> Result<()> {

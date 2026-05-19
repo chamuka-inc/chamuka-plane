@@ -204,7 +204,6 @@ impl TestEnvironment {
             cleanup_min_age: Some(Duration::zero()),
         };
 
-        #[allow(deprecated)] // `docker_config` field is deprecated.
         let drone_config = DroneConfig {
             name: DroneName::new_random(),
             cluster: TEST_CLUSTER.parse().unwrap(),
@@ -213,10 +212,7 @@ impl TestEnvironment {
             pool: pool.clone(),
             egress_proxy_url: None,
             egress_proxy_addr: None,
-            auto_prune: None,
-            cleanup_min_age: None,
-            executor_config: Some(ExecutorConfig::Docker(docker_config)),
-            docker_config: None,
+            executor_config: ExecutorConfig::Docker(docker_config),
             controller_url: controller.url().clone(),
         };
 
@@ -252,7 +248,6 @@ impl TestEnvironment {
             socket_path: socket_path.clone(),
         });
 
-        #[allow(deprecated)] // `docker_config` field is deprecated.
         let drone_config = DroneConfig {
             name: DroneName::new_random(),
             cluster: TEST_CLUSTER.parse().unwrap(),
@@ -261,10 +256,7 @@ impl TestEnvironment {
             pool: self.pool.clone(),
             egress_proxy_url: None,
             egress_proxy_addr: None,
-            auto_prune: None,
-            cleanup_min_age: None,
-            executor_config: Some(executor_config),
-            docker_config: None,
+            executor_config,
             controller_url: controller.url().clone(),
         };
 

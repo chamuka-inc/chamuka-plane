@@ -101,7 +101,6 @@ impl DroneOpts {
         let ip: IpAddr = resolve_hostname(&self.ip)
             .ok_or_else(|| anyhow::anyhow!("Failed to resolve hostname to IP address."))?;
 
-        #[allow(deprecated)]
         let drone_config = DroneConfig {
             controller_url: self.controller_url,
             name: name.clone(),
@@ -111,10 +110,7 @@ impl DroneOpts {
             pool: self.pool,
             egress_proxy_url: self.egress_proxy_url,
             egress_proxy_addr: self.egress_proxy_addr,
-            auto_prune: None,      // deprecated
-            cleanup_min_age: None, // deprecated
-            docker_config: None,   // deprecated
-            executor_config: Some(executor_config),
+            executor_config,
         };
 
         Ok(drone_config)
