@@ -327,8 +327,11 @@ async fn setup_transparent_proxy(
     let setup_script = format!(
         concat!(
             "set -e; ",
+            // Only install packages if iptables is missing (runtime images pre-install it)
+            "if ! command -v iptables >/dev/null 2>&1; then ",
             "apt-get update -qq && apt-get install -y -qq iptables ca-certificates curl > /dev/null 2>&1 || ",
             "apk add --no-cache iptables ca-certificates curl > /dev/null 2>&1 || true; ",
+            "fi; ",
             "PROXY_IP=$(getent ahostsv4 {proxy_host} 2>/dev/null | head -1 | awk '{{print $1}}'); ",
             "[ -z \"$PROXY_IP\" ] && PROXY_IP={proxy_host}; ",
             "curl -sf http://$PROXY_IP:{admin_port}/admin/ca.crt -o /usr/local/share/ca-certificates/egress-proxy.crt 2>/dev/null && ",

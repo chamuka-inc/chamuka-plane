@@ -91,3 +91,33 @@ Full versions of every rule above are in the [discipline doc](./docs/sandbox-pla
 - `walking-skeleton/` — the project-wide canary test, runs on every PR
 - `.githooks/` — pre-commit + pre-push hooks (run `git config core.hooksPath .githooks` after cloning)
 - `scripts/status.sh` — print current state for session start
+
+---
+
+## Makefile targets
+
+Use `make <target>` for all build/test/image operations. Run `make help` for the full list. Key targets:
+
+| Target | Purpose |
+|---|---|
+| `make build` | Build the whole Cargo workspace |
+| `make check` | Type-check without codegen (fast) |
+| `make test` | Run workspace tests (excludes Docker-dependent) |
+| `make test-docker` | Run Docker-dependent integration tests |
+| `make ci` | CI pipeline: fmt-check + lint + test |
+| `make ci-full` | CI pipeline including Docker integration tests |
+| `make images` | Build all runtime images (base, node24, python313, agent, desktop) |
+| `make image-base` | Build sandbox-runtime:base-latest |
+| `make image-node24` | Build sandbox-runtime:node24-latest |
+| `make image-python313` | Build sandbox-runtime:python313-latest |
+| `make image-agent` | Build sandbox-runtime:agent-latest |
+| `make image-desktop` | Build sandbox-runtime:desktop-latest |
+| `make fleet-up` | Start local dev fleet |
+| `make fleet-down` | Stop drones |
+| `make fleet-nuke` | Destroy everything (VMs + services + volumes) |
+| `make smoke` | End-to-end smoke test against running fleet |
+| `make schemas` | Regenerate JSON schemas from Rust types |
+| `make console-dev` | Start console dev server (Next.js + ws-relay) |
+| `make console-test` | Run console test suite |
+
+**Always use Makefile targets instead of calling build scripts directly.** When adding new images or build steps, add a corresponding Makefile target.

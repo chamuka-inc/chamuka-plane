@@ -4,7 +4,7 @@ import { use } from "react";
 import Link from "next/link";
 import { useSandbox } from "@/api/hooks";
 import { TerminalView } from "@/components/terminal-view";
-import { statusBorderColor, statusTextColor } from "@/components/sandbox-row";
+import { statusBorderColor, statusTextColor } from "@/lib/sandbox-status";
 
 export default function TerminalPage({
   params,
@@ -18,7 +18,7 @@ export default function TerminalPage({
     <div className="flex flex-col h-[calc(100dvh-4rem)]">
       <div className="px-4 sm:px-6 py-3 border-b border-border">
         <div className="text-sm text-text-3 truncate">
-          <Link href="/sandboxes" className="hover:text-text">Sandboxes</Link>
+          <Link href="/quickstart" className="hover:text-text">Quickstart</Link>
           {" / "}
           <Link href={`/sandboxes/${id}`} className="hover:text-text">{id}</Link>
           {" / "}

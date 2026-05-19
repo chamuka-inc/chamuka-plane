@@ -93,12 +93,20 @@ image-base: ## Build sandbox-runtime:base-latest.
 image-node24: ## Build sandbox-runtime:node24-latest.
 	@bash runtime-images/build.sh node24 latest
 
+.PHONY: image-python313
+image-python313: ## Build sandbox-runtime:python313-latest.
+	@bash runtime-images/build.sh python313 latest
+
+.PHONY: image-agent
+image-agent: ## Build sandbox-runtime:agent-latest.
+	@bash runtime-images/build.sh agent latest
+
 .PHONY: image-desktop
 image-desktop: ## Build sandbox-runtime:desktop-latest.
 	@bash runtime-images/build.sh desktop latest
 
 .PHONY: images
-images: test-image image-base image-node24 image-desktop ## Build all runtime images.
+images: test-image image-base image-node24 image-python313 image-agent image-desktop ## Build all runtime images.
 
 # ─── Contracts / schemas ────────────────────────────────────────────
 

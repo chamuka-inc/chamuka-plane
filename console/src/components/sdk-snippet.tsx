@@ -1,20 +1,22 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Copy, Check } from "lucide-react";
-
-type Language = "typescript" | "python";
-
+import { useState } from "react";
 import type { SandboxConfigValues } from "./sandbox-config";
 import { DEFAULT_CONFIG } from "./sandbox-config";
+import { CodeSnippet } from "./code-snippet";
+import { connectSnippet } from "@/lib/quickstart-snippets";
+import type { SnippetLanguage } from "@/lib/use-persisted-language";
 
-type SdkSnippetProps = {
+export type SdkSnippetProps = {
   runtime: string;
   image: string;
   sandboxId?: string;
   commands?: string[];
   lastCommand?: string;
   config?: SandboxConfigValues;
+  variant?: "full" | "connect";
+  language?: SnippetLanguage;
+  onLanguageChange?: (lang: SnippetLanguage) => void;
 };
 
 function deriveEnvVarName(destination: string): string {
@@ -221,54 +223,25 @@ function appendPyExecs(lines: string[], props: SdkSnippetProps) {
   }
 }
 
+function resolveCode(props: SdkSnippetProps, lang: SnippetLanguage): string {
+  if (props.variant === "connect" && props.sandboxId) {
+    return connectSnippet(props.sandboxId, lang);
+  }
+  return lang === "typescript" ? generateTs(props) : generatePy(props);
+}
+
 export function SdkSnippet(props: SdkSnippetProps) {
-  const [lang, setLang] = useState<Language>("typescript");
-  const [copied, setCopied] = useState(false);
+  const [internalLang, setInternalLang] = useState<SnippetLanguage>("typescript");
+  const language = props.language ?? internalLang;
+  const onLanguageChange = props.onLanguageChange ?? setInternalLang;
 
-  const code = lang === "typescript" ? generateTs(props) : generatePy(props);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [code]);
+  const code = resolveCode(props, language);
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden bg-bg-1">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <div className="flex gap-1">
-          <button
-            onClick={() => setLang("typescript")}
-            className={`text-xs px-2 py-1 rounded-md transition-colors ${
-              lang === "typescript"
-                ? "bg-bg-2 text-text"
-                : "text-text-3 hover:text-text"
-            }`}
-          >
-            TypeScript
-          </button>
-          <button
-            onClick={() => setLang("python")}
-            className={`text-xs px-2 py-1 rounded-md transition-colors ${
-              lang === "python"
-                ? "bg-bg-2 text-text"
-                : "text-text-3 hover:text-text"
-            }`}
-          >
-            Python
-          </button>
-        </div>
-        <button
-          onClick={handleCopy}
-          className="text-text-3 hover:text-text transition-colors p-1"
-          aria-label="Copy code"
-        >
-          {copied ? <Check size={14} className="text-status-green" /> : <Copy size={14} />}
-        </button>
-      </div>
-      <pre className="p-3 text-xs leading-relaxed overflow-x-auto font-mono text-text-2">
-        <code role="code">{code}</code>
-      </pre>
-    </div>
+    <CodeSnippet
+      code={code}
+      language={language}
+      onLanguageChange={onLanguageChange}
+    />
   );
 }

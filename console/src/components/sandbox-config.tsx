@@ -93,28 +93,31 @@ function EnvEditor({
           </button>
         </div>
       ))}
-      <div className="flex items-center gap-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.5fr)_auto] gap-1.5 items-center">
         <input
           type="text"
           value={draftKey}
           onChange={(e) => setDraftKey(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           placeholder="KEY"
-          className="w-24 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+          autoComplete="off"
+          className="w-full min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
         />
-        <span className="text-xs text-text-4">=</span>
+        <span className="text-xs text-text-4 hidden sm:block">=</span>
         <input
           type="text"
           value={draftValue}
           onChange={(e) => setDraftValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           placeholder="value"
-          className="flex-1 min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+          autoComplete="off"
+          className="w-full min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
         />
         <button
+          type="button"
           onClick={handleAdd}
           disabled={!draftKey.trim()}
-          className="text-text-3 hover:text-text disabled:text-text-4 transition-colors shrink-0 p-0.5"
+          className="text-text-3 hover:text-text disabled:text-text-4 transition-colors shrink-0 p-0.5 justify-self-end sm:justify-self-auto"
         >
           <Plus size={12} />
         </button>
@@ -184,14 +187,15 @@ function SecretEditor({
           </button>
         </div>
       ))}
-      <div className="flex items-center gap-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] gap-1.5 items-center">
         <input
           type="text"
           value={draftDest}
           onChange={(e) => setDraftDest(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           placeholder="api.example.com"
-          className="w-28 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+          autoComplete="off"
+          className="w-full min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
         />
         <input
           type="text"
@@ -199,7 +203,8 @@ function SecretEditor({
           onChange={(e) => setDraftHeader(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           placeholder="Authorization"
-          className="w-20 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+          autoComplete="off"
+          className="w-full min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
         />
         <input
           type="password"
@@ -207,12 +212,14 @@ function SecretEditor({
           onChange={(e) => setDraftValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           placeholder="secret value"
-          className="flex-1 min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
+          autoComplete="new-password"
+          className="w-full min-w-0 text-xs font-mono bg-bg-1 border border-border rounded px-1.5 py-1 text-text placeholder:text-text-4 focus:outline-none focus:border-border-light"
         />
         <button
+          type="button"
           onClick={handleAdd}
           disabled={!draftDest.trim() || !draftValue}
-          className="text-text-3 hover:text-text disabled:text-text-4 transition-colors shrink-0 p-0.5"
+          className="text-text-3 hover:text-text disabled:text-text-4 transition-colors shrink-0 p-0.5 justify-self-end sm:justify-self-auto"
         >
           <Plus size={12} />
         </button>
@@ -255,25 +262,28 @@ export function SandboxConfig({ value, onChange }: SandboxConfigProps) {
   );
 
   return (
-    <div className="w-full max-w-md">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 text-xs text-text-3 hover:text-text transition-colors mx-auto"
-      >
-        <ChevronRight
-          size={12}
-          className={`transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        <span>Configure</span>
-        {overrides > 0 && (
-          <span className="text-xs px-1.5 py-0.5 rounded bg-accent-purple/15 text-accent-purple font-mono">
-            {overrides}
-          </span>
-        )}
-      </button>
+    <div className="w-full">
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 text-xs text-text-3 hover:text-text transition-colors"
+        >
+          <ChevronRight
+            size={12}
+            className={`transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          <span>Configure</span>
+          {overrides > 0 && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-accent-purple/15 text-accent-purple font-mono">
+              {overrides}
+            </span>
+          )}
+        </button>
+      </div>
 
       {open && (
-        <div className="mt-4 border border-border rounded-lg bg-bg-1 divide-y divide-border">
+        <div className="mt-4 w-full border border-border rounded-lg bg-bg-2 divide-y divide-border">
           {/* Trust tier */}
           <div className="p-3 space-y-2">
             <label className="text-xs text-text-3 font-medium">Isolation</label>
@@ -325,7 +335,7 @@ export function SandboxConfig({ value, onChange }: SandboxConfigProps) {
           {/* Timeout */}
           <div className="p-3 space-y-2">
             <label className="text-xs text-text-3 font-medium">Timeout</label>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               {TIMEOUT_PRESETS.map(({ label, ms }) => (
                 <button
                   key={ms}
@@ -364,14 +374,18 @@ export function SandboxConfig({ value, onChange }: SandboxConfigProps) {
               <span className="text-[10px] text-text-4 ml-2">Survives idle timeout</span>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={value.persistent}
               onClick={() => update({ persistent: !value.persistent })}
-              className={`w-8 h-[18px] rounded-full transition-colors relative ${
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                 value.persistent ? "bg-accent-blue" : "bg-bg-2 border border-border"
               }`}
             >
               <span
-                className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
-                  value.persistent ? "translate-x-[16px]" : "translate-x-[2px]"
+                aria-hidden
+                className={`inline-block size-4 rounded-full bg-white shadow-sm transition-transform ${
+                  value.persistent ? "translate-x-4" : "translate-x-0.5"
                 }`}
               />
             </button>

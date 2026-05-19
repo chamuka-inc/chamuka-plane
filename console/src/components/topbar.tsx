@@ -5,10 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 
-const navItems = [
-  { label: "Playground", href: "/" },
-  { label: "Sandboxes", href: "/sandboxes" },
-];
+const navItems = [{ label: "Quickstart", href: "/quickstart" }];
 
 function LogoMark() {
   return (
@@ -30,8 +27,7 @@ export function Topbar() {
   }, [pathname]);
 
   function isActive(href: string): boolean {
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+    return pathname === href || pathname.startsWith("/sandboxes/");
   }
 
   return (
@@ -69,7 +65,7 @@ export function Topbar() {
       </div>
 
       {menuOpen && (
-        <nav className="md:hidden border-t border-border bg-bg animate-slide-down">
+        <nav className="md:hidden border-t border-border bg-bg">
           {navItems.map((item) => (
             <Link
               key={item.href}

@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     ca-certificates \
     curl \
+    iptables \
     xvfb \
     openbox \
     x11vnc \

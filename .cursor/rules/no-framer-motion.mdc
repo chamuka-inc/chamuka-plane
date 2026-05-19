@@ -1,0 +1,29 @@
+---
+description: Do not use Framer Motion or motion.* JSX unless the user explicitly asks for animations
+alwaysApply: true
+---
+
+# No Framer Motion (unless requested)
+
+This repo does **not** use `framer-motion`. `console/package.json` has no animation library.
+
+## Rules
+
+- **Never** emit `motion.div`, `motion.span`, or any `motion.*` component.
+- **Never** add `framer-motion` or import from `framer-motion` unless the user explicitly asks for motion/animation.
+- Use plain HTML elements (`div`, `span`, `button`, etc.) and Tailwind for layout and styling.
+- CSS transitions on hover/focus are fine; full animation libraries are opt-in only.
+
+## When animations are allowed
+
+Only if the user **explicitly** requests animations, Framer Motion, or animated UI — then you may add the dependency and use it.
+
+## Examples
+
+```tsx
+// ❌ BAD — invalid in this repo
+<motion.div className="flex gap-4">...</motion.div>
+
+// ✅ GOOD
+<div className="flex gap-4">...</div>
+```

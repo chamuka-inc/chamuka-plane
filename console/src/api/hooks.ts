@@ -16,12 +16,12 @@ export function useSandboxes(params?: { status?: string }) {
   });
 }
 
-export function useSandbox(id: string) {
+export function useSandbox(id: string, opts?: { refetchInterval?: number }) {
   return useQuery<Sandbox>({
     queryKey: ["sandbox", id],
     queryFn: () => client.getSandbox(id),
     enabled: !!id,
-    refetchInterval: 10_000,
+    refetchInterval: opts?.refetchInterval ?? 10_000,
   });
 }
 
@@ -39,7 +39,8 @@ export function useTerminateSandbox() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, { id: string; force?: boolean }>({
     mutationFn: ({ id, force }) => client.terminateSandbox(id, force),
-    onSuccess: () => {
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ["sandbox", id] });
       queryClient.invalidateQueries({ queryKey: ["sandboxes"] });
     },
   });
