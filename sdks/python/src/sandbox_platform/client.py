@@ -11,6 +11,7 @@ from sandbox_platform.types import (
     CreateSecretResponse,
     CredentialBinding,
     ExtendTimeoutRequest,
+    GetSandboxResponse,
     ListSandboxesResponse,
     NetworkPolicy,
     SandboxData,
@@ -32,11 +33,11 @@ class SandboxClient:
         )
         return CreateSandboxResponse.model_validate(data)
 
-    async def create_sandbox(self, request: CreateSandboxRequest) -> "Sandbox":
-        from sandbox_platform.sandbox import Sandbox
+    async def create_sandbox(self, request: CreateSandboxRequest) -> "AsyncSandbox":
+        from sandbox_platform.sandbox import AsyncSandbox
 
         response = await self.create(request)
-        return Sandbox._from_create_response(response, self)
+        return AsyncSandbox._from_create_response(response, self)
 
     async def list(
         self,
@@ -61,7 +62,12 @@ class SandboxClient:
 
     async def get(self, sandbox_id: str) -> SandboxData:
         data = await self._http.request("GET", f"/pub/v1/sandboxes/{quote(sandbox_id)}")
-        return SandboxData.model_validate(data)
+        response = GetSandboxResponse.model_validate(data)
+        return response.sandbox
+
+    async def get_with_connection(self, sandbox_id: str) -> GetSandboxResponse:
+        data = await self._http.request("GET", f"/pub/v1/sandboxes/{quote(sandbox_id)}")
+        return GetSandboxResponse.model_validate(data)
 
     async def snapshot(
         self,

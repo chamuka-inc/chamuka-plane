@@ -184,8 +184,7 @@ pub struct CredentialBinding {
     pub sandbox_id: String,
     pub destination: String,
     pub header_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub header_format: Option<String>,
+    pub header_format: String,
     pub secret_id: String,
     pub created_at: String,
 }

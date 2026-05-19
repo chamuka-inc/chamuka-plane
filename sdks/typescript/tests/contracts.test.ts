@@ -3,15 +3,15 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Sandbox } from "../src/sandbox.js";
 import { SandboxClient } from "../src/client.js";
+import { Sandbox } from "../src/sandbox.js";
 import type {
-  ConnectResponse,
   ExecSyncResponse,
   CreateSandboxRequest,
   CreateSandboxResponse,
   NetworkPolicy,
   Snapshot,
+  Sandbox as SandboxType,
 } from "../src/generated/types.js";
 
 const FIXTURES_DIR = resolve(import.meta.dirname, "../../../contracts/fixtures");
@@ -23,13 +23,31 @@ function loadFixture<T>(path: string): T {
   return JSON.parse(content) as T;
 }
 
-const mockConnectResponse: ConnectResponse = {
+const mockSandbox: SandboxType = {
+  id: "sbx-contract01",
   backend_id: "bk-contract01",
-  spawned: true,
-  status: "scheduled",
-  token: "tk-contract",
-  url: DATA_PLANE_URL,
-  status_url: `${CONTROL_URL}/pub/b/bk-contract01/status`,
+  tenant: "tenant-abc",
+  status: "ready",
+  runtime: "node24",
+  trust: "untrusted",
+  arch: "amd64",
+  image: "node:24-slim",
+  resources: { vcpus: 2, memory_mb: 4096 },
+  ports: [],
+  persistent: false,
+  created_at: "2026-05-17T10:00:00Z",
+  updated_at: "2026-05-17T10:00:05Z",
+  expires_at: "2026-05-17T10:05:00Z",
+  cluster: "default",
+};
+
+const mockCreateResponse: CreateSandboxResponse = {
+  sandbox: mockSandbox,
+  connection: {
+    token: "tk-contract",
+    url: DATA_PLANE_URL,
+    status_url: `${CONTROL_URL}/pub/v1/sandboxes/sbx-contract01/status`,
+  },
 };
 
 const server = setupServer();
@@ -38,15 +56,24 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
+async function createTestSandbox() {
+  server.use(
+    http.post(`${CONTROL_URL}/pub/v1/sandboxes`, () => {
+      return HttpResponse.json(mockCreateResponse, { status: 201 });
+    }),
+  );
+  return Sandbox.create(
+    { runtime: "node24", resources: { vcpus: 2 } },
+    { controlUrl: CONTROL_URL, token: "test" },
+  );
+}
+
 describe("contract: exec-request fixtures", () => {
   it("sends a body matching the full exec-request fixture shape", async () => {
     const fixture = loadFixture<Record<string, unknown>>("agentd/exec-request.full.json");
     let capturedBody: Record<string, unknown> | undefined;
 
     server.use(
-      http.post(`${CONTROL_URL}/ctrl/connect`, () => {
-        return HttpResponse.json(mockConnectResponse);
-      }),
       http.post(`${DATA_PLANE_URL}v1/exec`, async ({ request }) => {
         capturedBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
@@ -59,10 +86,7 @@ describe("contract: exec-request fixtures", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createTestSandbox();
 
     await sandbox.runCommand(fixture.cmd as string, {
       args: fixture.args as string[],
@@ -89,9 +113,6 @@ describe("contract: exec-request fixtures", () => {
     let capturedBody: Record<string, unknown> | undefined;
 
     server.use(
-      http.post(`${CONTROL_URL}/ctrl/connect`, () => {
-        return HttpResponse.json(mockConnectResponse);
-      }),
       http.post(`${DATA_PLANE_URL}v1/exec`, async ({ request }) => {
         capturedBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
@@ -104,10 +125,7 @@ describe("contract: exec-request fixtures", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createTestSandbox();
 
     await sandbox.runCommand(fixture.cmd as string);
 
@@ -123,18 +141,12 @@ describe("contract: exec-sync-response fixture", () => {
     const fixture = loadFixture<ExecSyncResponse>("agentd/exec-sync-response.json");
 
     server.use(
-      http.post(`${CONTROL_URL}/ctrl/connect`, () => {
-        return HttpResponse.json(mockConnectResponse);
-      }),
       http.post(`${DATA_PLANE_URL}v1/exec`, () => {
         return HttpResponse.json(fixture);
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createTestSandbox();
 
     const result = await sandbox.runCommand("python3");
 
@@ -147,7 +159,7 @@ describe("contract: exec-sync-response fixture", () => {
 });
 
 describe("contract: create-sandbox-response fixture", () => {
-  it("the fixture response shape matches ConnectResponse expectations", () => {
+  it("the fixture response shape matches CreateSandboxResponse expectations", () => {
     const fixture = loadFixture<{
       sandbox: Record<string, unknown>;
       connection: Record<string, unknown>;
@@ -226,7 +238,7 @@ describe("contract: SandboxClient create with fixtures", () => {
     );
 
     const client = new SandboxClient({ controlUrl: CONTROL_URL, token: "test" });
-    const result = await client.create({ runtime: "node24", resources: { vcpus: 2, memory_mb: 4096 } });
+    const result = await client.create({ runtime: "node24", resources: { vcpus: 2 } });
 
     expect(result.sandbox.id).toBe(responseFixture.sandbox.id);
     expect(result.sandbox.backend_id).toBe(responseFixture.sandbox.backend_id);

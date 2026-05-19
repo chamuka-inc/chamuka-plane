@@ -616,7 +616,9 @@ pub async fn create_credential_binding(
         sandbox_id,
         destination: request.destination,
         header_name: request.header_name,
-        header_format: request.header_format,
+        header_format: request
+            .header_format
+            .unwrap_or_else(|| "{value}".to_owned()),
         secret_id: request.secret_id,
         created_at: now.to_rfc3339(),
     };

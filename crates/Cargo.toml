@@ -11,6 +11,7 @@ members = [
     "plane-tests",
     "plane-test-macro",
     "tools/generate-schemas",
+    "tools/generate-sdk-types",
 ]
 
 [workspace.package]

@@ -121,15 +121,26 @@ For a new endpoint, new message variant, or new behavior, the order is:
 1. Update interfaces.md   (the spec change)
 2. Update the Rust type in common::ext   (the implementation contract)
 3. cargo run --bin generate-schemas   (the JSON Schema)
-4. Add or update fixtures in contracts/fixtures/   (the wire examples)
-5. Write a red Layer 2 contract test   (the verification target)
-6. TDD inner loop: red → green-impl   (the code)
-7. Add a Layer 3 e2e test with stubs   (the integration)
-8. Add a Layer 4 live e2e test where it makes sense   (the reality check)
-9. Commit with `Phase:` and `Next:` trailers (the handoff)
+4. Regenerate SDK types from schemas   (the SDK contract)
+     TS:  cargo run --bin generate-sdk-types -- --lang ts
+     Py:  cargo run --bin generate-sdk-types -- --lang py
+5. Add or update fixtures in contracts/fixtures/   (the wire examples)
+6. Write a red Layer 2 contract test   (the verification target)
+7. TDD inner loop: red → green-impl   (the code)
+8. Add a Layer 3 e2e test with stubs   (the integration)
+9. Add a Layer 4 live e2e test where it makes sense   (the reality check)
+10. Commit with `Phase:` and `Next:` trailers (the handoff)
 ```
 
-Skipping any step is technical debt that compounds. Especially: do not write code in step 6 without having a red test in step 5 first.
+The full propagation chain is:
+
+```
+interfaces.md → Rust type → JSON Schema → SDK types (TS + Py) → fixtures → test → code
+```
+
+Steps 3 and 4 are mechanically enforced: CI fails if schemas or SDK types are stale relative to Rust types. The `generated/` directory in each SDK is truly generated — never hand-edited. If a generated type doesn't fit the SDK's ergonomic needs, the fix goes in the generator, not in the output.
+
+Skipping any step is technical debt that compounds. Especially: do not write code in step 7 without having a red test in step 6 first.
 
 ---
 
@@ -193,7 +204,13 @@ The TDD discipline (§1) says how code arrives in the tree. This section says wh
 
 **No request_id correlation when Plane uses action_id.** I made this mistake in an early doc revision. The pattern is durable queue + per-message id + ack. We follow it; we don't invent a new correlation scheme.
 
-**No bypassing the propagation rule.** Adding an optional field "just for testing" goes through interfaces.md → type → schema → fixture → test → code, like everything else.
+**No bypassing the propagation rule.** Adding an optional field "just for testing" goes through interfaces.md → type → schema → SDK types → fixture → test → code, like everything else.
+
+**No hand-written SDK types in `generated/` directories.** Files under `sdks/typescript/src/generated/` and `sdks/python/src/sandbox_platform/generated/` are produced by `generate-sdk-types` from `contracts/schemas/`. Editing them by hand is how drift starts — the edit looks correct today and silently diverges from the contract tomorrow. If a generated type has the wrong shape, the bug is in one of: (a) interfaces.md, (b) the Rust type, (c) the generator. Fix the source; regenerate.
+
+**No SDK-only types that shadow contract types.** If the SDK needs a type that represents a contract surface (request, response, entity), that type comes from the generator. SDK-specific convenience types (e.g., options bags, builder patterns) are fine as long as they delegate to generated types internally, never redefine the wire shape.
+
+**No legacy API paths in public SDK surface.** The SDKs expose one creation path: `SandboxClient` → `/pub/v1/sandboxes`. Internal Plane endpoints (`/ctrl/connect`, `/ctrl/status`) are not part of the SDK contract and must not be reachable from public SDK methods. If legacy paths exist for migration, they are `@deprecated`/`@internal` with a removal date.
 
 **Boy-scout the Plane fork.** `crates/plane/` is a hard fork — modify any file freely. Apply the boy-scout principle: leave code cleaner than you found it (fix warnings, improve naming, simplify logic) whenever you're working in an area.
 
@@ -205,7 +222,7 @@ The TDD discipline (§1) says how code arrives in the tree. This section says wh
 
 **No `#[allow(...)]` without justification comment.** Same shape as `unsafe`: a comment explaining why this lint is being silenced.
 
-**No PRs that change types without regenerating schemas.** The contracts workflow catches this; the discipline is to run `cargo run --bin generate-schemas` before pushing, not let CI tell me.
+**No PRs that change types without regenerating schemas and SDK types.** The contracts workflow catches this; the discipline is to run `cargo run --bin generate-schemas && cargo run --bin generate-sdk-types` before pushing, not let CI tell me. A type change that updates schemas but not SDK types (or vice versa) is an incomplete propagation — CI rejects it.
 
 ### 2.5 Enforcement
 
@@ -472,6 +489,13 @@ if ! git diff --quiet contracts/schemas/; then
     exit 1
 fi
 
+# SDK types in sync with schemas
+cargo run --quiet --bin generate-sdk-types
+if ! git diff --quiet sdks/typescript/src/generated/ sdks/python/src/sandbox_platform/generated/; then
+    echo "ERROR: SDK generated types are stale. Run 'cargo run --bin generate-sdk-types' and commit."
+    exit 1
+fi
+
 # Basic secret scan (very rough; primary defense is .gitignore + discipline)
 if git diff --cached | grep -E '(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]+ PRIVATE KEY-----)' > /dev/null; then
     echo "ERROR: Possible secret detected in staged changes."
@@ -540,10 +564,11 @@ Three layers, parallel to §2.5:
 **Layer 1 — Pre-commit hooks.** `.githooks/pre-commit` runs fmt, clippy, schema-sync, and basic secret scan. Bypassable with `--no-verify` only in emergencies (and the next commit fixes whatever the bypass was for).
 
 **Layer 2 — CI.** Branch protection on `main`:
-- Required status checks: rust-workspace, contracts, walking-skeleton.
+- Required status checks: rust-workspace, contracts, sdk-types, walking-skeleton.
 - Linear history required (no merge commits).
 - No force-pushes to `main`.
 - Even self-merges go through PR if the change is non-trivial.
+- The `sdk-types` check regenerates SDK types from schemas and fails if the output differs from what's committed. This closes the Rust → schema → SDK type pipeline end-to-end.
 
 **Layer 3 — Self-review.** Things tooling can't catch:
 - Commit message quality: subject is imperative, body explains *why*.
@@ -716,6 +741,10 @@ This rule and the git-as-tracker rule reinforce each other: the tree is the curr
 **Anti-pattern 12: bypassing pre-commit hooks with `--no-verify`.** The hooks exist because mistakes are cheap to catch pre-commit and expensive later. Every `--no-verify` is a future debugging session. If the hook is wrong, fix the hook.
 
 **Anti-pattern 13: committing secrets "just for testing."** No. Use `.env.example` with placeholder values, a local-kms container for KMS dev, and never `git add` a real credential. A committed secret in git history is treated as compromised, period.
+
+**Anti-pattern 14: hand-writing types in a `generated/` directory.** The directory name is a promise: its contents are machine-produced from a single source of truth. Hand-writing types there — even "just this once, I'll wire up codegen later" — creates immediate drift. The SDK type divergence of May 2026 started exactly this way: types were hand-transcribed into `sdks/typescript/src/generated/types.ts`, the transcription introduced field-name errors (`env_var` vs `destination`/`header_name`, `repo` vs `url`), and the Python SDK copied the already-wrong TS types. No CI check existed to catch it because the codegen pipeline was never built. The fix is structural: the generator is the only writer, CI is the only verifier, humans never edit generated output.
+
+**Anti-pattern 15: exposing internal Plane endpoints through the public SDK.** The SDK's public surface covers `/pub/v1/*` (our platform API) and `/v1/*` (agentd data plane). Plane-internal endpoints like `/ctrl/connect`, `/ctrl/status`, `/ctrl/drain` are implementation details — they bypass tenant auth, skip resource validation, and use raw Plane types that don't match our contracts. An SDK method that calls an internal endpoint will work today and break silently when the platform layer changes the contract it was supposed to enforce.
 
 ---
 

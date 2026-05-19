@@ -80,6 +80,7 @@ fn main() {
 
     gen!(api::CreateSandboxRequest);
     gen!(api::CreateSandboxResponse);
+    gen!(api::GetSandboxResponse);
     gen!(api::ListSandboxesResponse);
     gen!(api::SnapshotRequest);
     gen!(api::SnapshotResponse);

@@ -47,17 +47,25 @@ const mockCreateResponse: CreateSandboxResponse = {
 const mockSnapshot: Snapshot = {
   id: "snap-001",
   sandbox_id: "sbx-test001",
-  image: "registry.internal/snap-001:latest",
+  tenant: "tenant-abc",
+  image_ref: "registry.internal/snap-001:latest",
+  digest: "sha256:abc123",
+  base_image: "node:24-slim",
+  arch: "amd64",
   runtime: "node24",
-  tag: "checkpoint-1",
+  name: "checkpoint-1",
   size_bytes: 1048576,
   created_at: "2026-05-17T10:01:00Z",
+  expires_at: "2026-06-17T10:01:00Z",
 };
 
 const mockCredentialBinding: CredentialBinding = {
   id: "cred-bind-001",
+  sandbox_id: "sbx-test001",
+  destination: "https://api.example.com",
+  header_name: "Authorization",
+  header_format: "Bearer {value}",
   secret_id: "secret-abc",
-  env_var: "API_KEY",
   created_at: "2026-05-17T10:02:00Z",
 };
 
@@ -83,7 +91,7 @@ const handlers = [
 
   http.get(`${CONTROL_URL}/pub/v1/sandboxes/:id`, ({ params }) => {
     if (params.id === "sbx-test001") {
-      return HttpResponse.json(mockSandbox);
+      return HttpResponse.json({ sandbox: mockSandbox });
     }
     return HttpResponse.json(
       { id: "err-1", message: "Not found", kind: "not_found" },
@@ -156,7 +164,7 @@ describe("SandboxClient", () => {
       const client = createClient();
       const { sandbox, connection } = await client.create({
         runtime: "node24",
-        resources: { vcpus: 2, memory_mb: 4096 },
+        resources: { vcpus: 2 },
       });
 
       expect(sandbox.id).toBe("sbx-test001");
@@ -178,7 +186,7 @@ describe("SandboxClient", () => {
       await client.create({
         runtime: "python313",
         trust: "paranoid",
-        resources: { vcpus: 4, memory_mb: 8192 },
+        resources: { vcpus: 4 },
         env: { NODE_ENV: "production" },
         timeout_ms: 600_000,
         persistent: true,
@@ -188,7 +196,7 @@ describe("SandboxClient", () => {
       expect(capturedBody).toBeDefined();
       expect(capturedBody!.runtime).toBe("python313");
       expect(capturedBody!.trust).toBe("paranoid");
-      expect(capturedBody!.resources).toEqual({ vcpus: 4, memory_mb: 8192 });
+      expect(capturedBody!.resources).toEqual({ vcpus: 4 });
       expect(capturedBody!.env).toEqual({ NODE_ENV: "production" });
       expect(capturedBody!.timeout_ms).toBe(600_000);
       expect(capturedBody!.persistent).toBe(true);
@@ -242,14 +250,65 @@ describe("SandboxClient", () => {
     });
   });
 
+  describe("getWithConnection", () => {
+    it("returns the full response including connection info", async () => {
+      server.use(
+        http.get(`${CONTROL_URL}/pub/v1/sandboxes/:id`, ({ params }) => {
+          if (params.id === "sbx-test001") {
+            return HttpResponse.json({
+              sandbox: mockSandbox,
+              connection: {
+                token: "tk-abc123",
+                url: "http://localhost:9901/tk-abc123/",
+                status_url: `${CONTROL_URL}/pub/v1/sandboxes/sbx-test001/status`,
+              },
+            });
+          }
+          return HttpResponse.json(
+            { id: "err-1", message: "Not found", kind: "not_found" },
+            { status: 404 },
+          );
+        }),
+      );
+
+      const client = createClient();
+      const result = await client.getWithConnection("sbx-test001");
+
+      expect(result.sandbox.id).toBe("sbx-test001");
+      expect(result.connection).toBeDefined();
+      expect(result.connection!.token).toBe("tk-abc123");
+      expect(result.connection!.url).toBe("http://localhost:9901/tk-abc123/");
+      expect(result.connection!.status_url).toBe(
+        `${CONTROL_URL}/pub/v1/sandboxes/sbx-test001/status`,
+      );
+    });
+
+    it("returns null connection when sandbox has no active connection", async () => {
+      server.use(
+        http.get(`${CONTROL_URL}/pub/v1/sandboxes/:id`, () => {
+          return HttpResponse.json({
+            sandbox: mockSandbox,
+            connection: null,
+          });
+        }),
+      );
+
+      const client = createClient();
+      const result = await client.getWithConnection("sbx-test001");
+
+      expect(result.sandbox.id).toBe("sbx-test001");
+      expect(result.connection).toBeNull();
+    });
+  });
+
   describe("snapshot", () => {
     it("creates a snapshot of a sandbox", async () => {
       const client = createClient();
-      const result = await client.snapshot("sbx-test001", { tag: "checkpoint-1" });
+      const result = await client.snapshot("sbx-test001", { name: "checkpoint-1" });
 
       expect(result.snapshot.id).toBe("snap-001");
       expect(result.snapshot.sandbox_id).toBe("sbx-test001");
-      expect(result.snapshot.tag).toBe("checkpoint-1");
+      expect(result.snapshot.name).toBe("checkpoint-1");
     });
   });
 
@@ -295,7 +354,8 @@ describe("SandboxClient", () => {
       const client = createClient();
       const result = await client.createCredential("sbx-test001", {
         secret_id: "secret-abc",
-        env_var: "API_KEY",
+        destination: "https://api.example.com",
+        header_name: "Authorization",
       });
 
       expect(capturedBody).toBeDefined();
@@ -389,7 +449,7 @@ describe("SandboxClient", () => {
 
       expect(snapshot.id).toBe("snap-001");
       expect(snapshot.sandbox_id).toBe("sbx-test001");
-      expect(snapshot.image).toBe("registry.internal/snap-001:latest");
+      expect(snapshot.image_ref).toBe("registry.internal/snap-001:latest");
     });
 
     it("throws on 404", async () => {

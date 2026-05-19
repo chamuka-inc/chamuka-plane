@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Sandbox } from "../../src/sandbox.js";
-import type { ConnectResponse } from "../../src/generated/types.js";
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -32,18 +31,13 @@ beforeAll(async () => {
 
   await waitForReady(`http://127.0.0.1:${port}/health`, 10_000);
 
-  const fakeConnectResponse: ConnectResponse = {
-    backend_id: "bk-e2e-test",
-    spawned: true,
-    status: "ready",
-    token: "tk-e2e",
-    url: `http://127.0.0.1:${port}`,
-    status_url: "http://localhost/status",
-  };
-
-  sandbox = Sandbox.fromConnection(
+  sandbox = new Sandbox(
+    {
+      backend_id: "bk-e2e-test",
+      url: `http://127.0.0.1:${port}`,
+      status_url: "http://localhost/status",
+    },
     `http://127.0.0.1:${port}`,
-    fakeConnectResponse,
   );
 }, 60_000);
 
@@ -88,9 +82,9 @@ describe("e2e: runCommand", () => {
   });
 });
 
-describe("e2e: spawn + status", () => {
+describe("e2e: runCommand detached + status", () => {
   it("spawns a detached process and queries status", async () => {
-    const spawned = await sandbox.spawn("sleep", { args: ["10"] });
+    const spawned = await sandbox.runCommand("sleep", { args: ["10"], detached: true });
     expect(spawned.cmdId).toBeDefined();
 
     const status = await sandbox.getProcessStatus(spawned.cmdId);

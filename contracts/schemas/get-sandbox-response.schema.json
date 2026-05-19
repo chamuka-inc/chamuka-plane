@@ -1,0 +1,252 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GetSandboxResponse",
+  "type": "object",
+  "required": [
+    "sandbox"
+  ],
+  "properties": {
+    "connection": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SandboxConnection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sandbox": {
+      "$ref": "#/definitions/Sandbox"
+    }
+  },
+  "definitions": {
+    "Arch": {
+      "type": "string",
+      "enum": [
+        "amd64",
+        "arm64"
+      ]
+    },
+    "BackendStatus": {
+      "oneOf": [
+        {
+          "description": "The backend has been scheduled to a drone, but has not yet been acknowledged. This status is only assigned by the controller; the drone will never assign it by definition.",
+          "type": "string",
+          "enum": [
+            "scheduled"
+          ]
+        },
+        {
+          "description": "The backend has been assigned to a drone, which is now responsible for loading its image.",
+          "type": "string",
+          "enum": [
+            "loading"
+          ]
+        },
+        {
+          "description": "Telling Docker to start the container.",
+          "type": "string",
+          "enum": [
+            "starting"
+          ]
+        },
+        {
+          "description": "Wait for the backend to be ready to accept connections.",
+          "type": "string",
+          "enum": [
+            "waiting"
+          ]
+        },
+        {
+          "description": "The backend is listening for connections.",
+          "type": "string",
+          "enum": [
+            "ready"
+          ]
+        },
+        {
+          "description": "The backend has been sent a SIGTERM, either because we sent it or the user did, and we are waiting for it to exit. Proxies should stop sending traffic to it, but we should not yet release the key.",
+          "type": "string",
+          "enum": [
+            "terminating"
+          ]
+        },
+        {
+          "description": "The backend has been sent a SIGKILL, either because the user sent a hard termination request or the lock was past the hard-termination deadline.",
+          "type": "string",
+          "enum": [
+            "hard-terminating"
+          ]
+        },
+        {
+          "description": "The backend has exited or been swept.",
+          "type": "string",
+          "enum": [
+            "terminated"
+          ]
+        }
+      ]
+    },
+    "Sandbox": {
+      "type": "object",
+      "required": [
+        "arch",
+        "backend_id",
+        "cluster",
+        "created_at",
+        "expires_at",
+        "id",
+        "image",
+        "persistent",
+        "ports",
+        "resources",
+        "runtime",
+        "status",
+        "tenant",
+        "trust",
+        "updated_at"
+      ],
+      "properties": {
+        "arch": {
+          "$ref": "#/definitions/Arch"
+        },
+        "backend_id": {
+          "type": "string"
+        },
+        "cluster": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "drone_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "id": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "persistent": {
+          "type": "boolean"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          }
+        },
+        "ready_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "resources": {
+          "$ref": "#/definitions/SandboxResources"
+        },
+        "runtime": {
+          "type": "string"
+        },
+        "snapshot_source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/BackendStatus"
+        },
+        "tags": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tenant": {
+          "type": "string"
+        },
+        "terminated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "trust": {
+          "$ref": "#/definitions/TrustLevel"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "SandboxConnection": {
+      "type": "object",
+      "required": [
+        "status_url",
+        "token",
+        "url"
+      ],
+      "properties": {
+        "secret_token": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status_url": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "SandboxResources": {
+      "type": "object",
+      "required": [
+        "memory_mb",
+        "vcpus"
+      ],
+      "properties": {
+        "memory_mb": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "vcpus": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "TrustLevel": {
+      "type": "string",
+      "enum": [
+        "trusted",
+        "untrusted",
+        "paranoid"
+      ]
+    }
+  }
+}

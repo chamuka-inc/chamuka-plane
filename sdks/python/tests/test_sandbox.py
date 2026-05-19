@@ -7,6 +7,7 @@ from sandbox_platform.types import (
     CreateCredentialBindingRequest,
     CreateSandboxRequest,
     NetworkPolicy,
+    ResourcesSpec,
     SandboxResources,
     SnapshotRequest,
 )
@@ -46,17 +47,25 @@ MOCK_CREATE_RESPONSE = {
 MOCK_SNAPSHOT = {
     "id": "snap-001",
     "sandbox_id": "sbx-test001",
-    "image": "registry.internal/snap-001:latest",
+    "tenant": "tenant-abc",
+    "image_ref": "registry.internal/snap-001:latest",
+    "digest": "sha256:abc123",
+    "base_image": "node:24-slim",
     "runtime": "node24",
-    "tag": "v1",
+    "arch": "amd64",
+    "name": "v1",
     "size_bytes": 2048,
     "created_at": "2026-05-17T10:01:00Z",
+    "expires_at": "2026-06-17T10:01:00Z",
 }
 
 MOCK_CREDENTIAL = {
     "id": "cred-bind-001",
+    "sandbox_id": "sbx-test001",
+    "destination": "https://api.example.com",
+    "header_name": "Authorization",
+    "header_format": "Bearer {value}",
     "secret_id": "secret-abc",
-    "env_var": "API_KEY",
     "created_at": "2026-05-17T10:02:00Z",
 }
 
@@ -91,7 +100,7 @@ def mock_control():
 async def _create_sandbox(mock_control: respx.MockRouter):
     client = SandboxClient(CONTROL_URL, "test-token")
     return await client.create_sandbox(
-        CreateSandboxRequest(runtime="node24", resources=SandboxResources(vcpus=2))
+        CreateSandboxRequest(runtime="node24", resources=ResourcesSpec(vcpus=2))
     )
 
 
@@ -107,7 +116,7 @@ class TestSandboxProperties:
 class TestSandboxControlMethods:
     async def test_snapshot(self, mock_control: respx.MockRouter) -> None:
         sandbox = await _create_sandbox(mock_control)
-        result = await sandbox.snapshot(SnapshotRequest(tag="v1"))
+        result = await sandbox.snapshot(SnapshotRequest(name="v1"))
         assert result.snapshot.id == "snap-001"
 
     async def test_set_network_policy(self, mock_control: respx.MockRouter) -> None:
@@ -118,7 +127,11 @@ class TestSandboxControlMethods:
     async def test_create_credential(self, mock_control: respx.MockRouter) -> None:
         sandbox = await _create_sandbox(mock_control)
         result = await sandbox.create_credential(
-            CreateCredentialBindingRequest(secret_id="secret-abc", env_var="API_KEY")
+            CreateCredentialBindingRequest(
+                secret_id="secret-abc",
+                destination="https://api.example.com",
+                header_name="Authorization",
+            )
         )
         assert result.id == "cred-bind-001"
 

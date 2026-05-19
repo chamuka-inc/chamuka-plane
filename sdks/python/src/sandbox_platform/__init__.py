@@ -1,5 +1,6 @@
-from sandbox_platform.client import SandboxClient
-from sandbox_platform.sandbox import Sandbox
+from sandbox_platform.sandbox import AsyncSandbox
+from sandbox_platform.sync_sandbox import Sandbox
+from sandbox_platform.auth import SandboxAuth
 from sandbox_platform.types import (
     BackendStatus,
     CreateSandboxRequest,
@@ -9,10 +10,12 @@ from sandbox_platform.types import (
     CreateSecretRequest,
     CreateSecretResponse,
     ExtendTimeoutRequest,
+    GetSandboxResponse,
     ListSandboxesResponse,
     NetworkPolicy,
     NetworkPolicyMode,
     NetworkRule,
+    ResourcesSpec,
     RuleAction,
     SandboxConnection,
     SandboxData,
@@ -24,8 +27,9 @@ from sandbox_platform.types import (
 )
 
 __all__ = [
+    "AsyncSandbox",
     "Sandbox",
-    "SandboxClient",
+    "SandboxAuth",
     "BackendStatus",
     "CreateSandboxRequest",
     "CreateSandboxResponse",
@@ -34,10 +38,12 @@ __all__ = [
     "CreateSecretRequest",
     "CreateSecretResponse",
     "ExtendTimeoutRequest",
+    "GetSandboxResponse",
     "ListSandboxesResponse",
     "NetworkPolicy",
     "NetworkPolicyMode",
     "NetworkRule",
+    "ResourcesSpec",
     "RuleAction",
     "SandboxConnection",
     "SandboxData",

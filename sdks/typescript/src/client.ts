@@ -1,9 +1,9 @@
 import { createHttpClient, type HttpClient } from "./http.js";
-import { ManagedSandbox } from "./managed-sandbox.js";
 import type {
   Sandbox,
   CreateSandboxRequest,
   CreateSandboxResponse,
+  GetSandboxResponse,
   ListSandboxesResponse,
   SnapshotResponse,
   NetworkPolicy,
@@ -18,8 +18,8 @@ import type {
 
 export type ClientOptions = {
   controlUrl: string;
-  token?: string;
-  tenant?: string;
+  token?: string | undefined;
+  tenant?: string | undefined;
 };
 
 export type ListOptions = {
@@ -30,7 +30,7 @@ export type ListOptions = {
 };
 
 export type SnapshotOptions = {
-  tag?: string;
+  name?: string;
   ttl_days?: number;
   tags?: Record<string, string>;
 };
@@ -54,11 +54,6 @@ export class SandboxClient {
     });
   }
 
-  async createSandbox(request: CreateSandboxRequest): Promise<ManagedSandbox> {
-    const response = await this.create(request);
-    return new ManagedSandbox(response.sandbox, response.connection, this);
-  }
-
   async list(options: ListOptions = {}): Promise<ListSandboxesResponse> {
     const query: Record<string, string> = {};
     if (options.status) query.status = options.status;
@@ -74,11 +69,18 @@ export class SandboxClient {
   }
 
   async get(sandboxId: string): Promise<Sandbox> {
-    const result = await this.http.request<{ sandbox: Sandbox }>({
+    const result = await this.http.request<GetSandboxResponse>({
       method: "GET",
       path: `/pub/v1/sandboxes/${encodeURIComponent(sandboxId)}`,
     });
     return result.sandbox;
+  }
+
+  async getWithConnection(sandboxId: string): Promise<GetSandboxResponse> {
+    return this.http.request<GetSandboxResponse>({
+      method: "GET",
+      path: `/pub/v1/sandboxes/${encodeURIComponent(sandboxId)}`,
+    });
   }
 
   async snapshot(

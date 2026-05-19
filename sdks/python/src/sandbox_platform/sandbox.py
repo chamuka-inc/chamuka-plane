@@ -3,11 +3,15 @@ from __future__ import annotations
 import base64
 from typing import TYPE_CHECKING, Any
 
+from sandbox_platform.auth import resolve_auth
 from sandbox_platform.http import HttpClient
 from sandbox_platform.types import (
     CreateCredentialBindingRequest,
+    CreateSandboxRequest,
     CreateSandboxResponse,
     CredentialBinding,
+    GetSandboxResponse,
+    ListSandboxesResponse,
     NetworkPolicy,
     SandboxData,
     SnapshotRequest,
@@ -18,34 +22,7 @@ if TYPE_CHECKING:
     from sandbox_platform.client import SandboxClient
 
 
-def _build_exec_body(
-    cmd: str,
-    *,
-    detached: bool,
-    args: list[str] | None = None,
-    env: dict[str, str] | None = None,
-    cwd: str | None = None,
-    stdin: str | None = None,
-    timeout_ms: int | None = None,
-    user: str | None = None,
-) -> dict[str, Any]:
-    body: dict[str, Any] = {"cmd": cmd, "detached": detached}
-    if args is not None:
-        body["args"] = args
-    if env is not None:
-        body["env"] = env
-    if cwd is not None:
-        body["cwd"] = cwd
-    if stdin is not None:
-        body["stdin"] = stdin
-    if timeout_ms is not None:
-        body["timeout_ms"] = timeout_ms
-    if user is not None:
-        body["user"] = user
-    return body
-
-
-class Sandbox:
+class AsyncSandbox:
     def __init__(
         self,
         sandbox_data: SandboxData,
@@ -53,7 +30,7 @@ class Sandbox:
         client: SandboxClient | None = None,
     ) -> None:
         self._data = sandbox_data
-        self._data_plane = HttpClient(data_plane_url)
+        self._data_plane = HttpClient(data_plane_url) if data_plane_url else None
         self._client = client
 
     @classmethod
@@ -61,8 +38,62 @@ class Sandbox:
         cls,
         response: CreateSandboxResponse,
         client: SandboxClient,
-    ) -> Sandbox:
+    ) -> AsyncSandbox:
         return cls(response.sandbox, response.connection.url, client)
+
+    # --- Static factory methods ---
+
+    @classmethod
+    async def create(
+        cls,
+        request: CreateSandboxRequest,
+        *,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> AsyncSandbox:
+        from sandbox_platform.client import SandboxClient
+
+        url, resolved_token = resolve_auth(control_url=control_url, token=token)
+        client = SandboxClient(url, resolved_token)
+        response = await client.create(request)
+        return cls._from_create_response(response, client)
+
+    @classmethod
+    async def get(
+        cls,
+        sandbox_id: str,
+        *,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> AsyncSandbox:
+        from sandbox_platform.client import SandboxClient
+
+        url, resolved_token = resolve_auth(control_url=control_url, token=token)
+        client = SandboxClient(url, resolved_token)
+        response = await client.get_with_connection(sandbox_id)
+        connection = response.connection
+        data_plane_url = connection.url if connection else ""
+        instance = cls(response.sandbox, data_plane_url, client)
+        return instance
+
+    @classmethod
+    async def list(
+        cls,
+        *,
+        status: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        tag: str | None = None,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> ListSandboxesResponse:
+        from sandbox_platform.client import SandboxClient
+
+        url, resolved_token = resolve_auth(control_url=control_url, token=token)
+        client = SandboxClient(url, resolved_token)
+        return await client.list(status=status, limit=limit, cursor=cursor, tag=tag)
+
+    # --- Properties ---
 
     @property
     def id(self) -> str:
@@ -80,11 +111,24 @@ class Sandbox:
     def runtime(self) -> str:
         return self._data.runtime
 
+    # --- Internals ---
+
     def _require_client(self, method: str) -> SandboxClient:
         if self._client is None:
-            msg = f"{method}() requires a client (create via SandboxClient.create_sandbox)"
+            msg = f"{method}() requires a managed sandbox (create via AsyncSandbox.create())"
             raise RuntimeError(msg)
         return self._client
+
+    def _require_data_plane(self, method: str) -> HttpClient:
+        if self._data_plane is None:
+            msg = (
+                f"{method}() requires an active data-plane connection. "
+                "The sandbox may be terminated or was fetched without a connection."
+            )
+            raise RuntimeError(msg)
+        return self._data_plane
+
+    # --- Command execution ---
 
     async def run_command(
         self,
@@ -97,13 +141,14 @@ class Sandbox:
         timeout_ms: int | None = None,
         user: str | None = None,
     ) -> dict:
+        dp = self._require_data_plane("run_command")
         body = _build_exec_body(
             cmd, detached=False, args=args, env=env, cwd=cwd,
             stdin=stdin, timeout_ms=timeout_ms, user=user,
         )
-        return await self._data_plane.request("POST", "/v1/exec", body=body)
+        return await dp.request("POST", "/v1/exec", body=body)
 
-    async def spawn(
+    async def run_command_detached(
         self,
         cmd: str,
         *,
@@ -113,52 +158,65 @@ class Sandbox:
         pty: bool = False,
         pty_size: dict | None = None,
     ) -> dict:
+        dp = self._require_data_plane("run_command_detached")
         body = _build_exec_body(cmd, detached=True, args=args, env=env, cwd=cwd)
         if pty:
             body["pty"] = pty
         if pty_size:
             body["pty_size"] = pty_size
-        return await self._data_plane.request("POST", "/v1/exec", body=body)
+        return await dp.request("POST", "/v1/exec", body=body)
 
     async def get_process_status(self, cmd_id: str) -> dict:
-        return await self._data_plane.request("GET", f"/v1/exec/{cmd_id}")
+        dp = self._require_data_plane("get_process_status")
+        return await dp.request("GET", f"/v1/exec/{cmd_id}")
+
+    # --- Filesystem ---
 
     async def read_file(self, path: str) -> bytes:
-        response = await self._data_plane.request_raw("GET", "/v1/fs/read", params={"path": path})
+        dp = self._require_data_plane("read_file")
+        response = await dp.request_raw("GET", "/v1/fs/read", params={"path": path})
         return response.content
 
     async def read_text_file(self, path: str) -> str:
-        response = await self._data_plane.request_raw("GET", "/v1/fs/read", params={"path": path})
+        dp = self._require_data_plane("read_text_file")
+        response = await dp.request_raw("GET", "/v1/fs/read", params={"path": path})
         return response.text
 
     async def write_file(self, path: str, content: bytes | str) -> None:
+        dp = self._require_data_plane("write_file")
         if isinstance(content, str):
             content = content.encode()
-        await self._data_plane.request_raw(
+        await dp.request_raw(
             "PUT",
             "/v1/fs/write",
             body={"path": path, "content_base64": base64.b64encode(content).decode()},
         )
 
     async def mkdir(self, path: str, *, recursive: bool = False) -> None:
+        dp = self._require_data_plane("mkdir")
         body: dict = {"path": path}
         if recursive:
             body["recursive"] = True
-        await self._data_plane.request("POST", "/v1/fs/mkdir", body=body)
+        await dp.request("POST", "/v1/fs/mkdir", body=body)
 
     async def rm(self, path: str, *, recursive: bool = False) -> None:
+        dp = self._require_data_plane("rm")
         params: dict[str, str] = {"path": path}
         if recursive:
             params["recursive"] = "true"
-        await self._data_plane.request_raw("DELETE", "/v1/fs/rm", params=params)
+        await dp.request_raw("DELETE", "/v1/fs/rm", params=params)
 
     async def list_dir(self, path: str) -> list[dict]:
-        data = await self._data_plane.request("GET", "/v1/fs/list", params={"path": path})
+        dp = self._require_data_plane("list_dir")
+        data = await dp.request("GET", "/v1/fs/list", params={"path": path})
         return data["entries"]
 
     async def list_ports(self) -> list[dict]:
-        data = await self._data_plane.request("GET", "/v1/ports")
+        dp = self._require_data_plane("list_ports")
+        data = await dp.request("GET", "/v1/ports")
         return data["listening"]
+
+    # --- Control-plane delegation ---
 
     async def snapshot(self, request: SnapshotRequest | None = None) -> SnapshotResponse:
         client = self._require_client("snapshot")
@@ -188,10 +246,38 @@ class Sandbox:
         await client.stop(self.id, force=force)
 
     async def close(self) -> None:
-        await self._data_plane.close()
+        if self._data_plane:
+            await self._data_plane.close()
 
-    async def __aenter__(self) -> Sandbox:
+    async def __aenter__(self) -> AsyncSandbox:
         return self
 
     async def __aexit__(self, *_: object) -> None:
         await self.close()
+
+
+def _build_exec_body(
+    cmd: str,
+    *,
+    detached: bool,
+    args: list[str] | None = None,
+    env: dict[str, str] | None = None,
+    cwd: str | None = None,
+    stdin: str | None = None,
+    timeout_ms: int | None = None,
+    user: str | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"cmd": cmd, "detached": detached}
+    if args is not None:
+        body["args"] = args
+    if env is not None:
+        body["env"] = env
+    if cwd is not None:
+        body["cwd"] = cwd
+    if stdin is not None:
+        body["stdin"] = stdin
+    if timeout_ms is not None:
+        body["timeout_ms"] = timeout_ms
+    if user is not None:
+        body["user"] = user
+    return body

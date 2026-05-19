@@ -9,6 +9,7 @@ from sandbox_platform.types import (
     CreateSecretRequest,
     NetworkPolicy,
     NetworkRule,
+    ResourcesSpec,
     SandboxResources,
     SnapshotRequest,
 )
@@ -47,18 +48,37 @@ MOCK_CREATE_RESPONSE = {
 MOCK_SNAPSHOT = {
     "id": "snap-001",
     "sandbox_id": "sbx-test001",
-    "image": "registry.internal/snap-001:latest",
+    "tenant": "tenant-abc",
+    "image_ref": "registry.internal/snap-001:latest",
+    "digest": "sha256:abc123",
+    "base_image": "node:24-slim",
+    "arch": "amd64",
     "runtime": "node24",
-    "tag": "checkpoint-1",
+    "name": "checkpoint-1",
     "size_bytes": 1048576,
     "created_at": "2026-05-17T10:01:00Z",
+    "expires_at": "2026-06-17T10:01:00Z",
 }
 
 MOCK_CREDENTIAL = {
     "id": "cred-bind-001",
+    "sandbox_id": "sbx-test001",
+    "destination": "https://api.example.com",
+    "header_name": "Authorization",
+    "header_format": "Bearer {value}",
     "secret_id": "secret-abc",
-    "env_var": "API_KEY",
     "created_at": "2026-05-17T10:02:00Z",
+}
+
+MOCK_CONNECTION = {
+    "token": "tk-abc123",
+    "url": "http://localhost:9901/tk-abc123/",
+    "status_url": f"{CONTROL_URL}/pub/v1/sandboxes/sbx-test001/status",
+}
+
+MOCK_GET_RESPONSE = {
+    "sandbox": MOCK_SANDBOX,
+    "connection": MOCK_CONNECTION,
 }
 
 MOCK_SECRET = {
@@ -81,7 +101,7 @@ class TestCreate:
         )
         async with SandboxClient(CONTROL_URL, "test-token") as client:
             result = await client.create(
-                CreateSandboxRequest(runtime="node24", resources=SandboxResources(vcpus=2))
+                CreateSandboxRequest(runtime="node24", resources=ResourcesSpec(vcpus=2))
             )
 
         assert result.sandbox.id == "sbx-test001"
@@ -97,7 +117,7 @@ class TestCreate:
                 CreateSandboxRequest(
                     runtime="python313",
                     trust="paranoid",
-                    resources=SandboxResources(vcpus=4, memory_mb=8192),
+                    resources=ResourcesSpec(vcpus=4),
                     env={"NODE_ENV": "production"},
                     timeout_ms=600_000,
                     persistent=True,
@@ -111,7 +131,7 @@ class TestCreate:
         parsed = json.loads(body)
         assert parsed["runtime"] == "python313"
         assert parsed["trust"] == "paranoid"
-        assert parsed["resources"] == {"vcpus": 4, "memory_mb": 8192}
+        assert parsed["resources"] == {"vcpus": 4}
         assert parsed["persistent"] is True
 
 
@@ -145,13 +165,36 @@ class TestList:
 class TestGet:
     async def test_returns_sandbox_by_id(self, mock_api: respx.MockRouter) -> None:
         mock_api.get("/pub/v1/sandboxes/sbx-test001").mock(
-            return_value=httpx.Response(200, json=MOCK_SANDBOX)
+            return_value=httpx.Response(200, json=MOCK_GET_RESPONSE)
         )
         async with SandboxClient(CONTROL_URL, "test-token") as client:
             sandbox = await client.get("sbx-test001")
 
         assert sandbox.id == "sbx-test001"
         assert sandbox.runtime == "node24"
+
+    async def test_get_with_connection(self, mock_api: respx.MockRouter) -> None:
+        mock_api.get("/pub/v1/sandboxes/sbx-test001").mock(
+            return_value=httpx.Response(200, json=MOCK_GET_RESPONSE)
+        )
+        async with SandboxClient(CONTROL_URL, "test-token") as client:
+            response = await client.get_with_connection("sbx-test001")
+
+        assert response.sandbox.id == "sbx-test001"
+        assert response.sandbox.runtime == "node24"
+        assert response.connection is not None
+        assert response.connection.token == "tk-abc123"
+        assert response.connection.url == "http://localhost:9901/tk-abc123/"
+
+    async def test_get_without_connection(self, mock_api: respx.MockRouter) -> None:
+        mock_api.get("/pub/v1/sandboxes/sbx-test001").mock(
+            return_value=httpx.Response(200, json={"sandbox": MOCK_SANDBOX})
+        )
+        async with SandboxClient(CONTROL_URL, "test-token") as client:
+            response = await client.get_with_connection("sbx-test001")
+
+        assert response.sandbox.id == "sbx-test001"
+        assert response.connection is None
 
     async def test_raises_on_404(self, mock_api: respx.MockRouter) -> None:
         mock_api.get("/pub/v1/sandboxes/sbx-missing").mock(
@@ -169,7 +212,7 @@ class TestSnapshot:
         )
         async with SandboxClient(CONTROL_URL, "test-token") as client:
             result = await client.snapshot(
-                "sbx-test001", SnapshotRequest(tag="checkpoint-1")
+                "sbx-test001", SnapshotRequest(name="checkpoint-1")
             )
 
         assert result.snapshot.id == "snap-001"
@@ -202,7 +245,11 @@ class TestCredentials:
         async with SandboxClient(CONTROL_URL, "test-token") as client:
             result = await client.create_credential(
                 "sbx-test001",
-                CreateCredentialBindingRequest(secret_id="secret-abc", env_var="API_KEY"),
+                CreateCredentialBindingRequest(
+                    secret_id="secret-abc",
+                    destination="https://api.example.com",
+                    header_name="Authorization",
+                ),
             )
 
         assert result.id == "cred-bind-001"
@@ -297,7 +344,7 @@ class TestSecrets:
 class TestAuth:
     async def test_sends_bearer_token(self, mock_api: respx.MockRouter) -> None:
         route = mock_api.get("/pub/v1/sandboxes/sbx-test001").mock(
-            return_value=httpx.Response(200, json=MOCK_SANDBOX)
+            return_value=httpx.Response(200, json=MOCK_GET_RESPONSE)
         )
         async with SandboxClient(CONTROL_URL, "test-token") as client:
             await client.get("sbx-test001")

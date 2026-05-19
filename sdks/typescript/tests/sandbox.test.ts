@@ -2,23 +2,43 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { Sandbox } from "../src/sandbox.js";
-import type { ConnectResponse } from "../src/generated/types.js";
+import type { CreateSandboxResponse, Sandbox as SandboxType } from "../src/generated/types.js";
 
 const CONTROL_URL = "http://localhost:9900";
 const DATA_PLANE_URL = "http://localhost:9901/tk-abc123/";
 
-const mockConnectResponse: ConnectResponse = {
+const mockSandbox: SandboxType = {
+  id: "sbx-test001",
   backend_id: "bk-test001",
-  spawned: true,
-  status: "scheduled",
-  token: "tk-abc123",
-  url: DATA_PLANE_URL,
-  status_url: `${CONTROL_URL}/pub/b/bk-test001/status`,
+  tenant: "tenant-abc",
+  status: "ready",
+  runtime: "node24",
+  trust: "untrusted",
+  arch: "amd64",
+  image: "node:24-slim",
+  resources: { vcpus: 2, memory_mb: 4096 },
+  ports: [3000],
+  tags: { env: "dev" },
+  persistent: false,
+  created_at: "2026-05-17T10:00:00Z",
+  updated_at: "2026-05-17T10:00:05Z",
+  expires_at: "2026-05-17T10:05:00Z",
+  ready_at: "2026-05-17T10:00:05Z",
+  cluster: "default",
+};
+
+const mockCreateResponse: CreateSandboxResponse = {
+  sandbox: mockSandbox,
+  connection: {
+    token: "tk-abc123",
+    url: DATA_PLANE_URL,
+    status_url: `${CONTROL_URL}/pub/v1/sandboxes/sbx-test001/status`,
+  },
 };
 
 const handlers = [
-  http.post(`${CONTROL_URL}/ctrl/connect`, () => {
-    return HttpResponse.json(mockConnectResponse);
+  http.post(`${CONTROL_URL}/pub/v1/sandboxes`, () => {
+    return HttpResponse.json(mockCreateResponse, { status: 201 });
   }),
 
   http.post(`${DATA_PLANE_URL}v1/exec`, async ({ request }) => {
@@ -101,52 +121,27 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
+async function createSandbox() {
+  return Sandbox.create(
+    { runtime: "node24", resources: { vcpus: 2 } },
+    { controlUrl: CONTROL_URL, token: "test-token" },
+  );
+}
+
 describe("Sandbox.create", () => {
-  it("connects via /ctrl/connect and returns a Sandbox instance", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+  it("creates via /pub/v1/sandboxes and returns a Sandbox", async () => {
+    const sandbox = await createSandbox();
 
     expect(sandbox.backendId).toBe("bk-test001");
+    expect(sandbox.id).toBe("sbx-test001");
     expect(sandbox.url).toBe(DATA_PLANE_URL);
-    expect(sandbox.statusUrl).toBe(`${CONTROL_URL}/pub/b/bk-test001/status`);
-  });
-
-  it("passes spawn_config with pool and executable to /ctrl/connect", async () => {
-    let capturedBody: Record<string, unknown> | undefined;
-    server.use(
-      http.post(`${CONTROL_URL}/ctrl/connect`, async ({ request }) => {
-        capturedBody = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json(mockConnectResponse);
-      }),
-    );
-
-    await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      {
-        runtime: "python313",
-        pool: "paranoid",
-        env: { KEY: "val" },
-        timeout_ms: 60_000,
-      },
-    );
-
-    expect(capturedBody).toBeDefined();
-    const spawn = capturedBody!.spawn_config as Record<string, unknown>;
-    expect(spawn.pool).toBe("paranoid");
-    expect(spawn.lifetime_limit_seconds).toBe(60);
-    expect((spawn.executable as Record<string, unknown>).image).toBe("python:3.13-slim");
-    expect((spawn.executable as Record<string, unknown>).env).toEqual({ KEY: "val" });
+    expect(sandbox.statusUrl).toBe(`${CONTROL_URL}/pub/v1/sandboxes/sbx-test001/status`);
   });
 });
 
 describe("Sandbox.runCommand", () => {
   it("executes a synchronous command and returns result", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     const result = await sandbox.runCommand("echo", { args: ["hello", "world"] });
 
@@ -173,10 +168,7 @@ describe("Sandbox.runCommand", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await sandbox.runCommand("ls", {
       cwd: "/app",
@@ -190,24 +182,18 @@ describe("Sandbox.runCommand", () => {
   });
 });
 
-describe("Sandbox.spawn", () => {
+describe("Sandbox.runCommand detached", () => {
   it("spawns a detached process", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
-    const result = await sandbox.spawn("node", { args: ["server.js"] });
+    const result = await sandbox.runCommand("node", { args: ["server.js"], detached: true });
     expect(result.cmdId).toBe("cmd-spawn01");
   });
 });
 
 describe("Sandbox.getProcessStatus", () => {
   it("returns process status", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     const status = await sandbox.getProcessStatus("cmd-test01");
     expect(status.status).toBe("exited");
@@ -225,10 +211,7 @@ describe("Sandbox.writeStdin", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await sandbox.writeStdin("cmd-01", "hello\n");
     expect(capturedBody).toBeDefined();
@@ -246,10 +229,7 @@ describe("Sandbox.signal", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await sandbox.signal("cmd-01", "TERM");
     expect(capturedBody).toBeDefined();
@@ -259,10 +239,7 @@ describe("Sandbox.signal", () => {
 
 describe("Sandbox filesystem operations", () => {
   it("reads a file and returns bytes", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     const bytes = await sandbox.readFile("/workspace/main.py");
     const text = new TextDecoder().decode(bytes);
@@ -270,20 +247,14 @@ describe("Sandbox filesystem operations", () => {
   });
 
   it("readTextFile returns string directly", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     const text = await sandbox.readTextFile("/workspace/main.py");
     expect(text).toBe("file content here");
   });
 
   it("writes a file via multipart upload", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await expect(
       sandbox.writeFile("/workspace/output.txt", "hello"),
@@ -299,10 +270,7 @@ describe("Sandbox filesystem operations", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await sandbox.mkdir("/workspace/new-dir", { recursive: true });
     expect(capturedBody).toBeDefined();
@@ -311,10 +279,7 @@ describe("Sandbox filesystem operations", () => {
   });
 
   it("removes a file", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await expect(
       sandbox.rm("/workspace/old.txt"),
@@ -322,10 +287,7 @@ describe("Sandbox filesystem operations", () => {
   });
 
   it("lists directory entries", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     const entries = await sandbox.listDir("/workspace");
     expect(entries).toHaveLength(2);
@@ -344,10 +306,7 @@ describe("Sandbox filesystem operations", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await sandbox.move("/workspace/a.txt", "/workspace/b.txt");
     expect(capturedBody).toBeDefined();
@@ -358,10 +317,7 @@ describe("Sandbox filesystem operations", () => {
 
 describe("Sandbox.listPorts", () => {
   it("returns listening ports", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     const ports = await sandbox.listPorts();
     expect(ports).toHaveLength(1);
@@ -373,10 +329,7 @@ describe("Sandbox.listPorts", () => {
 
 describe("Sandbox.waitForPort", () => {
   it("resolves immediately when port is available", async () => {
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await expect(sandbox.waitForPort(3000)).resolves.toBeUndefined();
   });
@@ -388,21 +341,10 @@ describe("Sandbox.waitForPort", () => {
       }),
     );
 
-    const sandbox = await Sandbox.create(
-      { controlUrl: CONTROL_URL },
-      { runtime: "node24" },
-    );
+    const sandbox = await createSandbox();
 
     await expect(
       sandbox.waitForPort(9999, 1000),
     ).rejects.toThrow("port 9999 did not become available within 1000ms");
-  });
-});
-
-describe("Sandbox.fromConnection", () => {
-  it("creates a sandbox from an existing connection", () => {
-    const sandbox = Sandbox.fromConnection(DATA_PLANE_URL, mockConnectResponse);
-    expect(sandbox.backendId).toBe("bk-test001");
-    expect(sandbox.url).toBe(DATA_PLANE_URL);
   });
 });
