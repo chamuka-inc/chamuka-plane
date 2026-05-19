@@ -83,6 +83,7 @@ services:
     restart: unless-stopped
     depends_on:
       - controller
+      - egress-proxy
     command:
       - drone
       - --name
@@ -95,6 +96,10 @@ services:
       - trusted
       - --ip
       - host.docker.internal
+      - --egress-proxy-url
+      - http://egress-proxy:3129
+      - --egress-proxy-addr
+      - host.docker.internal:3130
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
@@ -109,6 +114,7 @@ services:
     restart: unless-stopped
     depends_on:
       - controller
+      - egress-proxy
     command:
       - drone
       - --name
@@ -121,6 +127,10 @@ services:
       - untrusted
       - --ip
       - host.docker.internal
+      - --egress-proxy-url
+      - http://egress-proxy:3129
+      - --egress-proxy-addr
+      - host.docker.internal:3130
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
@@ -135,6 +145,7 @@ services:
     restart: unless-stopped
     depends_on:
       - controller
+      - egress-proxy
     command:
       - drone
       - --name
@@ -147,6 +158,10 @@ services:
       - untrusted
       - --ip
       - host.docker.internal
+      - --egress-proxy-url
+      - http://egress-proxy:3129
+      - --egress-proxy-addr
+      - host.docker.internal:3130
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
@@ -163,6 +178,49 @@ services:
     ports:
       - "127.0.0.1:5000:5000"
 
+  echo-server:
+    image: node:24-slim
+    container_name: fleet-echo-server
+    restart: unless-stopped
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((req, res) => {
+          const body = JSON.stringify({ method: req.method, url: req.url, headers: req.headers }, null, 2);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(body);
+        }).listen(8080, () => console.log('echo-server on :8080'));
+    ports:
+      - "127.0.0.1:8888:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Egress proxy spike: forward HTTP proxy that injects credential headers
+  # based on destination. Admin API on :3129 receives credential bindings.
+  # Sandboxes use it via HTTP_PROXY=http://host.docker.internal:3128
+  egress-proxy:
+    image: node:24
+    container_name: fleet-egress-proxy
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./egress-proxy:/app:ro
+      - egress-ca:/data/ca
+    command:
+      - node
+      - /app/proxy.mjs
+    environment:
+      CA_DIR: /data/ca
+    ports:
+      - "127.0.0.1:3128:3128"
+      - "127.0.0.1:3129:3129"
+      - "127.0.0.1:3130:3130"
+      - "127.0.0.1:3131:3131"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   pgdata:
   registry:
+  egress-ca:
