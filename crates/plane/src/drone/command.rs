@@ -51,6 +51,16 @@ pub struct DroneOpts {
     #[clap(long)]
     mount_base: Option<PathBuf>,
 
+    /// URL of the egress proxy admin API (e.g. http://egress-proxy:3129).
+    /// When set, the drone pushes credential bindings to the proxy for header injection.
+    #[clap(long)]
+    egress_proxy_url: Option<Url>,
+
+    /// Address of the egress proxy reachable from sandbox containers (e.g. host.docker.internal:3128).
+    /// When set, sandbox containers get iptables DNAT rules redirecting outbound HTTP/HTTPS.
+    #[clap(long)]
+    egress_proxy_addr: Option<String>,
+
     /// Automatically prune stopped images.
     /// This prunes *all* unused container images, not just ones that Plane has loaded, so it is disabled by default.
     #[clap(long)]
@@ -99,6 +109,8 @@ impl DroneOpts {
             ip,
             db_path: self.db,
             pool: self.pool,
+            egress_proxy_url: self.egress_proxy_url,
+            egress_proxy_addr: self.egress_proxy_addr,
             auto_prune: None,      // deprecated
             cleanup_min_age: None, // deprecated
             docker_config: None,   // deprecated

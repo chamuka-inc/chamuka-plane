@@ -62,6 +62,7 @@ pub type MetricsCallback = Box<dyn Fn(BackendMetricsMessage) + Send + Sync + 'st
 pub struct DockerRuntime {
     pub docker: Docker,
     config: DockerRuntimeConfig,
+    pub egress_proxy_addr: Option<String>,
     metrics_callback: Arc<Mutex<Option<MetricsCallback>>>,
     events_sender: Sender<TerminateEvent>,
     _events_loop_handle: GuardHandle,
@@ -177,8 +178,15 @@ impl Runtime for DockerRuntime {
         static_token: Option<&BearerToken>,
     ) -> Result<SpawnResult> {
         let executable: DockerExecutorConfig = serde_json::from_value(executable.clone())?;
-        let container_id =
-            run_container(self, backend_id, executable, acquired_key, static_token).await?;
+        let container_id = run_container(
+            self,
+            backend_id,
+            executable,
+            acquired_key,
+            static_token,
+            self.egress_proxy_addr.as_deref(),
+        )
+        .await?;
         let port = get_port(&self.docker, &container_id).await?;
 
         Ok(SpawnResult {
@@ -325,6 +333,7 @@ impl DockerRuntime {
         Ok(Self {
             docker,
             config,
+            egress_proxy_addr: None,
             metrics_callback,
             events_sender,
             _events_loop_handle: event_loop_handle,

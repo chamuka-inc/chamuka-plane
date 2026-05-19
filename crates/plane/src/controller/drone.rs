@@ -226,6 +226,22 @@ pub async fn process_pending_extension_actions(
             ExtensionActionKind::PushCredential => {
                 let mut wire: PushCredentialWire = serde_json::from_value(row.payload)?;
                 wire.action_id = action_id;
+
+                if wire.binding.value.is_empty() {
+                    let cred_id = &wire.binding.id;
+                    match db.credential().resolve_secret_value(cred_id).await {
+                        Ok(Some(value)) => wire.binding.value = value,
+                        Ok(None) => {
+                            tracing::warn!(cred_id, "Credential or secret not found; skipping");
+                            continue;
+                        }
+                        Err(e) => {
+                            tracing::error!(error = ?e, "Failed to resolve secret value");
+                            continue;
+                        }
+                    }
+                }
+
                 MessageToDrone::PushCredential(wire)
             }
             ExtensionActionKind::RevokeCredential => {

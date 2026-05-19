@@ -39,6 +39,7 @@ use url::Url;
 
 mod backend_manager;
 pub mod command;
+pub mod egress_publisher;
 mod executor;
 pub mod extension_handler;
 mod heartbeat;
@@ -267,14 +268,18 @@ impl Drone {
                 docker_config.cleanup_min_age =
                     docker_config.cleanup_min_age.or(config.cleanup_min_age);
 
-                Box::new(DockerRuntime::new(docker_config).await?)
+                let mut rt = DockerRuntime::new(docker_config).await?;
+                rt.egress_proxy_addr = config.egress_proxy_addr.clone();
+                Box::new(rt)
             }
             (None, Some(ExecutorConfig::Docker(mut docker_config))) => {
                 docker_config.auto_prune = docker_config.auto_prune.or(config.auto_prune);
                 docker_config.cleanup_min_age =
                     docker_config.cleanup_min_age.or(config.cleanup_min_age);
 
-                Box::new(DockerRuntime::new(docker_config).await?)
+                let mut rt = DockerRuntime::new(docker_config).await?;
+                rt.egress_proxy_addr = config.egress_proxy_addr.clone();
+                Box::new(rt)
             }
             (None, Some(ExecutorConfig::UnixSocket(unix_socket_config))) => {
                 Box::new(UnixSocketRuntime::new(unix_socket_config).await?)
@@ -306,8 +311,20 @@ impl Drone {
         let runtime = Arc::new(runtime);
         let executor = Executor::new(runtime, state_store, config.ip).await;
 
+        let extension_handler = config.egress_proxy_url.map(|proxy_url| {
+            tracing::info!(url = %proxy_url, "Egress proxy configured; enabling extension handler");
+            let publisher = Arc::new(egress_publisher::HttpEgressPublisher::new(proxy_url));
+            let snapshot_rt = Arc::new(egress_publisher::NoopSnapshotRuntime);
+            Arc::new(ExtensionHandler::new(publisher, snapshot_rt))
+        });
+
         let id = config.name.clone();
-        let drone_loop = tokio::spawn(drone_loop(id.clone(), connector, executor, None));
+        let drone_loop = tokio::spawn(drone_loop(
+            id.clone(),
+            connector,
+            executor,
+            extension_handler,
+        ));
 
         Ok(Self { drone_loop, id })
     }
@@ -339,6 +356,9 @@ pub struct DroneConfig {
     pub pool: DronePoolName,
     pub ip: IpAddr,
     pub db_path: Option<PathBuf>,
+
+    pub egress_proxy_url: Option<Url>,
+    pub egress_proxy_addr: Option<String>,
 
     #[deprecated(
         since = "0.4.12",
