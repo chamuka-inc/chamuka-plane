@@ -1,0 +1,141 @@
+# Runtimes & Trust Tiers
+
+Choose a runtime for your sandbox and configure its isolation level.
+
+## Available Runtimes
+
+| Runtime | Image | Includes |
+|---|---|---|
+| `node24` | `sandbox-runtime:node24-latest` | Node.js 24, npm, common build tools |
+| `python313` | `sandbox-runtime:python313-latest` | Python 3.13, pip, venv |
+| `agent` | `sandbox-runtime:agent-latest` | Node.js 24 + git, jq, curl, wget, procps |
+| `desktop` | `sandbox-runtime:desktop-latest` | Full Linux desktop with VNC, browser, GUI tools |
+
+### Node.js 24
+
+General-purpose JavaScript/TypeScript execution. Includes npm and common native build dependencies.
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+});`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+))`}
+/>
+
+### Python 3.13
+
+Python environment with pip and venv pre-installed.
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "python313",
+  image: "sandbox-runtime:python313-latest",
+});`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="python313",
+    image="sandbox-runtime:python313-latest",
+))`}
+/>
+
+### Agent
+
+Extended Node.js image with tools commonly needed by AI agents: git, jq, curl, wget, and process utilities.
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "agent",
+  image: "sandbox-runtime:agent-latest",
+});`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="agent",
+    image="sandbox-runtime:agent-latest",
+))`}
+/>
+
+### Desktop
+
+Full Linux desktop environment with VNC access, suitable for browser automation and GUI testing.
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "desktop",
+  image: "sandbox-runtime:desktop-latest",
+});`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="desktop",
+    image="sandbox-runtime:desktop-latest",
+))`}
+/>
+
+### Custom Images
+
+You can use any OCI image. Set `runtime` to the closest match and provide your image:
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "my-registry.com/my-custom-image:v1",
+});`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="my-registry.com/my-custom-image:v1",
+))`}
+/>
+
+---
+
+## Trust Tiers
+
+Trust tiers control the isolation technology used to run your sandbox. Higher isolation means stronger security boundaries but slightly higher cold-start times.
+
+| Tier | Isolation | Cold Start | Use Case |
+|---|---|---|---|
+| `trusted` | runc (standard containers) | Fastest | Your own code, trusted workloads |
+| `untrusted` | gVisor (syscall filtering) | ~50ms overhead | Third-party code, user submissions |
+| `paranoid` | Kata + Firecracker (microVM) | ~200ms overhead | Fully untrusted code, maximum isolation |
+
+<Callout type="info">The default trust tier is `untrusted`. Most workloads should use this unless you have a specific reason to change it.</Callout>
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+  trust: "paranoid",
+});`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+    trust="paranoid",
+))`}
+/>
+
+---
+
+## Resource Configuration
+
+Configure CPU, memory, and timeouts per sandbox.
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+  resources: { vcpus: 4 }, // memory is vcpus × 2048 MB (8 GB here)
+  timeout_ms: 600_000, // 10 minutes
+});`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+    resources=ResourcesSpec(vcpus=4),  # 8 GB memory (4 × 2048 MB)
+    timeout_ms=600_000,  # 10 minutes
+))`}
+/>
+
+| Parameter | Default | Description |
+|---|---|---|
+| `vcpus` | 2 | Number of virtual CPUs |
+| Memory | `vcpus × 2048` MB | Derived server-side (not a separate create field) |
+| `timeout_ms` | 300000 (5 min) | Maximum sandbox lifetime |

@@ -1,0 +1,143 @@
+# Lifecycle & Snapshots
+
+Understand sandbox states, timeouts, persistence, and how to snapshot running sandboxes.
+
+## Sandbox States
+
+Every sandbox follows this state machine:
+
+```
+scheduled → loading → starting → waiting → ready → terminating → hard-terminating → terminated
+```
+
+| State | Meaning |
+|---|---|
+| `scheduled` | Sandbox creation accepted, waiting for a drone to pick it up |
+| `loading` | Drone is pulling the container image |
+| `starting` | Container is starting, agentd is booting |
+| `waiting` | agentd is running but not yet ready (warming up) |
+| `ready` | Sandbox is live and accepting commands |
+| `terminating` | Graceful shutdown in progress |
+| `hard-terminating` | Force termination in progress |
+| `terminated` | Sandbox is stopped and resources are freed |
+
+<Callout type="info">The `Sandbox.create()` call blocks until the sandbox reaches `ready`. You only see intermediate states if you're polling status separately.</Callout>
+
+## Timeouts
+
+Sandboxes have two timeout mechanisms:
+
+- **Lifetime timeout** (`timeout_ms`): Maximum total time the sandbox can run. Default: 5 minutes (300,000 ms).
+- **Idle timeout**: Plane can terminate backends that stop receiving proxy keepalives. The console **Configure** panel exposes `max_idle_ms` (default 60 seconds) when booting, but the public `CreateSandboxRequest` schema does not yet map that field to `spawn_config.max_idle_seconds` — fleet defaults apply until wired.
+
+### Extending Lifetime
+
+Use `extend()` to add time to a running sandbox:
+
+<CodeTabs
+  ts={`// Add 10 more minutes
+await sandbox.extend(600_000);`}
+  python={`# Add 10 more minutes
+sandbox.extend(600_000)`}
+/>
+
+You can call `extend()` multiple times. Each call adds to the remaining lifetime.
+
+## Persistent Sandboxes
+
+By default, sandboxes are ephemeral — they terminate when the timeout expires or when you call `stop()`. Persistent sandboxes survive restarts and only terminate when explicitly stopped.
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+  persistent: true,
+});
+
+// Later, reconnect:
+const same = await Sandbox.get(sandbox.id);`}
+  python={`sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+    persistent=True,
+))
+
+# Later, reconnect:
+same = Sandbox.get(sandbox.id)`}
+/>
+
+<Callout type="warning">Persistent sandboxes still consume resources while running. Always stop them when no longer needed.</Callout>
+
+## Snapshots
+
+Capture the full state of a running sandbox as an OCI image. Use the snapshot as the image for a new sandbox to resume from that state.
+
+### Create a Snapshot
+
+<CodeTabs
+  ts={`// Install dependencies, then snapshot
+await sandbox.runCommand("/bin/bash", {
+  args: ["-c", "npm install express"],
+});
+
+const { snapshot } = await sandbox.snapshot({
+  name: "with-express",
+  tags: { purpose: "api-server" },
+});
+console.log(snapshot.image_ref);`}
+  python={`# Install dependencies, then snapshot
+sandbox.run_command("/bin/bash", args=["-c", "pip install flask"])
+
+response = sandbox.snapshot(SnapshotRequest(
+    name="with-flask",
+    tags={"purpose": "api-server"},
+))
+print(response.snapshot.image_ref)`}
+/>
+
+### Resume from a Snapshot
+
+<CodeTabs
+  ts={`const fresh = await Sandbox.create({
+  runtime: "node24",
+  image: snapshot.image_ref,
+});
+// All previously installed packages are already present`}
+  python={`fresh = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image=response.snapshot.image_ref,
+))
+# All previously installed packages are already present`}
+/>
+
+### Snapshot Expiry
+
+Snapshots have an optional TTL. After the TTL expires, the snapshot image is garbage-collected:
+
+<CodeTabs
+  ts={`const { snapshot } = await sandbox.snapshot({
+  name: "temp-state",
+  ttl_days: 7, // auto-delete after 7 days
+});`}
+  python={`response = sandbox.snapshot(SnapshotRequest(
+    name="temp-state",
+    ttl_days=7,
+))`}
+/>
+
+## Stopping a Sandbox
+
+<CodeTabs
+  ts={`// Graceful shutdown (waits for running commands to finish)
+await sandbox.stop();
+
+// Force-terminate immediately
+await sandbox.stop({ force: true });`}
+  python={`# Graceful shutdown
+sandbox.stop()
+
+# Force-terminate immediately
+sandbox.stop(force=True)`}
+/>
+
+Graceful shutdown sends SIGTERM to all processes, waits up to 10 seconds, then force-kills. Force-terminate skips the grace period.

@@ -1,0 +1,479 @@
+# SDK Reference
+
+Complete method reference for the TypeScript and Python SDKs.
+
+## Sandbox Lifecycle
+
+<MethodCard
+  name="Sandbox.create"
+  signature="static create(request: CreateSandboxRequest, auth?: SandboxAuth): Promise<Sandbox>"
+  description="Create a new sandbox with the specified runtime and configuration. Blocks until the sandbox reaches the ready state."
+>
+  <ParamTable params={[
+    { name: "request", type: "CreateSandboxRequest", required: true, description: "Runtime, image, resources, and other sandbox configuration." },
+    { name: "request.env", type: "Record<string, string>", required: false, description: "Container environment variables for the sandbox lifetime. See [Environment guide](/docs/guides/environment)." },
+    { name: "auth", type: "SandboxAuth", required: false, description: "Override default auth (controlUrl, token, tenant). Defaults from SANDBOX_* env vars on the SDK host." },
+  ]} />
+  <CodeTabs
+    ts={`import { Sandbox } from "@sandbox-platform/sdk";
+
+const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+  resources: { vcpus: 2 },
+  timeout_ms: 600_000,
+  env: { NODE_ENV: "production", LOG_LEVEL: "info" },
+});`}
+    python={`from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec
+
+sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+    resources=ResourcesSpec(vcpus=2),
+    timeout_ms=600_000,
+    env={"NODE_ENV": "production", "LOG_LEVEL": "info"},
+))`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="Sandbox.get"
+  signature="static get(sandboxId: string, auth?: SandboxAuth): Promise<Sandbox>"
+  description="Reconnect to an existing sandbox by ID."
+>
+  <ParamTable params={[
+    { name: "sandboxId", type: "string", required: true, description: "The sandbox ID to connect to." },
+    { name: "auth", type: "SandboxAuth", required: false, description: "Override default auth." },
+  ]} />
+  <CodeTabs
+    ts={`const sandbox = await Sandbox.get("sb_abc123");`}
+    python={`sandbox = Sandbox.get("sb_abc123")`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="Sandbox.list"
+  signature="static list(options?: ListOptions, auth?: SandboxAuth): Promise<ListSandboxesResponse>"
+  description="List sandboxes with optional filtering by status, tag, and pagination."
+>
+  <ParamTable params={[
+    { name: "options.status", type: "string", required: false, description: "Filter by status (e.g. 'ready', 'terminated')." },
+    { name: "options.tag", type: "string", required: false, description: "Filter by tag key=value." },
+    { name: "options.limit", type: "number", required: false, description: "Max results per page." },
+    { name: "options.cursor", type: "string", required: false, description: "Pagination cursor from previous response." },
+  ]} />
+  <CodeTabs
+    ts={`const { items, next_cursor } = await Sandbox.list({ status: "ready", limit: 10 });`}
+    python={`response = Sandbox.list(status="ready", limit=10)
+for sb in response.items:
+    print(sb.id)`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.stop"
+  signature="stop(options?: StopOptions): Promise<void>"
+  description="Terminate the sandbox. Pass force: true to hard-terminate immediately."
+>
+  <ParamTable params={[
+    { name: "options.force", type: "boolean", required: false, description: "Skip graceful shutdown and terminate immediately." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.stop();
+// or force-terminate:
+await sandbox.stop({ force: true });`}
+    python={`sandbox.stop()
+# or force-terminate:
+sandbox.stop(force=True)`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.extend"
+  signature="extend(additionalMs: number): Promise<Sandbox>"
+  description="Extend the sandbox's lifetime by the specified number of milliseconds."
+>
+  <ParamTable params={[
+    { name: "additionalMs", type: "number", required: true, description: "Milliseconds to add to the remaining lifetime." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.extend(300_000); // extend by 5 minutes`}
+    python={`sandbox.extend(300_000)  # extend by 5 minutes`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.snapshot"
+  signature="snapshot(options?: SnapshotOptions): Promise<SnapshotResponse>"
+  description="Create an OCI image snapshot of the sandbox's current state."
+>
+  <ParamTable params={[
+    { name: "options.name", type: "string", required: false, description: "Snapshot name." },
+    { name: "options.tags", type: "Record<string, string>", required: false, description: "Metadata tags." },
+    { name: "options.ttl_days", type: "number", required: false, description: "Days before the snapshot expires." },
+  ]} />
+  <CodeTabs
+    ts={`const { snapshot } = await sandbox.snapshot({ name: "after-setup" });
+console.log(snapshot.image_ref); // use as image in Sandbox.create`}
+    python={`response = sandbox.snapshot(SnapshotRequest(name="after-setup"))
+print(response.snapshot.image_ref)`}
+  />
+</MethodCard>
+
+---
+
+## Command Execution
+
+<MethodCard
+  name="sandbox.runCommand"
+  signature="runCommand(cmd: string, options?: RunCommandOptions): Promise<RunCommandResult>"
+  description="Run a command synchronously in the sandbox and return stdout, stderr, and exit code."
+>
+  <ParamTable params={[
+    { name: "cmd", type: "string", required: true, description: "The executable to run (e.g. '/bin/bash')." },
+    { name: "options.args", type: "string[]", required: false, description: "Command arguments." },
+    { name: "options.env", type: "Record<string, string>", required: false, description: "Environment variables for this command." },
+    { name: "options.cwd", type: "string", required: false, description: "Working directory." },
+    { name: "options.timeout_ms", type: "number", required: false, description: "Per-command timeout." },
+    { name: "options.user", type: "string", required: false, description: "Run as this user." },
+  ]} />
+  <CodeTabs
+    ts={`const result = await sandbox.runCommand("/bin/bash", {
+  args: ["-c", "echo $LOG_LEVEL"],
+  env: { LOG_LEVEL: "debug" },
+});
+console.log(result.stdout);
+console.log(result.exitCode);`}
+    python={`result = sandbox.run_command(
+    "/bin/bash",
+    args=["-c", "echo $LOG_LEVEL"],
+    env={"LOG_LEVEL": "debug"},
+)
+print(result["stdout"])
+print(result["exit_code"])`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.runCommand (detached)"
+  signature="runCommand(cmd: string, options: { detached: true, ... }): Promise<SpawnResult>"
+  description="Start a long-running process in the background. Returns a command ID for polling."
+>
+  <ParamTable params={[
+    { name: "cmd", type: "string", required: true, description: "The executable to run." },
+    { name: "options.detached", type: "true", required: true, description: "Must be true for detached mode." },
+    { name: "options.args", type: "string[]", required: false, description: "Command arguments." },
+    { name: "options.pty", type: "boolean", required: false, description: "Allocate a PTY for the process." },
+  ]} />
+  <CodeTabs
+    ts={`const { cmdId } = await sandbox.runCommand("node", {
+  args: ["server.js"],
+  detached: true,
+});
+// Poll status later:
+const status = await sandbox.getProcessStatus(cmdId);`}
+    python={`result = sandbox.run_command_detached("/usr/bin/node", args=["server.js"])
+cmd_id = result["cmd_id"]
+# Poll status later:
+status = sandbox.get_process_status(cmd_id)`}
+  />
+</MethodCard>
+
+---
+
+## File System
+
+<MethodCard
+  name="sandbox.readFile"
+  signature="readFile(path: string): Promise<Uint8Array>"
+  description="Read a file as raw bytes. Use readTextFile for UTF-8 strings."
+>
+  <ParamTable params={[
+    { name: "path", type: "string", required: true, description: "Absolute path inside the sandbox." },
+  ]} />
+  <CodeTabs
+    ts={`const bytes = await sandbox.readFile("/app/image.png");
+// or as text:
+const text = await sandbox.readTextFile("/app/config.json");`}
+    python={`data = sandbox.read_file("/app/image.png")
+# or as text:
+text = sandbox.read_text_file("/app/config.json")`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.writeFile"
+  signature="writeFile(path: string, content: string | Uint8Array, options?: WriteFileOptions): Promise<void>"
+  description="Write content to a file inside the sandbox. Creates parent directories if needed."
+>
+  <ParamTable params={[
+    { name: "path", type: "string", required: true, description: "Absolute path inside the sandbox." },
+    { name: "content", type: "string | Uint8Array", required: true, description: "File content to write." },
+    { name: "options.mode", type: "string", required: false, description: "File permissions (e.g. '0755')." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.writeFile("/app/index.js", 'console.log("hello");');
+// Make it executable:
+await sandbox.writeFile("/app/run.sh", "#!/bin/bash\\necho ok", { mode: "0755" });`}
+    python={`sandbox.write_file("/app/index.js", 'console.log("hello");')
+sandbox.write_file("/app/run.sh", "#!/bin/bash\\necho ok")`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.mkdir"
+  signature="mkdir(path: string, options?: { recursive?: boolean }): Promise<void>"
+  description="Create a directory inside the sandbox."
+>
+  <ParamTable params={[
+    { name: "path", type: "string", required: true, description: "Directory path to create." },
+    { name: "options.recursive", type: "boolean", required: false, description: "Create parent directories if they don't exist." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.mkdir("/app/src/components", { recursive: true });`}
+    python={`sandbox.mkdir("/app/src/components", recursive=True)`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.listDir"
+  signature="listDir(path: string): Promise<DirEntry[]>"
+  description="List files and directories at the given path."
+>
+  <ParamTable params={[
+    { name: "path", type: "string", required: true, description: "Directory path to list." },
+  ]} />
+  <CodeTabs
+    ts={`const entries = await sandbox.listDir("/app");
+for (const entry of entries) {
+  console.log(entry.name, entry.type, entry.size);
+}`}
+    python={`entries = sandbox.list_dir("/app")
+for entry in entries:
+    print(entry["name"], entry["type"], entry["size"])`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.rm"
+  signature="rm(path: string, options?: { recursive?: boolean }): Promise<void>"
+  description="Delete a file or directory."
+>
+  <ParamTable params={[
+    { name: "path", type: "string", required: true, description: "Path to delete." },
+    { name: "options.recursive", type: "boolean", required: false, description: "Delete directories recursively." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.rm("/app/tmp", { recursive: true });`}
+    python={`sandbox.rm("/app/tmp", recursive=True)`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.move"
+  signature="move(source: string, destination: string): Promise<void>"
+  description="Move or rename a file or directory. TypeScript SDK only."
+>
+  <ParamTable params={[
+    { name: "source", type: "string", required: true, description: "Current path." },
+    { name: "destination", type: "string", required: true, description: "New path." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.move("/app/old-name.js", "/app/new-name.js");`}
+    python={`# Not available in the Python SDK yet — use run_command with mv`}
+  />
+</MethodCard>
+
+---
+
+## Networking
+
+<MethodCard
+  name="sandbox.listPorts"
+  signature="listPorts(): Promise<ListeningPort[]>"
+  description="List all ports with active listeners inside the sandbox."
+>
+  <CodeTabs
+    ts={`const ports = await sandbox.listPorts();
+for (const p of ports) {
+  console.log(p.port, p.protocol, p.process_name);
+}`}
+    python={`ports = sandbox.list_ports()
+for p in ports:
+    print(p["port"], p["protocol"], p.get("process_name"))`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.waitForPort"
+  signature="waitForPort(port: number, timeoutMs?: number): Promise<void>"
+  description="Block until a port has an active listener, or timeout."
+>
+  <ParamTable params={[
+    { name: "port", type: "number", required: true, description: "Port number to wait for." },
+    { name: "timeoutMs", type: "number", required: false, description: "Max wait time in milliseconds (default: 30000)." },
+  ]} />
+  <CodeTabs
+    ts={`// Start a server, then wait for it
+await sandbox.runCommand("node", { args: ["server.js"], detached: true });
+await sandbox.waitForPort(3000, 10_000);`}
+    python={`sandbox.run_command_detached("node", args=["server.js"])
+# waitForPort is TS-only; poll list_ports in Python:
+import time
+for _ in range(30):
+    ports = sandbox.list_ports()
+    if any(p["port"] == 3000 for p in ports):
+        break
+    time.sleep(1)`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.setNetworkPolicy"
+  signature="setNetworkPolicy(policy: NetworkPolicy): Promise<NetworkPolicy>"
+  description="Update the sandbox's egress network policy."
+>
+  <ParamTable params={[
+    { name: "policy.mode", type: "'allow-all' | 'deny-all' | 'rules'", required: true, description: "Default egress posture for the sandbox." },
+    { name: "policy.rules", type: "NetworkRule[]", required: false, description: "Required when mode is rules. Match by domains, cidrs, ports, and allow/deny action." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.setNetworkPolicy({
+  mode: "rules",
+  rules: [
+    { domains: ["api.openai.com"], ports: [443], action: "allow" },
+    { domains: ["*.github.com"], ports: [443], action: "allow" },
+  ],
+});`}
+    python={`from sandbox_platform import NetworkPolicy, NetworkRule
+
+sandbox.set_network_policy(NetworkPolicy(
+    mode="rules",
+    rules=[
+        NetworkRule(domains=["api.openai.com"], ports=[443], action="allow"),
+        NetworkRule(domains=["*.github.com"], ports=[443], action="allow"),
+    ],
+))`}
+  />
+</MethodCard>
+
+---
+
+## Credentials
+
+<MethodCard
+  name="Sandbox.createSecret"
+  signature="static createSecret(request: CreateSecretRequest, auth?: SandboxAuth): Promise<CreateSecretResponse>"
+  description="Store a secret value server-side, encrypted with KMS. Returns a secret ID for binding."
+>
+  <ParamTable params={[
+    { name: "request.value", type: "string", required: true, description: "The secret value (e.g. an API key)." },
+    { name: "request.name", type: "string", required: false, description: "Human-readable name." },
+  ]} />
+  <CodeTabs
+    ts={`const { id: secretId } = await Sandbox.createSecret({
+  value: process.env.OPENAI_API_KEY!,
+  name: "openai",
+});`}
+    python={`import os
+from sandbox_platform import Sandbox, CreateSecretRequest
+
+secret = Sandbox.create_secret(CreateSecretRequest(
+    value=os.environ["OPENAI_API_KEY"],
+    name="openai",
+))`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.createCredential"
+  signature="createCredential(binding: CreateCredentialBindingRequest): Promise<CredentialBinding>"
+  description="Bind a secret to the sandbox so the egress proxy injects it as a header on matching requests."
+>
+  <ParamTable params={[
+    { name: "binding.secret_id", type: "string", required: true, description: "The secret ID from createSecret." },
+    { name: "binding.destination", type: "string", required: true, description: "Domain or CIDR to match (e.g. 'api.openai.com')." },
+    { name: "binding.header_name", type: "string", required: true, description: "HTTP header to inject (e.g. 'Authorization')." },
+    { name: "binding.header_format", type: "string", required: false, description: "Header value format. Default: '{value}'. Use 'Bearer {value}' for bearer tokens." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.createCredential({
+  secret_id: secretId,
+  destination: "api.openai.com",
+  header_name: "Authorization",
+  header_format: "Bearer {value}",
+});`}
+    python={`from sandbox_platform import CreateCredentialBindingRequest
+
+sandbox.create_credential(CreateCredentialBindingRequest(
+    secret_id=secret.id,
+    destination="api.openai.com",
+    header_name="Authorization",
+    header_format="Bearer {value}",
+))`}
+  />
+</MethodCard>
+
+---
+
+## Desktop
+
+<Callout type="info">Desktop methods are only available on sandboxes created with the `desktop` runtime.</Callout>
+
+<MethodCard
+  name="sandbox.screenshot"
+  signature="screenshot(): Promise<Uint8Array>"
+  description="Capture a PNG screenshot of the desktop."
+>
+  <CodeTabs
+    ts={`const png = await sandbox.screenshot();
+// Save or process the image bytes`}
+    python={`png = sandbox.screenshot()
+with open("screen.png", "wb") as f:
+    f.write(png)`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.click"
+  signature="click(coordinate: [number, number]): Promise<void>"
+  description="Click at the specified screen coordinates."
+>
+  <ParamTable params={[
+    { name: "coordinate", type: "[x, y]", required: true, description: "Screen coordinates to click." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.click([500, 300]);`}
+    python={`sandbox.click(x=500, y=300)`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.type"
+  signature="type(text: string): Promise<void>"
+  description="Type text into the focused element."
+>
+  <ParamTable params={[
+    { name: "text", type: "string", required: true, description: "Text to type." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.type("Hello, desktop!");`}
+    python={`sandbox.type_text("Hello, desktop!")`}
+  />
+</MethodCard>
+
+<MethodCard
+  name="sandbox.sendKeys"
+  signature="sendKeys(keys: string): Promise<void>"
+  description="Send keyboard shortcuts (e.g. modifier keys, special keys)."
+>
+  <ParamTable params={[
+    { name: "keys", type: "string", required: true, description: "Key combination (e.g. 'ctrl+c', 'Return')." },
+  ]} />
+  <CodeTabs
+    ts={`await sandbox.sendKeys("ctrl+s"); // save
+await sandbox.sendKeys("Return"); // press enter`}
+    python={`sandbox.send_keys("ctrl+s")
+sandbox.send_keys("Return")`}
+  />
+</MethodCard>

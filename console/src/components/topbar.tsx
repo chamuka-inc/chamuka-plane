@@ -16,13 +16,19 @@ function LogoMark() {
 export function Topbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-black/80 backdrop-blur-xl">
-      <div className="h-16 flex items-center px-4 sm:px-6">
+      <div className="h-16 flex items-center gap-6 px-4 sm:px-6">
         <Link
           href="/"
           className="flex items-center gap-3 hover:opacity-80 transition-opacity"
         >
           <LogoMark />
           <span className="text-sm font-semibold tracking-tight">Sandbox</span>
+        </Link>
+        <Link
+          href="/docs/quickstart"
+          className="text-sm text-text-3 hover:text-text transition-colors"
+        >
+          Docs
         </Link>
       </div>
     </header>

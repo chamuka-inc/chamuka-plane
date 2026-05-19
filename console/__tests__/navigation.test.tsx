@@ -9,8 +9,9 @@ describe("Topbar navigation", () => {
     expect(link.getAttribute("href")).toBe("/");
   });
 
-  it("does not render a separate Quickstart nav item", () => {
+  it("renders Docs link to /docs/quickstart", () => {
     render(<Topbar />);
-    expect(screen.queryByText("Quickstart")).toBeNull();
+    const link = screen.getByRole("link", { name: /docs/i });
+    expect(link.getAttribute("href")).toBe("/docs/quickstart");
   });
 });
