@@ -1,0 +1,27 @@
+FROM rust:1.88-bookworm AS builder
+
+WORKDIR /build
+COPY crates/ crates/
+
+WORKDIR /build/crates
+ENV SQLX_OFFLINE=true
+RUN cargo build --release --locked -p agentd
+
+FROM python:3.13-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tini \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash sandbox || true
+
+WORKDIR /workspace
+
+COPY --from=builder /build/crates/target/release/agentd /usr/local/bin/agentd
+
+ENTRYPOINT ["tini", "--"]
+CMD ["agentd"]
+
+EXPOSE 8080

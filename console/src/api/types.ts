@@ -39,76 +39,6 @@ export type ListSandboxesResponse = {
   next_cursor?: string;
 };
 
-export type UsageRecord = {
-  sandbox_id: string;
-  bucket_start: string;
-  cpu_nsec: number;
-  memory_mb_seconds: number;
-  rx_bytes: number;
-  tx_bytes: number;
-};
-
-export type UsageSummary = {
-  total_cpu_hours: number;
-  total_memory_gb_hours: number;
-  total_rx_bytes: number;
-  total_tx_bytes: number;
-  estimated_cost: number;
-};
-
-export type UsagePeriod = "1h" | "6h" | "24h" | "7d" | "30d";
-
-export type UsageResponse = {
-  records: UsageRecord[];
-  summary: UsageSummary;
-};
-
-export type DroneState = {
-  ready: boolean;
-  draining: boolean;
-  last_heartbeat_age: number;
-  backend_count: number;
-  node: NodeState;
-};
-
-export type NodeName = { Drone: string } | { Proxy: string } | string;
-
-export type NodeState = {
-  name: NodeName;
-  plane_version: string;
-  plane_hash: string;
-  controller: string;
-  controller_heartbeat_age: number;
-};
-
-export type ClusterState = {
-  name: string;
-  drones: DroneState[];
-  proxies: NodeState[];
-};
-
-export type FleetResponse = {
-  clusters: ClusterState[];
-};
-
-export type ExtensionAction = {
-  id: string;
-  kind: "push_policy" | "push_credential" | "revoke_credential" | "snapshot";
-  backend_id?: string;
-  sandbox_id?: string;
-  drone_id: number;
-  created_at: string;
-  acked_at?: string;
-};
-
-export type StatusEvent = {
-  status: BackendStatus;
-  termination_reason?: string;
-  termination_kind?: "soft" | "hard";
-  exit_error?: boolean;
-  time: string;
-};
-
 export type ApiError = {
   error: {
     code: string;
@@ -116,4 +46,14 @@ export type ApiError = {
     details?: Record<string, unknown>;
     request_id: string;
   };
+};
+
+export type ExecEntry = {
+  id: number;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  durationMs: number;
+  timestamp: string;
 };

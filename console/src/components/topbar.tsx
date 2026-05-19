@@ -3,14 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRole } from "@/lib/role";
-import { Menu, X, Search } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
 const navItems = [
-  { label: "Overview", href: "/", operatorOnly: false },
-  { label: "Sandboxes", href: "/sandboxes", operatorOnly: false },
-  { label: "Fleet", href: "/fleet", operatorOnly: true },
-  { label: "Analytics", href: "/analytics", operatorOnly: false },
+  { label: "Playground", href: "/" },
+  { label: "Sandboxes", href: "/sandboxes" },
 ];
 
 function LogoMark() {
@@ -26,7 +23,6 @@ function LogoMark() {
 
 export function Topbar() {
   const pathname = usePathname();
-  const { role, isOperator, toggleRole } = useRole();
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -38,8 +34,6 @@ export function Topbar() {
     return pathname.startsWith(href);
   }
 
-  const visibleItems = navItems.filter((item) => !item.operatorOnly || isOperator);
-
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-black/80 backdrop-blur-xl">
       <div className="h-16 flex items-center px-4 sm:px-6">
@@ -49,7 +43,7 @@ export function Topbar() {
         </div>
 
         <nav className="hidden md:flex gap-0.5 flex-1">
-          {visibleItems.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -63,36 +57,7 @@ export function Topbar() {
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-3">
-          <button
-            type="button"
-            aria-label="Search"
-            className="bg-bg-1 border border-border rounded-md px-3 py-1.5 text-sm text-text-3 flex items-center gap-10 cursor-pointer hover:border-border-light transition-colors"
-          >
-            <span className="flex items-center gap-2">
-              <Search size={14} />
-              Search...
-            </span>
-            <kbd className="text-xs text-text-4 bg-bg border border-border px-1.5 py-0.5 rounded-sm">
-              ⌘K
-            </kbd>
-          </button>
-
-          <button
-            onClick={toggleRole}
-            className="text-xs px-2.5 py-1 rounded-full border border-border text-text-2 hover:border-border-light transition-colors"
-          >
-            {role === "operator" ? "Operator" : "Developer"}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 ml-auto md:hidden">
-          <button
-            onClick={toggleRole}
-            className="text-xs px-2.5 py-1 rounded-full border border-border text-text-2 hover:border-border-light transition-colors"
-          >
-            {role === "operator" ? "Op" : "Dev"}
-          </button>
+        <div className="ml-auto md:hidden">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             aria-label={menuOpen ? "Close menu" : "Open menu"}
@@ -105,7 +70,7 @@ export function Topbar() {
 
       {menuOpen && (
         <nav className="md:hidden border-t border-border bg-bg animate-slide-down">
-          {visibleItems.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}

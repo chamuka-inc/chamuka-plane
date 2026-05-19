@@ -2,14 +2,17 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { tokens } from "@/lib/theme";
+import type { ExecEntry } from "@/api/types";
 import "@xterm/xterm/css/xterm.css";
 
 type TerminalViewProps = {
   sandboxId: string;
+  onCommand?: (cmd: string) => void;
+  onExecComplete?: (entry: ExecEntry) => void;
 };
 
 
-export function TerminalView({ sandboxId }: TerminalViewProps) {
+export function TerminalView({ sandboxId, onCommand, onExecComplete }: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -69,9 +72,16 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
     let inputBuffer = "";
     let busy = false;
     let cwd = "/";
+    let execSeq = 0;
 
     async function execCommand(cmd: string) {
       busy = true;
+      const t0 = performance.now();
+      const timestamp = new Date().toISOString();
+      let stdout = "";
+      let stderr = "";
+      let exitCode = 0;
+
       try {
         const res = await fetch(execUrl, {
           method: "POST",
@@ -86,24 +96,50 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
         });
 
         if (!res.ok) {
-          terminal.write(`\x1b[31mexec error: ${res.status}\x1b[0m\r\n`);
+          stderr = `exec error: ${res.status}`;
+          exitCode = res.status;
+          terminal.write(`\x1b[31m${stderr}\x1b[0m\r\n`);
+          const durationMs = Math.round(performance.now() - t0);
+          terminal.write(`\x1b[33m${durationMs}ms · exit ${exitCode}\x1b[0m\r\n`);
           return;
         }
 
         const data = await res.json();
+        exitCode = data.exit_code ?? 0;
+
         if (data.stdout) {
           const parts = data.stdout.split("__CWD__\n");
           const output = parts[0];
+          stdout = output ?? "";
           if (output) terminal.write(output);
           if (parts[1]) cwd = parts[1].trim();
         }
-        if (data.stderr) terminal.write(`\x1b[31m${data.stderr}\x1b[0m`);
-        if (data.exit_code !== 0) {
-          terminal.write(`\x1b[33m[exit ${data.exit_code}]\x1b[0m\r\n`);
+        if (data.stderr) {
+          stderr = data.stderr;
+          terminal.write(`\x1b[31m${data.stderr}\x1b[0m`);
         }
+
+        const durationMs = Math.round(performance.now() - t0);
+        const exitLabel = exitCode === 0
+          ? `\x1b[90m${durationMs}ms\x1b[0m`
+          : `\x1b[33m${durationMs}ms · exit ${exitCode}\x1b[0m`;
+        terminal.write(`\r\n${exitLabel}\r\n`);
       } catch (err) {
-        terminal.write(`\x1b[31m${err instanceof Error ? err.message : "request failed"}\x1b[0m\r\n`);
+        const msg = err instanceof Error ? err.message : "request failed";
+        terminal.write(`\x1b[31m${msg}\x1b[0m\r\n`);
+        stderr = msg;
+        exitCode = 1;
       } finally {
+        const durationMs = Math.round(performance.now() - t0);
+        onExecComplete?.({
+          id: ++execSeq,
+          command: cmd,
+          stdout,
+          stderr,
+          exitCode,
+          durationMs,
+          timestamp,
+        });
         busy = false;
       }
     }
@@ -130,7 +166,10 @@ export function TerminalView({ sandboxId }: TerminalViewProps) {
             return;
           }
 
-          execCommand(cmd).then(writePrompt).catch(() => writePrompt());
+          execCommand(cmd).then(() => {
+            onCommand?.(cmd);
+            writePrompt();
+          }).catch(() => writePrompt());
         } else if (ch === "\x7f") {
           if (inputBuffer.length > 0) {
             inputBuffer = inputBuffer.slice(0, -1);

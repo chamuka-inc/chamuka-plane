@@ -1,5 +1,5 @@
 // JS-accessible design tokens — mirrors @theme in globals.css.
-// Used by libraries that need raw color strings (xterm, recharts).
+// Used by libraries that need raw color strings (xterm).
 
 export const tokens = {
   bg: "#000",

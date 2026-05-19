@@ -1,11 +1,4 @@
-import type {
-  ListSandboxesResponse,
-  Sandbox,
-  UsageResponse,
-  UsagePeriod,
-  FleetResponse,
-  ApiError,
-} from "./types";
+import type { ListSandboxesResponse, Sandbox, ApiError } from "./types";
 
 export type CreateSandboxRequest = {
   runtime?: string;
@@ -17,6 +10,7 @@ export type CreateSandboxRequest = {
   tags?: Record<string, string>;
   key?: string;
   max_idle_ms?: number;
+  persistent?: boolean;
 };
 
 export type CreateSandboxResponse = {
@@ -78,22 +72,31 @@ export function createBffClient() {
       return result.sandbox;
     },
 
-    getFleetState(): Promise<FleetResponse> {
-      return request("/api/fleet");
-    },
-
-    getUsage(params?: { period?: UsagePeriod; sandbox_id?: string }): Promise<UsageResponse> {
-      const sp = new URLSearchParams();
-      if (params?.period) sp.set("period", params.period);
-      if (params?.sandbox_id) sp.set("sandbox_id", params.sandbox_id);
-      return request(`/api/usage?${sp}`);
-    },
-
     createSandbox(body: CreateSandboxRequest): Promise<CreateSandboxResponse> {
       return request("/api/sandboxes", {
         method: "POST",
         body: JSON.stringify(body),
       });
+    },
+
+    async terminateSandbox(id: string, force?: boolean): Promise<void> {
+      const qs = force ? "?force=true" : "";
+      const res = await fetch(`/api/sandboxes/${encodeURIComponent(id)}${qs}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!res.ok && res.status !== 204) {
+        let code = "UNKNOWN";
+        let msg = res.statusText;
+        try {
+          const body = (await res.json()) as ApiError;
+          code = body.error.code;
+          msg = body.error.message;
+        } catch {
+          // Non-JSON error response
+        }
+        throw new BffError(code, `${code}: ${msg}`, res.status);
+      }
     },
   };
 }
