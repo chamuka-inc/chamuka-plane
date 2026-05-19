@@ -14,7 +14,6 @@ use plane_common::{
 use std::{
     collections::HashMap,
     path::{Component, Path, PathBuf},
-    time::Duration,
 };
 
 /// Port inside the container to expose.
@@ -76,42 +75,6 @@ pub async fn image_exists(docker: &Docker, image: &str) -> Result<bool> {
         }) => Ok(false),
         Err(e) => Err(e.into()),
     }
-}
-
-async fn try_get_port(docker: &Docker, container_id: &ContainerId) -> Result<u16> {
-    let info = docker
-        .inspect_container(&container_id.to_string(), None)
-        .await?;
-
-    // TODO: avoid clones.
-
-    let port = info
-        .network_settings
-        .and_then(|settings| settings.ports)
-        .and_then(|ports| ports.get(&format!("{}/tcp", CONTAINER_PORT)).cloned())
-        .and_then(|bindings| bindings.clone())
-        .and_then(|bindings| bindings.first().cloned())
-        .and_then(|binding| binding.host_port.clone())
-        .and_then(|port| port.parse::<u16>().ok())
-        .ok_or_else(|| anyhow::anyhow!("Failed to get port for container."))?;
-
-    Ok(port)
-}
-
-pub async fn get_port(docker: &Docker, container_id: &ContainerId) -> Result<u16> {
-    // There can be a race condition where the container is ready but has
-    // not yet received a port assignment, so we retry a few times.
-    for _ in 0..3 {
-        match try_get_port(docker, container_id).await {
-            Ok(port) => return Ok(port),
-            Err(e) => {
-                tracing::info!(?e, "Failed to get port, retrying...");
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
-    Err(anyhow::anyhow!("Failed to get port after retries."))
 }
 
 // Disallow absolute paths or paths with dots (.. or .)

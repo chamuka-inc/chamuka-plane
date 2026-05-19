@@ -28,7 +28,7 @@ use std::{
     net::SocketAddr,
     sync::{
         atomic::{AtomicU16, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
     },
 };
 use tokio::sync::broadcast::Sender;
@@ -73,7 +73,7 @@ pub struct DockerRuntime {
     metrics_callback: Arc<Mutex<Option<MetricsCallback>>>,
     events_sender: Sender<TerminateEvent>,
     port_allocator: AtomicU16,
-    image_cache: Mutex<HashSet<String>>,
+    image_cache: RwLock<HashSet<String>>,
     _events_loop_handle: GuardHandle,
     _cleanup_handle: GuardHandle,
 }
@@ -175,7 +175,7 @@ impl Runtime for DockerRuntime {
         };
 
         if !force {
-            let cache = self.image_cache.lock().expect("Image cache lock poisoned");
+            let cache = self.image_cache.read().expect("Image cache lock poisoned");
             if cache.contains(image) {
                 tracing::debug!(image, "Image already cached, skipping Docker API check");
                 return Ok(());
@@ -184,7 +184,7 @@ impl Runtime for DockerRuntime {
 
         commands::pull_image(&self.docker, image, credentials.as_ref(), force).await?;
 
-        let mut cache = self.image_cache.lock().expect("Image cache lock poisoned");
+        let mut cache = self.image_cache.write().expect("Image cache lock poisoned");
         cache.insert(image.clone());
         Ok(())
     }
@@ -354,7 +354,7 @@ impl DockerRuntime {
             metrics_callback,
             events_sender,
             port_allocator: AtomicU16::new(0),
-            image_cache: Mutex::new(HashSet::new()),
+            image_cache: RwLock::new(HashSet::new()),
             _events_loop_handle: event_loop_handle,
             _cleanup_handle: cleanup_handle,
         })

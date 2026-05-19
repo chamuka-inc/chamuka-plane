@@ -29,7 +29,7 @@ RUN useradd -m -s /bin/bash sandbox || true
 WORKDIR /workspace
 
 COPY --from=builder /agentd /usr/local/bin/agentd
-COPY runtime-images/agent/sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
+COPY runtime-images/sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
 RUN chmod +x /usr/local/bin/sandbox-entrypoint.sh
 
 ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]

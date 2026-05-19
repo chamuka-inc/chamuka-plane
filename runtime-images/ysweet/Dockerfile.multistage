@@ -26,7 +26,7 @@ WORKDIR /workspace
 
 COPY --from=builder /agentd /usr/local/bin/agentd
 COPY runtime-images/ysweet/start.sh /usr/local/bin/start.sh
-COPY runtime-images/ysweet/sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
+COPY runtime-images/sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/sandbox-entrypoint.sh
 
 ENV YSWEET_HOST=0.0.0.0
