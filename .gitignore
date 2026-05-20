@@ -35,6 +35,7 @@ venv/
 *.crt
 *.kubeconfig
 secrets/
+certificates/
 
 # OS
 .DS_Store

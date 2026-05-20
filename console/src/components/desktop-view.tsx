@@ -10,8 +10,18 @@ type DesktopViewProps = {
   onConnectionChange?: (state: ConnectionState) => void;
 };
 
-const WS_RELAY_URL =
-  process.env.NEXT_PUBLIC_WS_RELAY_URL ?? "ws://localhost:3101";
+function getWsRelayUrl() {
+  if (process.env.NEXT_PUBLIC_WS_RELAY_URL) {
+    return process.env.NEXT_PUBLIC_WS_RELAY_URL;
+  }
+  if (typeof window === "undefined") return "ws://localhost:3101";
+  const isSecure = window.location.protocol === "https:";
+  const proto = isSecure ? "wss" : "ws";
+  const portSuffix = isSecure
+    ? (window.location.port ? `:${window.location.port}` : "")
+    : ":3101";
+  return `${proto}://${window.location.hostname}${portSuffix}`;
+}
 
 export function DesktopView({ sandboxId, onConnectionChange }: DesktopViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -80,7 +90,7 @@ export function DesktopView({ sandboxId, onConnectionChange }: DesktopViewProps)
 
     if (gen !== generationRef.current || !containerRef.current) return;
 
-    const url = `${WS_RELAY_URL}/vnc?sandbox=${encodeURIComponent(sandboxId)}`;
+    const url = `${getWsRelayUrl()}/vnc?sandbox=${encodeURIComponent(sandboxId)}`;
     const rfb = new RFB(containerRef.current, url);
     rfb.scaleViewport = true;
     rfb.resizeSession = false;
