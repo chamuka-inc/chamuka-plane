@@ -35,10 +35,16 @@ fn migration_file_exists_and_sorts_after_plane() {
         .position(|f| f == our_filename)
         .expect("our migration in sorted list");
 
-    assert_eq!(
-        our_pos,
-        filenames.len() - 1,
-        "our migration must sort last (after all Plane migrations)"
+    // Our base migration must sort after all upstream Plane migrations
+    // (timestamps before 2026). Our own subsequent migrations may follow it.
+    let last_upstream_pos = filenames
+        .iter()
+        .rposition(|f| f.as_str() < our_filename && f.starts_with("202") && !f.starts_with("2026"))
+        .expect("at least one upstream Plane migration");
+
+    assert!(
+        our_pos > last_upstream_pos,
+        "our migration must sort after all upstream Plane migrations"
     );
 }
 
