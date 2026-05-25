@@ -81,9 +81,17 @@ fn emit_struct(out: &mut String, name: &str, fields: &[FieldDef]) {
         if field.required {
             writeln!(out, "  {}: {ts_type};", field.name).expect("write");
         } else if field.has_default {
-            // Has a default value — optional but not nullable in the output type
-            let base_type = unwrap_nullable_for_ts(&field.ty);
-            writeln!(out, "  {}?: {base_type};", field.name).expect("write");
+            // For a non-null default, unwrap the outer Nullable — the SDK
+            // fills the default and consumers never see null. For a null
+            // default, keep the nullable wrapper because null IS the wire
+            // value when the field is unset.
+            let default_is_null = matches!(&field.default_value, Some(v) if v.is_null());
+            let emit_ty = if default_is_null {
+                ts_type.clone()
+            } else {
+                unwrap_nullable_for_ts(&field.ty)
+            };
+            writeln!(out, "  {}?: {emit_ty};", field.name).expect("write");
         } else {
             // Not required, no default — optional and nullable
             writeln!(out, "  {}?: {ts_type};", field.name).expect("write");

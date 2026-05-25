@@ -133,8 +133,16 @@ fn emit_struct(out: &mut String, name: &str, fields: &[FieldDef]) {
         let py_type = field_type_to_py(&field.ty);
         if field.has_default {
             let default_str = py_default_value(&field.default_value, &field.ty);
-            let base_type = unwrap_nullable_for_py(&field.ty);
-            writeln!(out, "    {}: {base_type} = {default_str}", field.name).expect("write");
+            // For a non-null default, unwrap the outer Nullable. For a null
+            // default, keep the nullable wrapper — `None` IS the value
+            // produced when the field is unset on the wire.
+            let default_is_null = matches!(&field.default_value, Some(v) if v.is_null());
+            let emit_ty = if default_is_null {
+                py_type.clone()
+            } else {
+                unwrap_nullable_for_py(&field.ty)
+            };
+            writeln!(out, "    {}: {emit_ty} = {default_str}", field.name).expect("write");
         } else {
             // Not required, no default — Optional with None default
             writeln!(out, "    {}: {py_type} = None", field.name).expect("write");
