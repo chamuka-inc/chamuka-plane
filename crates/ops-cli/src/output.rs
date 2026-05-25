@@ -1,16 +1,11 @@
 use serde::Serialize;
 use tabled::{Table, Tabled};
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
 pub enum OutputFormat {
+    #[default]
     Table,
     Json,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        Self::Table
-    }
 }
 
 pub fn render_list<T: Tabled + Serialize>(items: &[T], format: OutputFormat) -> String {

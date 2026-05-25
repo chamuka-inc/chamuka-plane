@@ -58,10 +58,10 @@ async fn relay(mut client: WebSocket) {
         tokio::select! {
             msg = StreamExt::next(&mut upstream) => {
                 match msg {
-                    Some(Ok(tungstenite::Message::Binary(data))) => {
-                        if client.send(Message::Binary(data)).await.is_err() {
-                            break;
-                        }
+                    Some(Ok(tungstenite::Message::Binary(data)))
+                        if client.send(Message::Binary(data.clone())).await.is_err() =>
+                    {
+                        break;
                     }
                     Some(Ok(tungstenite::Message::Close(_))) | None => break,
                     Some(Err(_)) => break,
@@ -70,10 +70,13 @@ async fn relay(mut client: WebSocket) {
             }
             msg = client.recv() => {
                 match msg {
-                    Some(Ok(Message::Binary(data))) => {
-                        if upstream.send(tungstenite::Message::Binary(data)).await.is_err() {
-                            break;
-                        }
+                    Some(Ok(Message::Binary(data)))
+                        if upstream
+                            .send(tungstenite::Message::Binary(data.clone()))
+                            .await
+                            .is_err() =>
+                    {
+                        break;
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Err(_)) => break,
