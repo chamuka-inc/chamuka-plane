@@ -112,11 +112,16 @@ Use `make <target>` for all build/test/image operations. Run `make help` for the
 | `make image-python313` | Build sandbox-runtime:python313-latest |
 | `make image-agent` | Build sandbox-runtime:agent-latest |
 | `make image-desktop` | Build sandbox-runtime:desktop-latest |
-| `make fleet-up` | Start local dev fleet |
-| `make fleet-down` | Stop drones |
-| `make fleet-nuke` | Destroy everything (VMs + services + volumes) |
-| `make smoke` | End-to-end smoke test against running fleet |
+| `make image-plane` | Build chamuka-plane:latest |
+| `make fleet-images` | Build images required for local cluster |
+| `make fleet-up` | Start canonical Vagrant dev fleet |
+| `make fleet-up-docker` | Start Docker-only fallback fleet |
+| `make fleet-down` | Stop Vagrant drones |
+| `make fleet-nuke` | Destroy Vagrant fleet (VMs + host services + volumes) |
+| `make smoke` | End-to-end smoke test (Vagrant fleet) |
+| `make smoke-docker` | End-to-end smoke test (Docker fallback) |
 | `make schemas` | Regenerate JSON schemas from Rust types |
+| `make console-install` | Install console npm dependencies |
 | `make console-dev` | Start console dev server (Next.js + ws-relay) |
 | `make console-test` | Run console test suite |
 

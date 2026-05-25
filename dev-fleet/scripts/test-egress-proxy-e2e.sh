@@ -12,7 +12,7 @@ set -euo pipefail
 #   6. Verify echo server received the injected header
 #
 # Prerequisites:
-#   - Dev fleet running with rebuilt Plane image (make rebuild && docker compose up -d)
+#   - Dev fleet running with rebuilt Plane image (make fleet-images && make fleet-up-docker)
 #   - Egress proxy and echo server containers running
 
 CONTROLLER="http://localhost:8080"

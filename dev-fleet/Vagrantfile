@@ -12,14 +12,16 @@
 #   "<host>:<proxy-port>"  — including the port marks it as a dev
 #   cluster, so the proxy serves HTTP (no ACME / TLS).
 
-DRONE_COUNT     = (ENV['DRONE_COUNT']     || '1').to_i
+DRONE_COUNT     = (ENV['DRONE_COUNT']     || '3').to_i
 DRONE_VCPUS     = (ENV['DRONE_VCPUS']     || '2').to_i
-DRONE_MEM_MB    = (ENV['DRONE_MEM_MB']    || '2048').to_i
+DRONE_MEM_MB    = (ENV['DRONE_MEM_MB']    || '4096').to_i
 NESTED_VIRT     = (ENV['NESTED_VIRT']     || 'on') == 'on'
 HOST_ONLY_IP    = ENV['HOST_ONLY_IP']     || '192.168.56.1'
 CONTROLLER_PORT = ENV['CONTROLLER_PORT']  || '8080'
 PROXY_PORT      = ENV['PROXY_PORT']       || '9090'
 CLUSTER_NAME    = ENV['CLUSTER_NAME']     || "#{HOST_ONLY_IP}:#{PROXY_PORT}"
+PLANE_IMAGE     = ENV['PLANE_IMAGE']     || "#{HOST_ONLY_IP}:5000/chamuka-plane:latest"
+RUNTIME_IMAGE   = ENV['RUNTIME_IMAGE']   || "#{HOST_ONLY_IP}:5000/sandbox-runtime:node24-latest"
 
 # First drone is 'trusted' (runc), rest are 'untrusted' (runsc), by default.
 TRUST_TIERS = (ENV['TRUST_TIERS'] || 'trusted,untrusted').split(',')
@@ -58,7 +60,9 @@ Vagrant.configure("2") do |config|
         "CONTROLLER_PORT" => CONTROLLER_PORT,
         "CLUSTER_NAME"    => CLUSTER_NAME,
         "DRONE_NUMBER"    => i.to_s,
-        "TRUST_TIER"      => trust
+        "TRUST_TIER"      => trust,
+        "PLANE_IMAGE"     => PLANE_IMAGE,
+        "RUNTIME_IMAGE"   => RUNTIME_IMAGE
       }
 
       drone.vm.provision "shell",

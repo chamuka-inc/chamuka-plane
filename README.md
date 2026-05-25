@@ -6,10 +6,27 @@ Ephemeral compute platform built on [Plane](https://github.com/jamsocket/plane) 
 
 ```bash
 git config core.hooksPath .githooks
-make build                              # build the Rust workspace
-cd dev-fleet && docker compose up -d    # start the local fleet
-./dev-fleet/scripts/smoke-test.sh       # verify everything works
+make clean
+make build
+make fleet-images    # chamuka-plane:latest + sandbox-runtime:node24-latest
+make fleet-up        # canonical Vagrant fleet (host services + VM drones)
+make smoke           # verify end-to-end
+make console-install # first time only
+make console-dev     # Next.js UI on :3000
 ```
+
+### Docker fallback
+
+If VirtualBox/Vagrant is unavailable, use the all-Docker fallback fleet:
+
+```bash
+make fleet-images
+make fleet-up-docker
+make smoke-docker
+make fleet-down-docker
+```
+
+See [dev-fleet/README.md](./dev-fleet/README.md) and [dev-fleet/OPS.md](./dev-fleet/OPS.md) for details.
 
 ## Repository layout
 
@@ -37,10 +54,13 @@ runtime-images/           OCI image Dockerfiles
 ├── desktop/              X11/VNC + agentd
 └── tests/                Smoke tests for each image (shared lib.sh harness)
 
-dev-fleet/                Docker Compose multi-drone fleet
-├── docker-compose.yml    Controller, proxy, 3 drones, Postgres, registry
+dev-fleet/                Local cluster (Vagrant canonical, Docker fallback)
+├── host/                 Host services for canonical Vagrant fleet
+├── docker-compose.yml    Docker-only fallback fleet
 ├── scripts/              Fleet status, smoke test, prereq checks
 └── OPS.md                API reference, troubleshooting, quick-start recipes
+
+console/                  Next.js operator console + ws-relay
 
 contracts/
 ├── schemas/              JSON Schemas generated from Rust types (CI-checked)
@@ -60,6 +80,11 @@ docs/                     Design documents
 |---|---|
 | `make ci` | Format check + clippy + tests (no Docker) |
 | `make ci-full` | Full CI including Docker integration tests |
+| `make fleet-images` | Build images required for local cluster |
+| `make fleet-up` | Start canonical Vagrant dev fleet |
+| `make fleet-up-docker` | Start Docker-only fallback fleet |
+| `make smoke` | End-to-end test (Vagrant fleet) |
+| `make console-dev` | Start console (Next.js + ws-relay) |
 | `make images` | Build all runtime images |
 | `make schemas` | Regenerate JSON schemas from Rust types |
 | `./scripts/status.sh` | Current phase, next step, walking-skeleton status |

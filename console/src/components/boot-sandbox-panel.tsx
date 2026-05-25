@@ -9,7 +9,7 @@ export const BOOT_RUNTIMES = [
   { label: "Node.js 24", runtime: "node24", image: "sandbox-runtime:node24-latest", icon: "N" },
   { label: "Python 3.13", runtime: "python313", image: "sandbox-runtime:python313-latest", icon: "P" },
   { label: "Agent", runtime: "agent", image: "sandbox-runtime:agent-latest", icon: "A" },
-  { label: "Desktop", runtime: "desktop", image: "sandbox-runtime:desktop-test", icon: "D" },
+  { label: "Desktop", runtime: "desktop", image: "sandbox-runtime:desktop-latest", icon: "D" },
 ] as const;
 
 export type BootedSandbox = {

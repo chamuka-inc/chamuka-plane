@@ -1,4 +1,7 @@
-# Full dev fleet — multi-drone cluster running entirely in Docker.
+# Docker-only fallback fleet — NOT the canonical cluster path.
+#
+# Use this when VirtualBox/Vagrant is unavailable. The canonical workflow
+# is Vagrant drones + host/docker-compose.yml (see `make fleet-up`).
 #
 # Replaces the Vagrant setup when VirtualBox is unavailable.
 # Topology:

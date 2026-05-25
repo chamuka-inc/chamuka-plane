@@ -45,14 +45,40 @@ interfaces](#verified-interfaces) below.
 
 ## Bring it up
 
+From the repo root:
+
+```bash
+make fleet-images   # build chamuka-plane:latest + sandbox-runtime:node24-latest
+make fleet-up       # host services + 3 VMs (same as: make -C dev-fleet up)
+make smoke          # end-to-end verification
+make console-install && make console-dev   # optional UI
+```
+
+Or from `dev-fleet/`:
+
 ```bash
 make check     # verify prerequisites
 make up        # host services + 3 VMs
 make smoke     # end-to-end verification
 ```
 
-First `make up` takes 5–10 minutes (downloading the Ubuntu box, pulling
+First `make fleet-up` takes 5–10 minutes (downloading the Ubuntu box, pulling
 images, provisioning). Subsequent runs are under a minute.
+
+## Docker fallback
+
+When VirtualBox/Vagrant is unavailable:
+
+```bash
+make fleet-images
+make fleet-up-docker
+make smoke-docker
+make fleet-down-docker
+```
+
+This uses [docker-compose.yml](./docker-compose.yml) (all services in Docker,
+cluster `localhost:9090`). It does **not** provide real gVisor isolation on
+drones — use the canonical Vagrant path for tiered-isolation testing.
 
 ## Configuration
 
@@ -81,9 +107,9 @@ upstream, the files below need updating.
 
 ### Plane image
 
-- `plane/plane:latest` — Docker Hub. Same image binary for controller,
-  drone, and proxy; the first CLI argument selects the role.
-  - Source: `docker/docker-compose.yml`, `plane/src/main.rs`.
+- `chamuka-plane:latest` — built locally from `crates/plane/docker/Dockerfile`.
+  Same image binary for controller, drone, and proxy; the first CLI argument
+  selects the role. Build with `make image-plane` from the repo root.
 
 ### Controller CLI
 
@@ -322,13 +348,14 @@ If runsc is missing, re-run provisioning: `vagrant reload --provision drone-2`.
 ## File layout
 
 ```
-sandbox-platform-dev/
+dev-fleet/
 ├── Vagrantfile               # drone fleet definition
 ├── Makefile                  # orchestration
 ├── README.md                 # this file
+├── docker-compose.yml        # Docker-only fallback fleet
 ├── .env.example              # documented config
 ├── host/
-│   └── docker-compose.yml    # control plane services
+│   └── docker-compose.yml    # canonical Vagrant host services
 ├── provision/
 │   ├── 00-common.sh          # base setup
 │   ├── 10-drone.sh           # Plane drone systemd unit

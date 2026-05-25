@@ -4,22 +4,15 @@
 # Spawns a sandbox on each pool, verifies proxy routing,
 # and exercises agentd endpoints (health, exec, fs).
 #
-# Requires: curl, python3, the dev fleet running (docker compose up -d).
+# Requires: curl, python3, and a running dev fleet.
 #
-# Routes verified against plane/src/controller/mod.rs,
-# plane-common/src/types/mod.rs, and agentd/src/server.rs:
-#   GET  /ctrl/c/{cluster}/state          — cluster state
-#   POST /ctrl/connect                    — spawn backend
-#   GET  /pub/b/{backend}/status          — backend status
-#   POST /ctrl/b/{backend}/soft-terminate — terminate
-#   GET  /{token}/health                  — agentd health (via proxy)
-#   POST /{token}/v1/exec                 — agentd exec (via proxy)
-#   GET  /{token}/v1/fs/read              — agentd fs read (via proxy)
-#   GET  /{token}/v1/fs/list              — agentd fs list (via proxy)
+# Prefer invoking via Make so cluster env is set correctly:
+#   make smoke          # canonical Vagrant fleet
+#   make smoke-docker   # Docker-only fallback fleet
 #
-# Usage:
+# Direct usage (Docker fallback defaults):
 #   ./dev-fleet/scripts/smoke-test.sh
-#   CONTROLLER=localhost:8080 PROXY=localhost:9090 ./dev-fleet/scripts/smoke-test.sh
+#   CONTROLLER=localhost:8080 PROXY=localhost:9090 CLUSTER=localhost:9090 ./dev-fleet/scripts/smoke-test.sh
 
 set -euo pipefail
 
@@ -119,6 +112,11 @@ terminate_backend() {
 # ─── Pre-flight ───────────────────────────────────────────────
 
 echo "=== Pre-flight ==="
+echo "  controller: $CONTROLLER"
+echo "  proxy:      $PROXY"
+echo "  cluster:    $CLUSTER"
+echo "  image:      $IMAGE"
+echo ""
 
 cluster_state=$(curl -sf "http://$CONTROLLER/ctrl/c/$ENCODED_CLUSTER/state" 2>/dev/null || echo "")
 if [ -z "$cluster_state" ]; then

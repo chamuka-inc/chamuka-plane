@@ -1,4 +1,7 @@
-# Host-side control plane.
+# Canonical Vagrant host services (control plane + registry).
+#
+# Used by `make fleet-up` together with Vagrant drone VMs.
+# Do not run alongside dev-fleet/docker-compose.yml (Docker fallback).
 #
 # Image and CLI flags verified against github.com/jamsocket/plane
 # (docker/docker-compose.yml, plane/src/controller/command.rs,
