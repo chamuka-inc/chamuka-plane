@@ -130,6 +130,38 @@ impl<'a> SandboxDatabase<'a> {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Hard-delete orphaned terminated sandboxes.
+    ///
+    /// Eligible rows: backend_id IS NULL (backend already reaped by Plane's
+    /// own cleanup at min_age_days) AND expires_at older than retention_days.
+    /// The cascade then fires on usage_record / audit_egress / port_route /
+    /// credential_binding / extension_action. snapshot.sandbox_id is SET NULL
+    /// (cycle 2), so snapshots survive and follow their own expires_at TTL.
+    ///
+    /// Returns the number of sandbox rows deleted.
+    pub async fn cleanup_terminated(
+        &self,
+        retention_days: i32,
+        batch_size: i32,
+    ) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM sandbox
+            WHERE id IN (
+                SELECT id FROM sandbox
+                WHERE backend_id IS NULL
+                  AND expires_at < now() - make_interval(days => $1)
+                LIMIT $2
+            )
+            "#,
+        )
+        .bind(retention_days)
+        .bind(batch_size)
+        .execute(self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
     pub async fn get_drone_id_for_backend(
         &self,
         backend_id: &str,

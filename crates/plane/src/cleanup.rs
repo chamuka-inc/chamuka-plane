@@ -5,6 +5,12 @@ const CLEANUP_LOOP_INTERVAL_SECONDS: u64 = 60 * 3;
 const DEFAULT_BATCH_SIZE: i32 = 100;
 const SECRET_RETENTION_DAYS: i32 = 30;
 const ACKED_ACTION_RETENTION_DAYS: i32 = 1;
+// Hard-delete sandboxes whose backend has been reaped (backend_id IS NULL)
+// and whose expires_at passed more than this many days ago. Drives the
+// cascade to usage_record / audit_egress / port_route / credential_binding
+// / extension_action. snapshot.sandbox_id is SET NULL (cycle 2) so snapshots
+// survive past this and follow their own expires_at retention.
+const SANDBOX_RETENTION_DAYS: i32 = 83;
 
 pub async fn run_cleanup(
     db: &PlaneDatabase,
@@ -49,6 +55,17 @@ async fn run_extension_cleanup(db: &PlaneDatabase, batch_size: i32) -> Result<()
         .await?;
     if actions_deleted > 0 {
         tracing::info!(actions_deleted, "Cleaned up acked extension actions");
+    }
+
+    let sandboxes_deleted = db
+        .sandbox()
+        .cleanup_terminated(SANDBOX_RETENTION_DAYS, batch_size)
+        .await?;
+    if sandboxes_deleted > 0 {
+        tracing::info!(
+            sandboxes_deleted,
+            "Cleaned up terminated sandboxes past retention"
+        );
     }
 
     Ok(())
@@ -662,13 +679,13 @@ mod tests {
 
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn backend_cleanup_cascades_sandbox_and_audit_rows() {
+    async fn backend_cleanup_preserves_sandbox_and_children() {
         let _guard = DB_LOCK.lock().unwrap();
         let pool = match test_pool().await {
             Some(p) => p,
             None => return,
         };
-        let f = setup(&pool, "bk-cascade").await;
+        let f = setup(&pool, "bk-preserve").await;
 
         sqlx::query(
             "INSERT INTO audit_egress (at, tenant, sandbox_id, destination_host,
@@ -696,7 +713,7 @@ mod tests {
         db.backend()
             .cleanup(7, 100)
             .await
-            .expect("backend cleanup should succeed with sandbox FK cascade");
+            .expect("backend cleanup should succeed");
 
         let backend_exists: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM backend WHERE id = $1)")
@@ -706,15 +723,18 @@ mod tests {
                 .expect("check backend");
         assert!(!backend_exists, "terminated backend should be deleted");
 
-        let sandbox_exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+        // After 20260607: backend deletion sets sandbox.backend_id to NULL
+        // rather than cascading. Sandbox + child rows are preserved past
+        // backend reaping; sandbox-level retention drives later hard-delete.
+        let sandbox_backend_id: Option<String> =
+            sqlx::query_scalar("SELECT backend_id FROM sandbox WHERE id = $1")
                 .bind(f.sandbox_id())
                 .fetch_one(&pool)
                 .await
                 .expect("check sandbox");
         assert!(
-            !sandbox_exists,
-            "sandbox should cascade-delete with backend"
+            sandbox_backend_id.is_none(),
+            "sandbox.backend_id should be SET NULL by backend reaping (got {sandbox_backend_id:?})"
         );
 
         let audit_exists: bool =
@@ -724,8 +744,92 @@ mod tests {
                 .await
                 .expect("check audit");
         assert!(
-            !audit_exists,
-            "audit_egress should cascade-delete with sandbox"
+            audit_exists,
+            "audit_egress should survive backend reaping (cascades only on sandbox delete)"
+        );
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_terminated_deletes_orphaned_past_retention() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-retention").await;
+
+        // Simulate backend already reaped: NULL out backend_id, push expires_at well past.
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                expires_at = now() - interval '100 days'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox orphaned + expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        let deleted = db
+            .sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+        assert!(
+            deleted >= 1,
+            "expected at least one sandbox deleted, got {deleted}"
+        );
+
+        let sandbox_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(!sandbox_exists, "sandbox should be hard-deleted");
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_preserves_within_retention() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-retain-within").await;
+
+        // Orphaned but expires_at only 1 day ago — should NOT be cleaned up.
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                expires_at = now() - interval '1 day'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox orphaned + recently expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+
+        let sandbox_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(
+            sandbox_exists,
+            "sandbox within retention should be preserved"
         );
 
         teardown(&pool, &f.suffix).await;
