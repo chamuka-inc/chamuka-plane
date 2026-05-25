@@ -45,7 +45,7 @@ This document tells future me: what to build first, what discipline to follow, a
 
 Four project-specific rules. Cross-cutting engineering discipline (TDD, code shape, source control, session handoff) lives in the [discipline doc](./sandbox-platform-discipline.md), imported in every session via [CLAUDE.md](../CLAUDE.md).
 
-**Rule 1: Discovery before scaffolding.** Three discovery spikes (Phase D in §8) precede any test infrastructure or binary work. They validate that the design holds by running it, not by reading it. Spikes are disposable; their findings — corrections to the docs, verified facts about Plane's behavior, one working live-e2e test — are not. If a spike fails, the docs are wrong; update them before proceeding.
+**Rule 1: Discovery before scaffolding.** Three discovery spikes (Phase D in §8) precede any test infrastructure or binary work. They validate that the design holds by running it, not by reading it. Spikes are disposable; their findings — corrections to the docs, verified facts about Plane's behavior, one working live smoke check — are not. If a spike fails, the docs are wrong; update them before proceeding.
 
 **Rule 2: Test infrastructure before binary code.** Before any binary implementation, we need a working `contracts/` directory, the `common` crate, fixtures derived from verified Plane source, the `common::stubs` mocks, schema generation, and CI workflows that can actually run something. This is [Phase 0](#8-implementation-order) and it's not optional — without it, "test-first" is just words.
 
@@ -306,7 +306,7 @@ Stages:
 
 1. SDK posts to a controller's `/ctrl/connect`.
 2. Controller picks a drone from `untrusted` pool.
-3. Drone pulls `sandbox-runtime:node24-skel` (minimal image with `agentd-headless`).
+3. Drone pulls `sandbox-runtime:node24-latest` (the maintained Node runtime image with `agentd`).
 4. Drone starts the container; `agentd` boots, listens on `:8080`.
 5. Drone emits `BackendEvent::Ready`.
 6. SDK opens HTTPS to `<cluster>/<token>/v1/exec` via the proxy.
@@ -316,17 +316,17 @@ Stages:
 
 ### 6.2 What it uses
 
-- **Stock Plane** (`plane/plane:latest`). Not our fork yet.
+- **Forked Plane** (`chamuka-plane:latest`) from `crates/plane/docker/Dockerfile`.
 - **Stock Postgres** (container).
 - **Our `agentd-headless`** binary.
 - **Our minimal sandbox-runtime image** (base + node 24 + agentd).
-- **A minimal `sdk-typescript`** (just `create`, `runCommand`, `stop`).
+- **The dev-fleet smoke script** (`dev-fleet/scripts/smoke-test.sh`).
 - **The dev fleet** for hosting.
 
 ### 6.3 What it does NOT use
 
-- No `/pub/v1/*` wrapper.
-- No egress proxy, no network policy, no credentials.
+- No SDK client wrapper.
+- No egress proxy, no network policy, no credentials in the minimum smoke path.
 - No snapshots.
 - No desktop variant.
 - No metering aggregation.
@@ -376,7 +376,7 @@ Format per binary: purpose, contracts in/out, what can be stubbed, the TDD layer
 cd crates/agentd
 cargo test                  # layers 1 and 2
 cargo test --test e2e_stubbed   # layer 3
-make live-e2e              # layer 4 (requires docker)
+make smoke-docker          # layer 4 fallback, from the repo root
 ```
 
 **Acceptance criteria.**
@@ -423,17 +423,16 @@ There's no Layer 1 here (these aren't testable as code). The relevant layers:
 cd runtime-images
 ./build.sh node24 v0.1.0          # buildx for amd64 + arm64
 ./tests/node24.sh                  # layer 2
-./tests/node24-runtime.sh          # layer 3
 ```
 
 **Acceptance criteria.**
-- Image sizes: base < 50 MB, node24 < 200 MB, python313 < 250 MB, bun1 < 100 MB.
+- Image sizes: base < 50 MB, node24 < 200 MB, python313 < 250 MB, ysweet < 250 MB.
 - Multi-arch (amd64 + arm64).
 - Cold start container → agentd ready: < 500 ms with image cached, runsc runtime.
 - Per-runtime smoke + in-runtime tests pass.
 
 **Done definition.**
-- `./build.sh all v0.1.0` produces all images for both arches.
+- Root Makefile image targets produce the maintained images.
 - All Layer 2/3 tests pass.
 - Dev-fleet smoke uses `node24` and passes.
 
@@ -493,7 +492,7 @@ cd runtime-images
 cd crates/plane
 cargo test -p plane --lib                  # layers 1+2
 cargo test -p plane --test controller_e2e  # layer 3 (uses MockDrone, real Postgres)
-make live-e2e-controller                   # layer 4 (real Plane image side-by-side)
+make smoke-docker                          # layer 4 fallback
 ```
 
 **Done definition.**
@@ -550,7 +549,7 @@ make live-e2e-controller                   # layer 4 (real Plane image side-by-s
 cd crates/plane
 cargo test -p plane --test drone_unit         # layer 1+2
 cargo test -p plane --test drone_e2e          # layer 3 (real Docker)
-make live-e2e-drone                            # layer 4 (real upstream Plane)
+make smoke-docker                              # layer 4 fallback
 ```
 
 **Done definition.**
@@ -631,7 +630,7 @@ cargo test -p plane --test proxy_e2e
 ```bash
 cd crates/egress-proxy
 cargo test
-make test-with-envoy   # layer 4
+make smoke-docker      # layer 4 fallback
 ```
 
 **Acceptance criteria.**
@@ -779,8 +778,6 @@ cd sdks/python
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 pytest tests/                    # layers 1+2
-pytest tests/e2e/                # layer 3
-pytest tests/walking_skeleton/   # layer 4
 ```
 
 **Done definition.**
@@ -843,27 +840,18 @@ D.2  First Layer-4 contract verification
         directory (will be cleaned up; the verified fixtures persist).
         This is the seed of Phase 0's Layer-4 infrastructure.
 
-D.3  Walking-skeleton spike
-     ├─ Disposable end-to-end implementation. No TDD, no per-binary
+D.3  Dev-fleet smoke spike
+     ├─ Disposable end-to-end validation. No TDD, no per-binary
      │  spec sheets, no contract-test layer beyond reuse of D.2 —
-     │  just enough code to run a real sandbox lifecycle.
-     ├─ Quick-and-dirty Rust agentd: single file, /health and /v1/exec
-     │  (sync only), maybe 200 lines.
-     ├─ Minimal node24 Dockerfile that wraps agentd.
-     ├─ Stock Plane (controller + drone + proxy) from the public image.
-     ├─ 100-line TypeScript script that talks to Plane's /ctrl/connect
-     │  directly, hits agentd via the proxy, runs `echo hi`, asserts
-     │  the output, then soft-terminates.
-     ├─ Run inside the existing dev-fleet (Vagrant VM).
-     ├─ Output: a green spike run, captured as a screen recording or
-     │  log file for future reference. The spike code lives on a
-     │  branch named `spike/dev-fleet-smoke`; it is NOT merged to
-     │  main. Phase 1 will reimplement these binaries under full TDD
-     │  discipline.
+     │  just enough infrastructure to run a real sandbox lifecycle.
+     ├─ Forked Plane image from `crates/plane/docker/Dockerfile`.
+     ├─ Maintained `sandbox-runtime:node24-latest` image with agentd.
+     ├─ Run `make smoke` against the existing dev fleet.
+     ├─ Output: a green smoke run, captured as a log file for future reference.
      └─ If the spike fails: identify why (network? Plane behavior we
-        misunderstood? our image misconfigured?), update the docs
-        with what we learned, retry the spike. Do not enter Phase 0
-        with a failing or skipped spike.
+        misunderstood? image misconfigured?), update the docs with what
+        we learned, retry the spike. Do not enter Phase 0 with a failing
+        or skipped spike.
 ```
 
 **End of Phase D:** the docs reflect verified reality, at least one Layer-4 contract test is known to work, and a disposable but green smoke path has run. Confidence in the design is no longer based on careful reading; it's based on having executed it. From here, Phase 0's investment makes sense.
@@ -886,10 +874,9 @@ This must complete before any binary work. Without it, "test-first" is not possi
 
 0.2  Fork Plane
      ├─ Clone jamsocket/plane into crates/plane/ (preserving git history)
-     ├─ Set up upstream tracking branch
      ├─ Confirm cargo build --release green
      ├─ Confirm cargo test green on upstream tests
-     └─ UPSTREAM.md documents the rebase strategy
+     └─ Treat `crates/plane/` as a hard fork; see §9
 
 0.3  Build common types
      ├─ common::protocol re-exports from plane::common
@@ -950,10 +937,10 @@ End of Phase 0: workspace builds, types compile, schemas committed, fixtures val
      └─ Push to local registry
 
 1.3  Dev-fleet smoke green
-     ├─ A 50-line sdk-typescript talks to stock Plane /ctrl/connect
+     ├─ `dev-fleet/scripts/smoke-test.sh` talks to the forked controller
      ├─ End-to-end: create, exec, stop
      ├─ This is also agentd-headless Layer 4
-     └─ Walking-skeleton CI workflow turns from "allowed red" to "must green"
+     └─ `agentd-smoke` CI stays green
 ```
 
 End of Phase 1: the canary flies. The simplest possible end-to-end works. Any future change that breaks this fails CI.
@@ -968,7 +955,7 @@ End of Phase 1: the canary flies. The simplest possible end-to-end works. Any fu
      └─ All four layers green for every endpoint
 
 2.2  sdk-typescript v0.1
-     ├─ Talks to stock Plane /ctrl/connect (still no /pub/v1/* wrapper)
+     ├─ Talks to forked Plane /ctrl/connect (still no /pub/v1/* wrapper)
      ├─ Full method surface (runCommand, writeFiles, etc.)
      ├─ Layers 1, 2, 3 green; Layer 4 = dev-fleet smoke
      └─ Publish to private registry

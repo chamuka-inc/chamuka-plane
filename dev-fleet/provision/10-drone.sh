@@ -131,7 +131,7 @@ systemctl restart plane-drone.service
 #
 # We look up the cluster state via /ctrl/c/{cluster}/state and check
 # the `drones` array for our drone name. Verified route from
-# plane/src/controller/mod.rs and common/src/lib.rs (cluster_state).
+# plane/src/controller/mod.rs and crates/plane-common/src/lib.rs (cluster_state).
 
 # URL-encode the cluster name (it contains a colon).
 encoded_cluster=$(printf '%s' "${CLUSTER_NAME}" | sed 's/:/%3A/g')

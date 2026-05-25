@@ -57,7 +57,7 @@ runtime-images/           OCI image Dockerfiles
 dev-fleet/                Local cluster (Vagrant canonical, Docker fallback)
 ├── host/                 Host services for canonical Vagrant fleet
 ├── docker-compose.yml    Docker-only fallback fleet
-├── scripts/              Fleet status, smoke test, prereq checks
+├── scripts/              Smoke test and prereq checks
 └── OPS.md                API reference, troubleshooting, quick-start recipes
 
 console/                  Next.js operator console + ws-relay

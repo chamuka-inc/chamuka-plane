@@ -470,7 +470,7 @@ Public:
 
 ### 4.2 `GET /ctrl/c/:cluster/state` — `ClusterState`
 
-Returns the verified shape (`common/src/types/mod.rs:498`):
+Returns the verified shape (`crates/plane-common/src/types/mod.rs`):
 
 ```ts
 type ClusterState = {
@@ -513,7 +513,7 @@ URL format constructed by `ConnectResponse::new`:
 {protocol}://{[subdomain.]cluster}/{token}/
 ```
 
-`protocol` is `https` if the cluster name lacks a port; `http` if it has one (dev cluster). Verified at `common/src/types/mod.rs:407`.
+`protocol` is `https` if the cluster name lacks a port; `http` if it has one (dev cluster). Verified at `crates/plane-common/src/types/mod.rs`.
 
 ### 4.4 Our extensions to `/ctrl/*`
 
@@ -1432,7 +1432,7 @@ type BackendStatus =
   | "terminated";
 ```
 
-Serialized as `lowercase`. Source: `common/src/types/backend_state.rs:9`.
+Serialized as `lowercase`. Source: `crates/plane-common/src/types/backend_state.rs`.
 
 Forward-only. The integer ordering (used for `last_status_number`):
 
@@ -1449,7 +1449,7 @@ Forward-only. The integer ordering (used for `last_status_number`):
 
 ### 14.2 `BackendState` — Plane
 
-A **tagged union**, not a flat string. Wire shape: `{"status": "<status>", ...other fields}`. Source: `common/src/types/backend_state.rs:88`.
+A **tagged union**, not a flat string. Wire shape: `{"status": "<status>", ...other fields}`. Source: `crates/plane-common/src/types/backend_state.rs`.
 
 ```ts
 type BackendState =
@@ -1488,7 +1488,7 @@ This is the type carried on the **Drone↔Controller WebSocket** (`MessageFromDr
 
 ### 14.4 `BackendStatusStreamEntry` — Plane
 
-The type returned by `GET /pub/b/:backend/status` and emitted as the `data:` payload on `GET /pub/b/:backend/status-stream`. Source: `common/src/types/backend_state.rs`.
+The type returned by `GET /pub/b/:backend/status` and emitted as the `data:` payload on `GET /pub/b/:backend/status-stream`. Source: `crates/plane-common/src/types/backend_state.rs`.
 
 ```ts
 type BackendStatusStreamEntry = {
@@ -1513,7 +1513,7 @@ Derivation from `BackendState` (the richer type the drone reports):
 
 ### 14.5 `DockerExecutorConfig` — Plane
 
-Source: `common/src/types/mod.rs:224`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type DockerExecutorConfig = {
@@ -1550,7 +1550,7 @@ type ResourceLimits = {
 
 ### 14.6 `KeyConfig` — Plane
 
-Source: `common/src/types/mod.rs:287`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type KeyConfig = {
@@ -1564,7 +1564,7 @@ A random key has `name: "lk-<random>"`, namespace and tag empty.
 
 ### 14.7 `SpawnConfig` — Plane
 
-Source: `common/src/types/mod.rs:251`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type SpawnConfig = {
@@ -1581,7 +1581,7 @@ type SpawnConfig = {
 
 ### 14.8 `ConnectRequest` — Plane
 
-Source: `common/src/types/mod.rs:315`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type ConnectRequest = {
@@ -1594,7 +1594,7 @@ type ConnectRequest = {
 
 ### 14.9 `ConnectResponse` — Plane
 
-Source: `common/src/types/mod.rs:382`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type ConnectResponse = {

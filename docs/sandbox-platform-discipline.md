@@ -222,7 +222,7 @@ The TDD discipline (§1) says how code arrives in the tree. This section says wh
 
 **No `#[allow(...)]` without justification comment.** Same shape as `unsafe`: a comment explaining why this lint is being silenced.
 
-**No PRs that change types without regenerating schemas and SDK types.** The contracts workflow catches this; the discipline is to run `cargo run --bin generate-schemas && cargo run --bin generate-sdk-types` before pushing, not let CI tell me. A type change that updates schemas but not SDK types (or vice versa) is an incomplete propagation — CI rejects it.
+**No PRs that change types without regenerating schemas and SDK types.** The contracts workflow catches this; the discipline is to run `cargo run --bin generate-schemas && cargo run --bin generate-sdk-types` before pushing, not let CI tell me. A type change that updates schemas but not SDK types (or vice versa) is an incomplete propagation.
 
 ### 2.5 Enforcement
 
@@ -260,7 +260,7 @@ Each binary crate inherits via `lints.workspace = true`.
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+cargo test --workspace --all-features --exclude plane-tests
 ```
 
 Any violation fails the build.
@@ -385,7 +385,7 @@ in commit abcd1234.
 **Generated-but-committed exceptions:**
 - `Cargo.lock` — committed for binary crates (this whole workspace is binaries).
 - `contracts/schemas/*.schema.json` — generated from Rust types but committed; CI fails if they're stale (§3.8).
-- `sdks/typescript/packages/*/src/generated/types.ts` and `sdks/python/.../generated/`— generated from schemas but committed for the same reason.
+- `sdks/typescript/src/generated/types.ts` and `sdks/python/src/sandbox_platform/generated/`— generated from schemas but committed for the same reason.
 
 ### 3.5 .gitignore
 

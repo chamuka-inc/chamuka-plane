@@ -40,7 +40,8 @@ interfaces](#verified-interfaces) below.
 - 30 GB free disk
 - Ports 8080, 9090, 5432, 5000 free on the host
 
-`make check` validates these before bringing the fleet up.
+`make -C dev-fleet check` validates these before bringing the fleet up. The
+root `make check` target type-checks the Rust workspace.
 
 ## Bring it up
 
@@ -188,7 +189,7 @@ proxy) and `/pub/*` (public).
 | POST | `/ctrl/b/revoke` | Revoke a connection token. |
 
 Source: `plane/src/controller/mod.rs` (router definition) and
-`common/src/lib.rs` (`PlaneClient` URL builders).
+`crates/plane-common/src/lib.rs` (`PlaneClient` URL builders).
 
 ### `ConnectRequest` body shape
 
@@ -222,7 +223,7 @@ Source: `plane/src/controller/mod.rs` (router definition) and
 }
 ```
 
-Source: `common/src/types/mod.rs` (`ConnectRequest`, `SpawnConfig`,
+Source: `crates/plane-common/src/types/mod.rs` (`ConnectRequest`, `SpawnConfig`,
 `KeyConfig`, `DockerExecutorConfig`).
 
 ### `ConnectResponse` shape
@@ -241,7 +242,7 @@ Source: `common/src/types/mod.rs` (`ConnectRequest`, `SpawnConfig`,
 }
 ```
 
-Source: `common/src/types/mod.rs` (`ConnectResponse`).
+Source: `crates/plane-common/src/types/mod.rs` (`ConnectResponse`).
 
 ### Cluster name format
 
@@ -250,7 +251,7 @@ A cluster name is either:
 - `host` (prod) — proxy serves HTTPS, needs ACME setup.
 
 Detection: presence of a colon in the name. Source:
-`plane/src/proxy/command.rs` and quickstart docs.
+`plane/src/proxy/command.rs`.
 
 ## What's running where
 
@@ -351,8 +352,11 @@ dev-fleet/
 ├── provision/
 │   ├── 00-common.sh          # base setup
 │   ├── 10-drone.sh           # Plane drone systemd unit
-│   └── 20-runsc.sh           # gVisor (untrusted tier only)
+│   ├── 20-runsc.sh           # gVisor (untrusted tier only)
+│   └── 30-kata.sh            # Kata/Firecracker (paranoid tier)
 └── scripts/
+    ├── check-docker-prereqs.sh
     ├── check-prereqs.sh
+    ├── ensure-hostonlynet.sh
     └── smoke-test.sh
 ```
