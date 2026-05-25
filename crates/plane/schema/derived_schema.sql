@@ -518,8 +518,7 @@ CREATE TABLE public.credential_binding (
     destination text NOT NULL,
     header_name text NOT NULL,
     header_format text DEFAULT '{value}'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    revoked_at timestamp with time zone
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1254,13 +1253,6 @@ CREATE INDEX idx_backend_static_token ON public.backend USING btree (static_toke
 --
 
 CREATE UNIQUE INDEX idx_cluster_name ON public.node USING btree (cluster, name);
-
-
---
--- Name: idx_credential_sandbox; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_credential_sandbox ON public.credential_binding USING btree (sandbox_id) WHERE (revoked_at IS NULL);
 
 
 --
