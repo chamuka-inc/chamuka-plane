@@ -63,11 +63,12 @@ fn resolve_image_known_runtime_with_registry() {
 }
 
 #[test]
-fn resolve_image_ignores_explicit_for_known_runtime() {
+fn resolve_image_rejects_explicit_for_known_runtime() {
     use super::api_v1::resolve_image;
-    assert_eq!(
-        resolve_image("node24", Some("my-org/custom:v1"), None).expect("resolve"),
-        "sandbox-runtime:node24-latest"
+    let result = resolve_image("node24", Some("my-org/custom:v1"), None);
+    assert!(
+        result.is_err(),
+        "expected error when explicit image is supplied for a known runtime"
     );
 }
 

@@ -31,6 +31,12 @@ pub(crate) fn resolve_runtime_image(
     }
 
     if let Some((_, repository)) = RUNTIME_REPOS.iter().find(|(name, _)| *name == runtime) {
+        if explicit_image.is_some() {
+            return Err(ApiError::invalid_request(format!(
+                "image override is not allowed for known runtime '{runtime}'; \
+                 use runtime \"custom\" with an explicit image to override"
+            )));
+        }
         return Ok(qualify_image(repository, registry));
     }
 
