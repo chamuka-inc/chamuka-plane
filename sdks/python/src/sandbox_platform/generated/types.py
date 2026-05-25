@@ -335,7 +335,6 @@ class SignalRequest(BaseModel):
 
 class Sandbox(BaseModel):
     arch: Arch
-    backend_id: str
     cluster: str
     created_at: str
     expires_at: str
@@ -349,6 +348,7 @@ class Sandbox(BaseModel):
     tenant: str
     trust: TrustLevel
     updated_at: str
+    backend_id: str | None = None
     drone_name: str | None = None
     ready_at: str | None = None
     snapshot_source: str | None = None

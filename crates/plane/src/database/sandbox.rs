@@ -173,7 +173,7 @@ impl<'a> SandboxDatabase<'a> {
 #[derive(Debug, Clone, FromRow)]
 pub struct SandboxRow {
     pub id: String,
-    pub backend_id: String,
+    pub backend_id: Option<String>,
     pub tenant: String,
     pub runtime: String,
     pub trust_tier: String,

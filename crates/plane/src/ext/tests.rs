@@ -222,7 +222,7 @@ fn fixture_create_sandbox_response_deserializes() {
     let resp: CreateSandboxResponse =
         serde_json::from_str(&json).expect("deserialize response fixture");
     assert_eq!(resp.sandbox.id, "sb-new001");
-    assert_eq!(resp.sandbox.backend_id, "bk-gen789");
+    assert_eq!(resp.sandbox.backend_id.as_deref(), Some("bk-gen789"));
     assert_eq!(resp.sandbox.cluster, "us-east-1");
     assert_eq!(resp.connection.token, "tk-a1b2c3d4e5f6");
 }

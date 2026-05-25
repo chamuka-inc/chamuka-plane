@@ -55,6 +55,15 @@ pub(crate) fn extract_tenant(headers: &HeaderMap) -> Result<String, ApiError> {
         .ok_or_else(|| ApiError::unauthenticated("missing or invalid X-Auth-Tenant header"))
 }
 
+/// Return the row's backend_id, or a 410 Gone error if the backend has
+/// been reaped past retention. Use this in any endpoint that needs to
+/// dispatch a message to the sandbox's drone or query Plane backend state.
+fn require_backend_id(row: &SandboxRow) -> Result<&str, ApiError> {
+    row.backend_id
+        .as_deref()
+        .ok_or_else(|| ApiError::gone("Sandbox backend has been reaped; operation not available"))
+}
+
 async fn get_sandbox_row(
     controller: &Controller,
     id: &str,
@@ -184,7 +193,7 @@ pub async fn create_sandbox(
 
     let sandbox = Sandbox {
         id: sandbox_id.to_string(),
-        backend_id: connect_response.backend_id.to_string(),
+        backend_id: Some(connect_response.backend_id.to_string()),
         tenant,
         status: BackendStatus::Scheduled,
         runtime: request.runtime.clone(),
@@ -242,8 +251,9 @@ pub async fn get_sandbox(
             .map(|c| c.to_string())
             .unwrap_or_default();
         let url = format!("http://{}/{}/", cluster, token);
-        let status_url = plane_common::names::BackendName::try_from(backend_id.clone())
-            .ok()
+        let status_url = backend_id
+            .clone()
+            .and_then(|b| plane_common::names::BackendName::try_from(b).ok())
             .map(|bn| controller.client.backend_status_url(&bn).to_string())
             .unwrap_or_default();
         SandboxConnection {
@@ -319,9 +329,8 @@ pub async fn delete_sandbox(
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &id, &tenant).await?;
 
-    let backend_id: plane_common::names::BackendName = row
-        .backend_id
-        .clone()
+    let backend_id_str = require_backend_id(&row)?.to_string();
+    let backend_id: plane_common::names::BackendName = backend_id_str
         .try_into()
         .map_err(|_| ApiError::internal("Invalid backend_id stored in sandbox row"))?;
 
@@ -388,9 +397,8 @@ pub async fn sandbox_status(
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &id, &tenant).await?;
 
-    let backend_id: plane_common::names::BackendName = row
-        .backend_id
-        .clone()
+    let backend_id_str = require_backend_id(&row)?.to_string();
+    let backend_id: plane_common::names::BackendName = backend_id_str
         .try_into()
         .map_err(|_| ApiError::internal("Invalid backend_id stored in sandbox row"))?;
 
@@ -456,6 +464,7 @@ pub async fn snapshot_sandbox(
 ) -> Result<(StatusCode, Json<SnapshotResponse>), ApiError> {
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &id, &tenant).await?;
+    let backend_id = require_backend_id(&row)?.to_string();
 
     let snapshot_id = format!("snap-{}", plane_common::util::random_string());
     let action_id = super::types::ExtensionActionId::new();
@@ -485,7 +494,7 @@ pub async fn snapshot_sandbox(
 
     let wire = super::dispatch::build_snapshot_command(
         action_id.as_ref(),
-        &row.backend_id,
+        &backend_id,
         request.ttl_days,
         request.name.as_deref(),
     );
@@ -494,7 +503,7 @@ pub async fn snapshot_sandbox(
     enqueue_extension_action(
         &controller,
         ExtensionActionKind::Snapshot,
-        &row.backend_id,
+        &backend_id,
         &row.id,
         &payload,
     )
@@ -527,6 +536,7 @@ pub async fn update_network_policy(
 ) -> Result<Json<NetworkPolicy>, ApiError> {
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &id, &tenant).await?;
+    let backend_id = require_backend_id(&row)?.to_string();
 
     let policy_json = serde_json::to_value(&policy).unwrap_or_default();
     let updated = controller
@@ -546,7 +556,7 @@ pub async fn update_network_policy(
     enqueue_extension_action(
         &controller,
         ExtensionActionKind::PushPolicy,
-        &row.backend_id,
+        &backend_id,
         &row.id,
         &policy_json,
     )
@@ -563,6 +573,7 @@ pub async fn create_credential_binding(
 ) -> Result<(StatusCode, Json<CredentialBinding>), ApiError> {
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
+    let backend_id = require_backend_id(&row)?.to_string();
 
     // Reject binding to a missing or soft-deleted secret up-front. Without this,
     // the FK only checks row existence and a tombstoned secret would silently
@@ -601,7 +612,7 @@ pub async fn create_credential_binding(
         })?;
 
     let payload = serde_json::to_value(super::dispatch::build_push_credential(
-        &row.backend_id,
+        &backend_id,
         &cred_id,
         &request.destination,
         &request.header_name,
@@ -613,7 +624,7 @@ pub async fn create_credential_binding(
     enqueue_extension_action(
         &controller,
         ExtensionActionKind::PushCredential,
-        &row.backend_id,
+        &backend_id,
         &sandbox_id,
         &payload,
     )
@@ -641,6 +652,7 @@ pub async fn delete_credential_binding(
 ) -> Result<StatusCode, ApiError> {
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
+    let backend_id = require_backend_id(&row)?.to_string();
 
     let deleted = controller
         .db
@@ -660,7 +672,7 @@ pub async fn delete_credential_binding(
     enqueue_extension_action(
         &controller,
         ExtensionActionKind::RevokeCredential,
-        &row.backend_id,
+        &backend_id,
         &sandbox_id,
         &payload,
     )

@@ -826,7 +826,7 @@ ALTER TABLE public.port_route OWNER TO postgres;
 
 CREATE TABLE public.sandbox (
     id character varying(255) NOT NULL,
-    backend_id character varying(255) NOT NULL,
+    backend_id character varying(255),
     tenant character varying(255) NOT NULL,
     runtime character varying(255) NOT NULL,
     trust_tier character varying(64) NOT NULL,
@@ -1510,7 +1510,7 @@ ALTER TABLE ONLY public.port_route
 --
 
 ALTER TABLE ONLY public.sandbox
-    ADD CONSTRAINT sandbox_backend_id_fkey FOREIGN KEY (backend_id) REFERENCES public.backend(id) ON DELETE CASCADE;
+    ADD CONSTRAINT sandbox_backend_id_fkey FOREIGN KEY (backend_id) REFERENCES public.backend(id) ON DELETE SET NULL;
 
 
 --

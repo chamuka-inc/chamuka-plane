@@ -58,7 +58,13 @@ export type WatchOptions = {
 };
 
 export type SandboxConnectionInfo = {
-  backend_id: string;
+  /**
+   * Plane backend currently hosting this sandbox. Null once the backend has
+   * been reaped past retention — the sandbox row outlives its backend.
+   * Operations requiring drone dispatch (terminate, snapshot, etc.) return
+   * 410 Gone when this is null.
+   */
+  backend_id: string | null;
   url: string;
   status_url: string;
   secret_token?: string;
@@ -67,7 +73,7 @@ export type SandboxConnectionInfo = {
 export class Sandbox {
   protected readonly dataPlaneClient: HttpClient;
   protected readonly baseUrl: string;
-  readonly backendId: string;
+  readonly backendId: string | null;
   readonly url: string;
   readonly statusUrl: string;
   readonly secretToken: string | undefined;
@@ -88,7 +94,7 @@ export class Sandbox {
   }
 
   constructor(connection: SandboxConnectionInfo, baseUrl: string) {
-    this.backendId = connection.backend_id;
+    this.backendId = connection.backend_id ?? null;
     this.url = connection.url;
     this.statusUrl = connection.status_url;
     this.secretToken = connection.secret_token;
@@ -106,7 +112,7 @@ export class Sandbox {
     const client = new SandboxClient(resolved);
     const response = await client.create(request);
     const connectionInfo: SandboxConnectionInfo = {
-      backend_id: response.sandbox.backend_id,
+      backend_id: response.sandbox.backend_id ?? null,
       url: response.connection.url,
       status_url: response.connection.status_url,
     };
@@ -131,7 +137,7 @@ export class Sandbox {
     if (!connection) {
       const sandbox = new Sandbox(
         {
-          backend_id: response.sandbox.backend_id,
+          backend_id: response.sandbox.backend_id ?? null,
           url: "",
           status_url: "",
         },
@@ -143,7 +149,7 @@ export class Sandbox {
     }
 
     const connectionInfo: SandboxConnectionInfo = {
-      backend_id: response.sandbox.backend_id,
+      backend_id: response.sandbox.backend_id ?? null,
       url: connection.url,
       status_url: connection.status_url,
     };

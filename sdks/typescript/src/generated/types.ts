@@ -255,7 +255,7 @@ export type SignalRequest = {
 
 export type Sandbox = {
   arch: Arch;
-  backend_id: string;
+  backend_id?: string | null;
   cluster: string;
   created_at: string;
   drone_name?: string | null;
