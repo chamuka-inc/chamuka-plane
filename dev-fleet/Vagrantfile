@@ -20,8 +20,8 @@ HOST_ONLY_IP    = ENV['HOST_ONLY_IP']     || '192.168.56.1'
 CONTROLLER_PORT = ENV['CONTROLLER_PORT']  || '8080'
 PROXY_PORT      = ENV['PROXY_PORT']       || '9090'
 CLUSTER_NAME    = ENV['CLUSTER_NAME']     || "#{HOST_ONLY_IP}:#{PROXY_PORT}"
-PLANE_IMAGE     = ENV['PLANE_IMAGE']     || "#{HOST_ONLY_IP}:5000/chamuka-plane:latest"
-RUNTIME_IMAGE   = ENV['RUNTIME_IMAGE']   || "#{HOST_ONLY_IP}:5000/sandbox-runtime:node24-latest"
+PLANE_IMAGE     = ENV['VAGRANT_PLANE_IMAGE'] || "#{HOST_ONLY_IP}:5000/chamuka-plane:latest"
+RUNTIME_IMAGE   = ENV['VAGRANT_RUNTIME_IMAGE'] || "#{HOST_ONLY_IP}:5000/sandbox-runtime:node24-latest"
 
 # First drone is 'trusted' (runc), rest are 'untrusted' (runsc), by default.
 TRUST_TIERS = (ENV['TRUST_TIERS'] || 'trusted,untrusted').split(',')
