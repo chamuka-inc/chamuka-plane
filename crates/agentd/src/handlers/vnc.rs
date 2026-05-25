@@ -57,34 +57,53 @@ async fn relay(mut client: WebSocket) {
     loop {
         tokio::select! {
             msg = StreamExt::next(&mut upstream) => {
-                match msg {
-                    Some(Ok(tungstenite::Message::Binary(data)))
-                        if client.send(Message::Binary(data.clone())).await.is_err() =>
-                    {
-                        break;
-                    }
-                    Some(Ok(tungstenite::Message::Close(_))) | None => break,
-                    Some(Err(_)) => break,
-                    _ => {}
+                let Some(msg) = msg else { break };
+                let Ok(msg) = msg else { break };
+                if relay_upstream_to_client(msg, &mut client).await.is_err() {
+                    break;
                 }
             }
             msg = client.recv() => {
-                match msg {
-                    Some(Ok(Message::Binary(data)))
-                        if upstream
-                            .send(tungstenite::Message::Binary(data.clone()))
-                            .await
-                            .is_err() =>
-                    {
-                        break;
-                    }
-                    Some(Ok(Message::Close(_))) | None => break,
-                    Some(Err(_)) => break,
-                    _ => {}
+                let Some(msg) = msg else { break };
+                let Ok(msg) = msg else { break };
+                if relay_client_to_upstream(msg, &mut upstream).await.is_err() {
+                    break;
                 }
             }
         }
     }
 
     let _ = upstream.close(None).await;
+}
+
+async fn relay_upstream_to_client(
+    msg: tungstenite::Message,
+    client: &mut WebSocket,
+) -> Result<(), ()> {
+    let translated = match msg {
+        tungstenite::Message::Binary(data) => Message::Binary(data),
+        tungstenite::Message::Text(text) => Message::Text(text.as_str().into()),
+        tungstenite::Message::Ping(data) => Message::Ping(data),
+        tungstenite::Message::Pong(data) => Message::Pong(data),
+        tungstenite::Message::Close(_) => return Err(()),
+        tungstenite::Message::Frame(_) => return Ok(()),
+    };
+    client.send(translated).await.map_err(|_| ())
+}
+
+async fn relay_client_to_upstream<S>(
+    msg: Message,
+    upstream: &mut tokio_tungstenite::WebSocketStream<S>,
+) -> Result<(), ()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let translated = match msg {
+        Message::Binary(data) => tungstenite::Message::Binary(data),
+        Message::Text(text) => tungstenite::Message::Text(text.as_str().into()),
+        Message::Ping(data) => tungstenite::Message::Ping(data),
+        Message::Pong(data) => tungstenite::Message::Pong(data),
+        Message::Close(_) => return Err(()),
+    };
+    upstream.send(translated).await.map_err(|_| ())
 }
