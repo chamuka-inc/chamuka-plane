@@ -209,7 +209,6 @@ mod tests {
             ("audit_egress", "sandbox_id", &sandbox_id),
             ("port_route", "sandbox_id", &sandbox_id),
             ("usage_record", "sandbox_id", &sandbox_id),
-            ("network_policy", "sandbox_id", &sandbox_id),
             ("snapshot", "sandbox_id", &sandbox_id),
             ("backend_action", "backend_id", &backend_id),
             ("backend_key", "id", &backend_id),
@@ -657,6 +656,76 @@ mod tests {
                 .await
                 .expect("check");
         assert!(act_gone, "old acked action should be cleaned up");
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn backend_cleanup_cascades_sandbox_and_audit_rows() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "bk-cascade").await;
+
+        sqlx::query(
+            "INSERT INTO audit_egress (at, sandbox_id, destination_host, destination_port,
+                                       protocol, action)
+             VALUES (now(), $1, 'example.com', 443, 'tls', 'allow')",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("insert audit row");
+
+        sqlx::query(
+            "UPDATE backend
+             SET last_status = 'terminated',
+                 last_status_time = now() - interval '8 days'
+             WHERE id = $1",
+        )
+        .bind(f.backend_id())
+        .execute(&pool)
+        .await
+        .expect("mark backend terminated");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.backend()
+            .cleanup(7, 100)
+            .await
+            .expect("backend cleanup should succeed with sandbox FK cascade");
+
+        let backend_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM backend WHERE id = $1)")
+                .bind(f.backend_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check backend");
+        assert!(!backend_exists, "terminated backend should be deleted");
+
+        let sandbox_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(
+            !sandbox_exists,
+            "sandbox should cascade-delete with backend"
+        );
+
+        let audit_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM audit_egress WHERE sandbox_id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check audit");
+        assert!(
+            !audit_exists,
+            "audit_egress should cascade-delete with sandbox"
+        );
 
         teardown(&pool, &f.suffix).await;
     }

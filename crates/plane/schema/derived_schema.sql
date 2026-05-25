@@ -92,6 +92,54 @@ COMMENT ON COLUMN public.acme_txt_entries.txt_value IS 'The TXT value of the ent
 
 
 --
+-- Name: audit_egress; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.audit_egress (
+    id integer NOT NULL,
+    at timestamp with time zone NOT NULL,
+    sandbox_id character varying(255) NOT NULL,
+    destination_host text NOT NULL,
+    destination_port integer NOT NULL,
+    destination_ip inet,
+    protocol character varying(16) NOT NULL,
+    action character varying(32) NOT NULL,
+    policy_rule_index integer,
+    bytes_sent bigint DEFAULT 0 NOT NULL,
+    bytes_received bigint DEFAULT 0 NOT NULL,
+    duration_ms integer DEFAULT 0 NOT NULL,
+    tls_sni text,
+    http_host text,
+    http_path text,
+    http_status integer
+);
+
+
+ALTER TABLE public.audit_egress OWNER TO postgres;
+
+--
+-- Name: audit_egress_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.audit_egress_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.audit_egress_id_seq OWNER TO postgres;
+
+--
+-- Name: audit_egress_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.audit_egress_id_seq OWNED BY public.audit_egress.id;
+
+
+--
 -- Name: backend; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -460,6 +508,24 @@ COMMENT ON COLUMN public.controller.ip IS 'The last-seen IP of the controller (a
 
 
 --
+-- Name: credential_binding; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.credential_binding (
+    id character varying(255) NOT NULL,
+    sandbox_id character varying(255) NOT NULL,
+    secret_id character varying(255) NOT NULL,
+    destination text NOT NULL,
+    header_name text NOT NULL,
+    header_format text DEFAULT '{value}'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone
+);
+
+
+ALTER TABLE public.credential_binding OWNER TO postgres;
+
+--
 -- Name: drone; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -619,6 +685,24 @@ ALTER SEQUENCE public.event_id_seq OWNED BY public.event.id;
 
 
 --
+-- Name: extension_action; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.extension_action (
+    id character varying(255) NOT NULL,
+    kind character varying(64) NOT NULL,
+    backend_id character varying(255),
+    sandbox_id character varying(255),
+    drone_id integer NOT NULL,
+    payload jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    acked_at timestamp with time zone
+);
+
+
+ALTER TABLE public.extension_action OWNER TO postgres;
+
+--
 -- Name: node; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -723,6 +807,109 @@ ALTER SEQUENCE public.node_id_seq OWNED BY public.node.id;
 
 
 --
+-- Name: port_route; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.port_route (
+    sandbox_id character varying(255) NOT NULL,
+    port integer NOT NULL,
+    subdomain_token character varying(255) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.port_route OWNER TO postgres;
+
+--
+-- Name: sandbox; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.sandbox (
+    id character varying(255) NOT NULL,
+    backend_id character varying(255) NOT NULL,
+    tenant character varying(255) NOT NULL,
+    runtime character varying(255) NOT NULL,
+    trust_tier character varying(64) NOT NULL,
+    arch character varying(16) NOT NULL,
+    image text NOT NULL,
+    vcpus integer NOT NULL,
+    memory_mb integer NOT NULL,
+    ports integer[] DEFAULT '{}'::integer[] NOT NULL,
+    tags jsonb DEFAULT '{}'::jsonb NOT NULL,
+    persistent boolean DEFAULT false NOT NULL,
+    snapshot_source character varying(255),
+    network_policy jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    ready_at timestamp with time zone,
+    terminated_at timestamp with time zone
+);
+
+
+ALTER TABLE public.sandbox OWNER TO postgres;
+
+--
+-- Name: secret; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.secret (
+    id character varying(255) NOT NULL,
+    tenant character varying(255) NOT NULL,
+    name text,
+    kms_key_id text,
+    wrapped_data_key bytea,
+    nonce bytea,
+    ciphertext bytea,
+    auth_tag bytea,
+    tags jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    encrypted_value text,
+    CONSTRAINT secret_storage_present CHECK (((encrypted_value IS NOT NULL) OR ((kms_key_id IS NOT NULL) AND (wrapped_data_key IS NOT NULL) AND (nonce IS NOT NULL) AND (ciphertext IS NOT NULL) AND (auth_tag IS NOT NULL))))
+);
+
+
+ALTER TABLE public.secret OWNER TO postgres;
+
+--
+-- Name: snapshot; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.snapshot (
+    id character varying(255) NOT NULL,
+    sandbox_id character varying(255) NOT NULL,
+    tenant character varying(255) NOT NULL,
+    image_ref text NOT NULL,
+    digest character varying(128) NOT NULL,
+    base_image text NOT NULL,
+    size_bytes bigint NOT NULL,
+    arch character varying(16) NOT NULL,
+    runtime character varying(255) NOT NULL,
+    name text,
+    tags jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE public.snapshot OWNER TO postgres;
+
+--
+-- Name: tenant; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.tenant (
+    id character varying(255) NOT NULL,
+    name text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+ALTER TABLE public.tenant OWNER TO postgres;
+
+--
 -- Name: token; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -788,6 +975,29 @@ COMMENT ON COLUMN public.token.secret_token IS 'A secret token optionally used f
 
 
 --
+-- Name: usage_record; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.usage_record (
+    sandbox_id character varying(255) NOT NULL,
+    bucket_start timestamp with time zone NOT NULL,
+    cpu_nsec bigint NOT NULL,
+    memory_mb_seconds bigint NOT NULL,
+    rx_bytes bigint DEFAULT 0 NOT NULL,
+    tx_bytes bigint DEFAULT 0 NOT NULL
+);
+
+
+ALTER TABLE public.usage_record OWNER TO postgres;
+
+--
+-- Name: audit_egress id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.audit_egress ALTER COLUMN id SET DEFAULT nextval('public.audit_egress_id_seq'::regclass);
+
+
+--
 -- Name: backend_state id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -832,6 +1042,14 @@ ALTER TABLE ONLY public.acme_txt_entries
 
 
 --
+-- Name: audit_egress audit_egress_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.audit_egress
+    ADD CONSTRAINT audit_egress_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: backend_action backend_action_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -872,6 +1090,14 @@ ALTER TABLE ONLY public.controller
 
 
 --
+-- Name: credential_binding credential_binding_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.credential_binding
+    ADD CONSTRAINT credential_binding_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: drone drone_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -888,6 +1114,14 @@ ALTER TABLE ONLY public.event
 
 
 --
+-- Name: extension_action extension_action_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.extension_action
+    ADD CONSTRAINT extension_action_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: node node_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -896,11 +1130,81 @@ ALTER TABLE ONLY public.node
 
 
 --
+-- Name: port_route port_route_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.port_route
+    ADD CONSTRAINT port_route_pkey PRIMARY KEY (sandbox_id, port);
+
+
+--
+-- Name: sandbox sandbox_backend_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sandbox
+    ADD CONSTRAINT sandbox_backend_id_key UNIQUE (backend_id);
+
+
+--
+-- Name: sandbox sandbox_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sandbox
+    ADD CONSTRAINT sandbox_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: secret secret_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: snapshot snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.snapshot
+    ADD CONSTRAINT snapshot_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tenant tenant_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.tenant
+    ADD CONSTRAINT tenant_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: token token_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.token
     ADD CONSTRAINT token_pkey PRIMARY KEY (token);
+
+
+--
+-- Name: usage_record usage_record_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.usage_record
+    ADD CONSTRAINT usage_record_pkey PRIMARY KEY (sandbox_id, bucket_start);
+
+
+--
+-- Name: idx_audit_egress_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_audit_egress_at ON public.audit_egress USING btree (at);
+
+
+--
+-- Name: idx_audit_egress_sandbox; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_audit_egress_sandbox ON public.audit_egress USING btree (sandbox_id, at DESC);
 
 
 --
@@ -953,6 +1257,20 @@ CREATE UNIQUE INDEX idx_cluster_name ON public.node USING btree (cluster, name);
 
 
 --
+-- Name: idx_credential_sandbox; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_credential_sandbox ON public.credential_binding USING btree (sandbox_id) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: idx_credential_secret; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_credential_secret ON public.credential_binding USING btree (secret_id);
+
+
+--
 -- Name: idx_drone_last_heartbeat; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -967,10 +1285,80 @@ CREATE INDEX idx_event_created_at ON public.event USING btree (created_at);
 
 
 --
+-- Name: idx_extension_action_pending; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_extension_action_pending ON public.extension_action USING btree (drone_id, created_at) WHERE (acked_at IS NULL);
+
+
+--
 -- Name: idx_namespace_name; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE UNIQUE INDEX idx_namespace_name ON public.backend_key USING btree (namespace, key_name);
+
+
+--
+-- Name: idx_port_route_subdomain; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX idx_port_route_subdomain ON public.port_route USING btree (subdomain_token);
+
+
+--
+-- Name: idx_sandbox_backend; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_sandbox_backend ON public.sandbox USING btree (backend_id);
+
+
+--
+-- Name: idx_sandbox_tags; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_sandbox_tags ON public.sandbox USING gin (tags);
+
+
+--
+-- Name: idx_sandbox_tenant; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_sandbox_tenant ON public.sandbox USING btree (tenant, created_at DESC);
+
+
+--
+-- Name: idx_secret_tenant; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_secret_tenant ON public.secret USING btree (tenant) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_snapshot_expires_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_snapshot_expires_at ON public.snapshot USING btree (expires_at) WHERE (expires_at IS NOT NULL);
+
+
+--
+-- Name: idx_snapshot_sandbox; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_snapshot_sandbox ON public.snapshot USING btree (sandbox_id);
+
+
+--
+-- Name: idx_snapshot_tenant; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_snapshot_tenant ON public.snapshot USING btree (tenant, created_at DESC);
+
+
+--
+-- Name: idx_usage_record_bucket; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_usage_record_bucket ON public.usage_record USING btree (bucket_start);
 
 
 --
@@ -979,6 +1367,14 @@ CREATE UNIQUE INDEX idx_namespace_name ON public.backend_key USING btree (namesp
 
 ALTER TABLE ONLY public.acme_txt_entries
     ADD CONSTRAINT acme_txt_entries_leased_by_fkey FOREIGN KEY (leased_by) REFERENCES public.node(id);
+
+
+--
+-- Name: audit_egress audit_egress_sandbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.audit_egress
+    ADD CONSTRAINT audit_egress_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
 
 
 --
@@ -1022,11 +1418,59 @@ ALTER TABLE ONLY public.backend_state
 
 
 --
+-- Name: credential_binding credential_binding_sandbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.credential_binding
+    ADD CONSTRAINT credential_binding_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+
+
+--
+-- Name: credential_binding credential_binding_secret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.credential_binding
+    ADD CONSTRAINT credential_binding_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secret(id);
+
+
+--
 -- Name: drone drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.drone
     ADD CONSTRAINT drone_id_fkey FOREIGN KEY (id) REFERENCES public.node(id);
+
+
+--
+-- Name: extension_action extension_action_backend_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.extension_action
+    ADD CONSTRAINT extension_action_backend_id_fkey FOREIGN KEY (backend_id) REFERENCES public.backend(id) ON DELETE CASCADE;
+
+
+--
+-- Name: extension_action extension_action_drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.extension_action
+    ADD CONSTRAINT extension_action_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES public.drone(id);
+
+
+--
+-- Name: extension_action extension_action_sandbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.extension_action
+    ADD CONSTRAINT extension_action_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sandbox fk_sandbox_snapshot_source; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sandbox
+    ADD CONSTRAINT fk_sandbox_snapshot_source FOREIGN KEY (snapshot_source) REFERENCES public.snapshot(id);
 
 
 --
@@ -1038,11 +1482,67 @@ ALTER TABLE ONLY public.node
 
 
 --
+-- Name: port_route port_route_sandbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.port_route
+    ADD CONSTRAINT port_route_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sandbox sandbox_backend_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sandbox
+    ADD CONSTRAINT sandbox_backend_id_fkey FOREIGN KEY (backend_id) REFERENCES public.backend(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sandbox sandbox_tenant_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sandbox
+    ADD CONSTRAINT sandbox_tenant_fkey FOREIGN KEY (tenant) REFERENCES public.tenant(id);
+
+
+--
+-- Name: secret secret_tenant_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_tenant_fkey FOREIGN KEY (tenant) REFERENCES public.tenant(id);
+
+
+--
+-- Name: snapshot snapshot_sandbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.snapshot
+    ADD CONSTRAINT snapshot_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+
+
+--
+-- Name: snapshot snapshot_tenant_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.snapshot
+    ADD CONSTRAINT snapshot_tenant_fkey FOREIGN KEY (tenant) REFERENCES public.tenant(id);
+
+
+--
 -- Name: token token_backend_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.token
     ADD CONSTRAINT token_backend_id_fkey FOREIGN KEY (backend_id) REFERENCES public.backend(id);
+
+
+--
+-- Name: usage_record usage_record_sandbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.usage_record
+    ADD CONSTRAINT usage_record_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
 
 
 --

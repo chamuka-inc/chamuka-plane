@@ -34,7 +34,9 @@ impl<'a> SecretDatabase<'a> {
     pub async fn delete(&self, id: &str, tenant: &str) -> Result<bool, sqlx::Error> {
         let result = sqlx::query(
             r#"
-            DELETE FROM secret WHERE id = $1 AND tenant = $2
+            UPDATE secret
+            SET deleted_at = now()
+            WHERE id = $1 AND tenant = $2 AND deleted_at IS NULL
             "#,
         )
         .bind(id)

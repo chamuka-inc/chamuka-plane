@@ -96,3 +96,30 @@ fn migration_references_plane_tables() {
         "extension_action must reference Plane's drone table"
     );
 }
+
+#[test]
+fn fix_migration_cascades_and_drops_unused_network_policy_table() {
+    let migration_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("parent")
+        .join("plane/schema/migrations/20260603000000_fix-sandbox-fk-cascade-and-schema.sql");
+
+    let sql = fs::read_to_string(&migration_path).expect("read fix migration");
+
+    assert!(
+        sql.contains("DROP TABLE IF EXISTS network_policy"),
+        "fix migration must drop unused network_policy table"
+    );
+    assert!(
+        sql.contains("REFERENCES backend(id) ON DELETE CASCADE"),
+        "sandbox.backend_id must cascade on backend delete"
+    );
+    assert!(
+        sql.contains("REFERENCES sandbox(id) ON DELETE CASCADE"),
+        "child tables must cascade on sandbox delete"
+    );
+    assert!(
+        sql.contains("secret_storage_present"),
+        "fix migration must enforce secret storage shape"
+    );
+}
