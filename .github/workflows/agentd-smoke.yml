@@ -1,4 +1,4 @@
-name: Walking Skeleton
+name: Agentd Smoke
 
 on:
   push:
@@ -11,7 +11,7 @@ env:
   SQLX_OFFLINE: "true"
 
 jobs:
-  skeleton:
+  agentd-smoke:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -54,18 +54,18 @@ jobs:
           # Exec test
           EXEC_RESULT=$(curl -sf -X POST http://127.0.0.1:8080/v1/exec \
             -H 'Content-Type: application/json' \
-            -d '{"cmd":"echo","args":["walking-skeleton"],"timeout_ms":5000}')
+            -d '{"cmd":"echo","args":["agentd-smoke"],"timeout_ms":5000}')
           echo "Exec: $EXEC_RESULT"
           echo "$EXEC_RESULT" | grep -q '"exit_code":0'
-          echo "$EXEC_RESULT" | grep -q 'walking-skeleton'
+          echo "$EXEC_RESULT" | grep -q 'agentd-smoke'
 
           # Fs write + read test
           curl -sf -X PUT http://127.0.0.1:8080/v1/fs/write \
             -F "path=/tmp/ws-test.txt" \
-            -F "file=@-;filename=f.txt" <<< "skeleton-data"
+            -F "file=@-;filename=f.txt" <<< "agentd-smoke-data"
           FS_READ=$(curl -sf "http://127.0.0.1:8080/v1/fs/read?path=/tmp/ws-test.txt")
           echo "Fs read: $FS_READ"
-          [ "$FS_READ" = "skeleton-data" ]
+          [ "$FS_READ" = "agentd-smoke-data" ]
 
           kill $AGENTD_PID 2>/dev/null || true
-          echo "Walking skeleton: PASS"
+          echo "Agentd smoke: PASS"

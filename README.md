@@ -87,7 +87,7 @@ docs/                     Design documents
 | `make console-dev` | Start console (Next.js + ws-relay) |
 | `make images` | Build all runtime images |
 | `make schemas` | Regenerate JSON schemas from Rust types |
-| `./scripts/status.sh` | Current phase, next step, walking-skeleton status |
+| `./scripts/status.sh` | Current phase, next step, and recent phase tags |
 
 ## Current state
 

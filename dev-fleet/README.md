@@ -1,8 +1,7 @@
 # Sandbox Platform — local dev fleet
 
-Bring up the [Phase 1 walking
-skeleton](../sandbox-platform-spec.md#phase-1--walking-skeleton-23-weeks)
-on a single workstation, using VirtualBox VMs as drones.
+Bring up the local development fleet on a single workstation, using
+VirtualBox VMs as drones.
 
 Every Plane interface used here is verified against the upstream source
 at <https://github.com/jamsocket/plane> — see [verified
@@ -269,22 +268,15 @@ drone advertises this IP via `--ip` so the proxy knows where to route.
 
 ## Architecture notes
 
-This setup uses upstream Plane unchanged. The
-[spec document](../sandbox-platform-spec.md) describes a number of
-extensions on top of Plane — extended controller, `agentd`, egress
-proxy, snapshot/restore. None of those are present here yet. This
-walking skeleton exists to validate:
+This setup uses the local `chamuka-plane:latest` fork plus sandbox runtime
+images with `agentd` baked in. The fleet validates:
 
 - Multi-host scheduling (Plane's job).
 - Drone lifecycle and registration.
 - Image distribution via the pull-through cache.
 - Cross-component networking on the host-only network.
 - Trust-tier routing via the `--pool` mechanism.
-
-Phase 2+ deliverables that slot in here without restructuring:
-- Replace the stock controller image with a fork that speaks our SDK.
-- Add `30-egress-proxy.sh` provisioning to install Envoy alongside the drone.
-- Build sandbox runtime images with `agentd` baked in.
+- Agentd health, exec, and filesystem access through the proxy.
 
 ## Troubleshooting
 

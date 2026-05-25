@@ -182,7 +182,7 @@ smoke-docker: ## Run smoke test against Docker-only fallback fleet.
 ##@ Ops
 
 .PHONY: status
-status: ## Show project phase, next step, walking skeleton state.
+status: ## Show project phase, next step, and recent phase tags.
 	@./scripts/status.sh
 
 .PHONY: hooks

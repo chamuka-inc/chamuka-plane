@@ -18,9 +18,7 @@
     "build": "tsc",
     "test": "vitest run tests/ --exclude tests/e2e/",
     "test:e2e": "vitest run tests/e2e/",
-    "test:walking-skeleton": "vitest run tests/walking-skeleton/",
-    "lint": "tsc --noEmit",
-    "generate-types": "node scripts/generate-types.mjs"
+    "lint": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

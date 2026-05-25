@@ -89,7 +89,7 @@ Examples:
 - **agentd.** Run agentd in a real container in the dev fleet. Hit it with HTTP from outside. Compare responses to fixtures.
 - **egress-proxy.** Stand up real Envoy. Push fixture-derived policies. Send real curl traffic from inside a sandbox netns. Verify Envoy's behavior matches.
 
-The walking skeleton ([build plan §6](./sandbox-platform-build-plan.md#6-walking-skeleton)) is the project-wide Layer 4 test, run on every PR.
+The dev-fleet smoke canary ([build plan §6](./sandbox-platform-build-plan.md#6-dev-fleet-smoke-canary)) is the maintained project-wide Layer 4 path.
 
 ### 1.6 What "live e2e against contracts" prevents
 
@@ -111,7 +111,7 @@ When a live e2e fails, the order of suspicion is: (a) fixture is wrong, (b) our 
 | 3 e2e against stubs | Often (locally) | Yes | < 2 min per binary |
 | 4 Live e2e | Sometimes (locally; expensive) | Yes, with infra | < 10 min per binary |
 
-The walking skeleton runs on every PR. Per-binary Layer 4 tests run on every PR that touches that binary (CI determines this via path filters).
+The `agentd-smoke` job runs on every PR. Per-binary Layer 4 tests run on every PR that touches that binary where CI coverage exists; otherwise use `make smoke` or `make smoke-docker` locally.
 
 ### 1.8 What this means for new features
 
@@ -218,7 +218,7 @@ The TDD discipline (§1) says how code arrives in the tree. This section says wh
 
 **No skipping clippy or rustfmt.** CI runs `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check`. Local pre-commit should run both.
 
-**No merge without green CI.** All workflows green: rust-workspace, contracts, walking-skeleton, per-binary live e2e.
+**No merge without green CI.** All workflows green: rust-workspace, contracts, agentd-smoke, and any relevant per-binary live e2e.
 
 **No `#[allow(...)]` without justification comment.** Same shape as `unsafe`: a comment explaining why this lint is being silenced.
 
@@ -281,7 +281,7 @@ Git is the audit trail. For solo TDD work it matters more than for a team: the c
 
 - `main` is the only long-lived branch.
 - Feature branches are short-lived (one session, sometimes two). They merge into `main` via fast-forward or rebase-merge, never via merge commits. Once merged, they're deleted.
-- `main` always has the walking skeleton green. Always.
+- `main` always has the maintained smoke canary green. Always.
 - `crates/plane/` is a hard fork — no upstream-tracking branch, no rebase cadence. See [build plan §9](./sandbox-platform-build-plan.md#9-fork-management).
 
 **No long-running feature branches.** A branch alive for more than a week is a smell. Either it should have merged a long time ago, or it's actually a different thing trying to be a single change.
@@ -543,7 +543,7 @@ For pre-1.0 (which we'll be in for a long time), the rules apply with one shift:
 Solo doesn't mean skipping the audit trail. For any non-trivial change (more than a few commits, or anything touching contracts, schemas, or fork code), push to a branch and open a self-PR. Then:
 
 1. Read the diff on the GitHub web UI. The web view catches things the terminal doesn't — naming inconsistency across files, misplaced new files, accidental whitespace changes.
-2. CI runs against the PR; the walking-skeleton job's result is on record.
+2. CI runs against the PR; the `agentd-smoke` job's result is on record.
 3. Merge via "Squash and merge" only if the branch has chatty commits that aren't worth keeping (mostly `wip:` or `try:` ones, which shouldn't have happened in the first place). Default: "Rebase and merge" to preserve the TDD commit rhythm.
 4. Delete the branch immediately after merge.
 
@@ -564,7 +564,7 @@ Three layers, parallel to §2.5:
 **Layer 1 — Pre-commit hooks.** `.githooks/pre-commit` runs fmt, clippy, schema-sync, and basic secret scan. Bypassable with `--no-verify` only in emergencies (and the next commit fixes whatever the bypass was for).
 
 **Layer 2 — CI.** Branch protection on `main`:
-- Required status checks: rust-workspace, contracts, sdk-types, walking-skeleton.
+- Required status checks: rust-workspace, contracts, agentd-smoke.
 - Linear history required (no merge commits).
 - No force-pushes to `main`.
 - Even self-merges go through PR if the change is non-trivial.
@@ -606,7 +606,7 @@ Blocked: <optional; only if something genuinely prevents progress>
 Next: Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
       mapping). Implement build_connect_request() in api_v1.rs.
       Run: cargo test -p plane --test api_v1 -- create_sandbox_happy_path
-      until green. Then run walking-skeleton; should pass.
+      until green. Then run the relevant smoke target; should pass.
 ```
 
 **`Blocked:`** — only present if something genuinely prevents the next step (e.g., upstream dependency is broken in a way I don't yet know how to fix). A TDD `red:` commit is not blocked — it's the expected mid-cycle state where the next commit makes it green.
@@ -629,7 +629,6 @@ Next: Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
       mapping). Implement build_connect_request() in api_v1.rs.
       Run: cargo test -p plane --test api_v1 -- create_sandbox_happy_path
       until green.
-Walking skeleton: last CI run 2h ago — PASS
 Tree state: clean
 Recent phase tags:
   phase-0.8-done    (3 days ago)
@@ -650,7 +649,7 @@ All four layers green:
   Layer 1: 47 unit tests, 84% coverage
   Layer 2: contract tests for all 11 endpoints
   Layer 3: e2e stubbed pass
-  Layer 4: walking skeleton green
+  Layer 4: smoke canary green
 
 Cold start: 87ms p95 (target 100ms).
 Binary size: 12.4 MB stripped (target 15 MB).
@@ -669,7 +668,7 @@ Every session ends with:
 1. **A commit.** Always. Even just a doc tweak.
 2. **`Phase:` and `Next:` trailers populated.** `Blocked:` only if applicable.
 3. **`git push`** — or at minimum, local main at a known state with no uncommitted changes.
-4. **Walking skeleton run** if any code changed. If it broke, the commit body says so explicitly and `Next:` starts with "fix the walking skeleton before anything else."
+4. **Smoke run** if runtime behavior changed. If it broke, the commit body says so explicitly and `Next:` starts with "fix smoke before anything else."
 5. **Phase-completion tag** if this session finished an implementation-order item.
 
 ### 4.5 Mid-task recovery example
@@ -691,7 +690,7 @@ Phase: 7.3-B
 Next: Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
       mapping). Implement build_connect_request() in api_v1.rs.
       Run: cargo test -p plane --test api_v1 -- create_sandbox_happy_path
-      until green. Then run walking-skeleton; should pass.
+      until green. Then run the relevant smoke target; should pass.
       Then commit and continue with error-case tests.
 ```
 
@@ -728,7 +727,7 @@ This rule and the git-as-tracker rule reinforce each other: the tree is the curr
 
 **Anti-pattern 6: skipping the propagation rule.** Code-first changes leave types, schemas, fixtures, and tests behind. They'll be wrong in three different ways and you won't catch it until much later.
 
-**Anti-pattern 7: leaving the walking skeleton red.** If a session breaks the canary, fixing it is the first thing in the next session. The session-ending commit's `Next:` trailer says so.
+**Anti-pattern 7: leaving the smoke canary red.** If a session breaks the canary, fixing it is the first thing in the next session. The session-ending commit's `Next:` trailer says so.
 
 **Anti-pattern 8: trying to do too much in one session.** Better to over-commit small green checkpoints, end at a known state with tight `Phase:` and `Next:` trailers, than push into uncertain territory and end mid-work.
 

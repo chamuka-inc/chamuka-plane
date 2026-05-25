@@ -14,7 +14,7 @@ This project runs autonomously. Execute the build plan phase by phase (Phase 0 �
 - A critical blocker that cannot be resolved from the docs, code, or upstream source (e.g., upstream Plane has a breaking change that invalidates our architecture)
 - A design decision not covered by the spec/interfaces/SAD that would be expensive to reverse
 - Infrastructure access or credentials are required that you don't have
-- The walking skeleton is red for reasons traceable to a fundamental design flaw rather than an implementation bug
+- The dev-fleet smoke test is red for reasons traceable to a fundamental design flaw rather than an implementation bug
 
 **At the end of each coding phase**, run `/simplify` to review changed code for reuse, quality, and efficiency before tagging the phase complete.
 
@@ -50,7 +50,7 @@ The rules below govern how code arrives in this tree. TDD, code quality, source 
 ./scripts/status.sh
 ```
 
-Shows current Phase, Next concrete step, walking-skeleton status, and recent phase tags. The session's resumption point is in the most recent commit's `Phase:` and `Next:` trailers (see [discipline doc §4](./docs/sandbox-platform-discipline.md#4-session-handoff-discipline)).
+Shows current Phase, Next concrete step, and recent phase tags. The session's resumption point is in the most recent commit's `Phase:` and `Next:` trailers (see [discipline doc §4](./docs/sandbox-platform-discipline.md#4-session-handoff-discipline)).
 
 If `scripts/status.sh` doesn't exist yet, we're before Phase 0.1 (workspace scaffolding) and the first session creates it.
 
@@ -86,9 +86,8 @@ Full versions of every rule above are in the [discipline doc](./docs/sandbox-pla
 - `contracts/schemas/` — JSON Schemas generated from `common` Rust types; CI fails if stale
 - `contracts/fixtures/` — canonical wire examples; the integration surface between Rust and the SDKs
 - `sdks/typescript/`, `sdks/python/` — SDKs in consumers' ecosystems
-- `runtime-images/` — OCI image Dockerfiles (base, node24, python313, bun1, desktop)
+- `runtime-images/` — OCI image Dockerfiles (base, node24, python313, agent, ysweet, desktop)
 - `dev-fleet/` — Vagrant-based local fleet for live e2e
-- `walking-skeleton/` — the project-wide canary test, runs on every PR
 - `.githooks/` — pre-commit + pre-push hooks (run `git config core.hooksPath .githooks` after cloning)
 - `scripts/status.sh` — print current state for session start
 

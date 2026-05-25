@@ -71,11 +71,11 @@ Add `-v` to also wipe Postgres data and registry contents.
 ## Fleet status
 
 ```bash
-./dev-fleet/scripts/fleet-status.sh
+make fleet-status
 ```
 
-Shows: fleet container state, controller health, drone/proxy registration
-(with backend counts and heartbeat ages), and active sandbox containers.
+Shows the canonical Vagrant fleet status. For Docker-only fallback status, use
+`make fleet-status-docker`.
 
 ## Running the smoke test
 

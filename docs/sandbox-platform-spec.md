@@ -1087,7 +1087,7 @@ Per-tenant defaults (modelled on [Vercel Sandbox's pricing page](https://vercel.
 
 ## 17. Build phases and milestones
 
-### Phase 1 — Walking skeleton (2–3 weeks)
+### Phase 1 — Dev-fleet smoke canary (2–3 weeks)
 
 **Goal:** End-to-end create/exec/stop on one EC2 host and one Pi.
 
