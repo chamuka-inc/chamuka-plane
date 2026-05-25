@@ -174,7 +174,7 @@ export type Snapshot = {
   image_ref: string;
   name?: string | null;
   runtime: string;
-  sandbox_id: string;
+  sandbox_id?: string | null;
   size_bytes: number;
   tags?: Record<string, string>;
   tenant: string;

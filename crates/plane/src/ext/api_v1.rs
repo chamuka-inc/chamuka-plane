@@ -502,7 +502,7 @@ pub async fn snapshot_sandbox(
 
     let snapshot = Snapshot {
         id: snapshot_id,
-        sandbox_id: row.id,
+        sandbox_id: Some(row.id),
         tenant,
         image_ref: format!("{}:snapshot", row.image),
         digest: String::new(),

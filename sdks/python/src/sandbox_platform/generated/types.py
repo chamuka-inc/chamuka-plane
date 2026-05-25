@@ -232,10 +232,10 @@ class Snapshot(BaseModel):
     id: str
     image_ref: str
     runtime: str
-    sandbox_id: str
     size_bytes: int
     tenant: str
     name: str | None = None
+    sandbox_id: str | None = None
     tags: dict[str, str] = Field(default_factory=dict)
 
 

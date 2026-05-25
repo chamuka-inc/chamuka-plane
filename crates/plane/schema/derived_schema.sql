@@ -877,7 +877,7 @@ ALTER TABLE public.secret OWNER TO postgres;
 
 CREATE TABLE public.snapshot (
     id character varying(255) NOT NULL,
-    sandbox_id character varying(255) NOT NULL,
+    sandbox_id character varying(255),
     tenant character varying(255) NOT NULL,
     image_ref text NOT NULL,
     digest character varying(128) NOT NULL,
@@ -1510,7 +1510,7 @@ ALTER TABLE ONLY public.secret
 --
 
 ALTER TABLE ONLY public.snapshot
-    ADD CONSTRAINT snapshot_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+    ADD CONSTRAINT snapshot_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE SET NULL;
 
 
 --
