@@ -174,6 +174,7 @@ impl ControllerServer {
             config.cleanup_batch_size,
             config.forward_auth,
             config.best_of,
+            config.sandbox_runtime_registry,
         )
         .await
     }
@@ -189,6 +190,7 @@ impl ControllerServer {
         cleanup_batch_size: Option<i32>,
         forward_auth: Option<Url>,
         best_of: i64,
+        sandbox_runtime_registry: Option<String>,
     ) -> Result<Self> {
         let bind_addr = listener.local_addr()?;
 
@@ -209,6 +211,7 @@ impl ControllerServer {
             controller_url,
             default_cluster,
             best_of,
+            sandbox_runtime_registry,
         )
         .await;
 
@@ -366,6 +369,7 @@ pub struct ControllerConfig {
     pub cleanup_batch_size: Option<i32>,
     pub forward_auth: Option<Url>,
     pub best_of: i64,
+    pub sandbox_runtime_registry: Option<String>,
 }
 
 pub async fn run_controller(config: ControllerConfig) -> Result<()> {

@@ -30,26 +30,12 @@ use super::{
     types::{ExtensionActionKind, SandboxId},
 };
 
-const RUNTIME_IMAGES: &[(&str, &str)] = &[
-    ("node22", "node:22-slim"),
-    ("node24", "node:24-slim"),
-    ("python313", "python:3.13-slim"),
-    ("bun1", "oven/bun:1"),
-    ("desktop", "sandbox-platform/desktop:latest"),
-];
-
 pub(crate) fn resolve_image(
     runtime: &str,
     explicit_image: Option<&str>,
+    registry: Option<&str>,
 ) -> Result<String, ApiError> {
-    if let Some(img) = explicit_image {
-        return Ok(img.to_string());
-    }
-    RUNTIME_IMAGES
-        .iter()
-        .find(|(r, _)| *r == runtime)
-        .map(|(_, img)| img.to_string())
-        .ok_or_else(|| ApiError::invalid_request("image is required when runtime is 'custom'"))
+    super::runtime_catalog::resolve_runtime_image(runtime, explicit_image, registry)
 }
 
 pub(crate) fn trust_to_pool(trust: &TrustLevel) -> &'static str {
@@ -92,7 +78,11 @@ pub async fn create_sandbox(
     Json(request): Json<CreateSandboxRequest>,
 ) -> Result<(StatusCode, Json<CreateSandboxResponse>), ApiError> {
     let tenant = extract_tenant(&headers)?;
-    let image = resolve_image(&request.runtime, request.image.as_deref())?;
+    let image = resolve_image(
+        &request.runtime,
+        request.image.as_deref(),
+        controller.sandbox_runtime_registry.as_deref(),
+    )?;
 
     let pool = trust_to_pool(&request.trust);
     let resources = &request.resources;
@@ -106,9 +96,11 @@ pub async fn create_sandbox(
             tag: k.tag.clone().unwrap_or_default(),
         });
 
+    let env = super::runtime_catalog::merge_runtime_env(&request.runtime, &request.env);
+
     let executable = json!({
         "image": image,
-        "env": request.env,
+        "env": env,
         "resource_limits": {
             "memory_limit_bytes": i64::from(resources.memory_mb()) * 1024 * 1024
         }

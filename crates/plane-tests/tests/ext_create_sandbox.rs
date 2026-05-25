@@ -34,6 +34,7 @@ async fn controller_with_cluster(db: PlaneDatabase) -> ControllerServer {
         None,
         None,
         2,
+        None,
     )
     .await
     .expect("Unable to construct controller.")
@@ -72,7 +73,7 @@ async fn create_sandbox_happy_path(env: TestEnvironment) {
     assert!(body["sandbox"]["backend_id"].as_str().is_some());
     assert_eq!(body["sandbox"]["runtime"], "node22");
     assert_eq!(body["sandbox"]["trust"], "untrusted");
-    assert_eq!(body["sandbox"]["image"], "node:22-slim");
+    assert_eq!(body["sandbox"]["image"], "sandbox-runtime:node22-latest");
     assert_eq!(body["sandbox"]["resources"]["vcpus"], 2);
     assert_eq!(body["sandbox"]["resources"]["memory_mb"], 4096);
 

@@ -20,13 +20,19 @@ CLUSTER_NAME    ?= $(HOST_ONLY_IP):$(PROXY_PORT)
 PLANE_IMAGE     ?= chamuka-plane:latest
 RUNTIME_IMAGE   ?= sandbox-runtime:node24-latest
 REGISTRY        ?= localhost:5000
+# Registry hostname as seen by drone Docker daemons when pulling runtime images.
+SANDBOX_RUNTIME_REGISTRY ?= $(HOST_ONLY_IP):5000
+# Internal default for docker-up only (host-socket drones reach localhost:5000).
+DOCKER_FALLBACK_RUNTIME_REGISTRY ?= localhost:5000
 # Images as seen by drone VMs (local registry on host-only IP).
 VAGRANT_PLANE_IMAGE   ?= $(HOST_ONLY_IP):5000/$(PLANE_IMAGE)
 VAGRANT_RUNTIME_IMAGE ?= $(HOST_ONLY_IP):5000/$(RUNTIME_IMAGE)
 
 export DRONE_COUNT DRONE_VCPUS DRONE_MEM_MB CONTROLLER_PORT PROXY_PORT \
        HOST_ONLY_IP CLUSTER_NAME PLANE_IMAGE RUNTIME_IMAGE REGISTRY \
-       VAGRANT_PLANE_IMAGE VAGRANT_RUNTIME_IMAGE
+       VAGRANT_PLANE_IMAGE VAGRANT_RUNTIME_IMAGE \
+       SANDBOX_RUNTIME_REGISTRY \
+       DOCKER_FALLBACK_RUNTIME_REGISTRY
 
 # Cluster name URL-encoded (colon → %3A) for path segments.
 CLUSTER_ENC := $(subst :,%3A,$(CLUSTER_NAME))
@@ -98,9 +104,9 @@ docker-conflict-check: ## Refuse Docker fallback if Vagrant fleet is active.
 	@bash scripts/check-docker-prereqs.sh
 
 .PHONY: docker-up
-docker-up: docker-check docker-conflict-check ensure-images ## Start Docker-only fallback fleet.
+docker-up: docker-check docker-conflict-check ensure-images registry-push ## Start Docker-only fallback fleet.
 	@echo "Starting Docker-only fallback fleet..."
-	@docker compose up -d
+	@SANDBOX_RUNTIME_REGISTRY=$(DOCKER_FALLBACK_RUNTIME_REGISTRY) docker compose up -d
 	@echo ""
 	@echo "Docker fallback fleet is up."
 	@echo "Controller:  http://localhost:$(CONTROLLER_PORT)"
@@ -190,9 +196,9 @@ smoke: ## End-to-end test against canonical Vagrant fleet.
 	@echo "  controller: 127.0.0.1:$(CONTROLLER_PORT)"
 	@echo "  proxy:      $(HOST_ONLY_IP):$(PROXY_PORT)"
 	@echo "  cluster:    $(CLUSTER_NAME)"
-	@echo "  image:      $(HOST_ONLY_IP):5000/$(RUNTIME_IMAGE)"
+	@echo "  registry:   $(SANDBOX_RUNTIME_REGISTRY)"
 	@echo ""
-	@CONTROLLER=127.0.0.1:$(CONTROLLER_PORT) PROXY=$(HOST_ONLY_IP):$(PROXY_PORT) CLUSTER=$(CLUSTER_NAME) IMAGE=$(HOST_ONLY_IP):5000/$(RUNTIME_IMAGE) bash scripts/smoke-test.sh
+	@CONTROLLER=127.0.0.1:$(CONTROLLER_PORT) PROXY=$(HOST_ONLY_IP):$(PROXY_PORT) CLUSTER=$(CLUSTER_NAME) bash scripts/smoke-test.sh
 
 .PHONY: smoke-docker
 smoke-docker: ## End-to-end test against Docker-only fallback fleet.
@@ -200,9 +206,9 @@ smoke-docker: ## End-to-end test against Docker-only fallback fleet.
 	@echo "  controller: localhost:$(CONTROLLER_PORT)"
 	@echo "  proxy:      localhost:$(PROXY_PORT)"
 	@echo "  cluster:    localhost:$(PROXY_PORT)"
-	@echo "  image:      $(RUNTIME_IMAGE)"
+	@echo "  registry:   $(DOCKER_FALLBACK_RUNTIME_REGISTRY)"
 	@echo ""
-	@CONTROLLER=localhost:$(CONTROLLER_PORT) PROXY=localhost:$(PROXY_PORT) CLUSTER=localhost:$(PROXY_PORT) IMAGE=$(RUNTIME_IMAGE) bash scripts/smoke-test.sh
+	@CONTROLLER=localhost:$(CONTROLLER_PORT) PROXY=localhost:$(PROXY_PORT) CLUSTER=localhost:$(PROXY_PORT) bash scripts/smoke-test.sh
 
 .PHONY: cluster-state
 cluster-state: ## Show drones and proxies registered with the controller.
@@ -224,3 +230,5 @@ env: ## Print effective config.
 	@echo "PLANE_IMAGE     = $(PLANE_IMAGE)"
 	@echo "RUNTIME_IMAGE   = $(RUNTIME_IMAGE)"
 	@echo "REGISTRY        = $(REGISTRY)"
+	@echo "SANDBOX_RUNTIME_REGISTRY = $(SANDBOX_RUNTIME_REGISTRY)"
+	@echo "DOCKER_FALLBACK_RUNTIME_REGISTRY = $(DOCKER_FALLBACK_RUNTIME_REGISTRY)"

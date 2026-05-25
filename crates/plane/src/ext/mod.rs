@@ -1,6 +1,7 @@
 pub mod api_v1;
 pub mod dispatch;
 pub mod error;
+pub mod runtime_catalog;
 pub mod types;
 
 #[cfg(test)]

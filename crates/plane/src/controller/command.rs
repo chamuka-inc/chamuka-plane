@@ -37,6 +37,10 @@ pub struct ControllerOpts {
 
     #[clap(long, default_value = "2")]
     best_of: i64,
+
+    /// Registry host:port prepended to catalog runtime images (e.g. 192.168.56.1:5000).
+    #[clap(long, env = "SANDBOX_RUNTIME_REGISTRY")]
+    sandbox_runtime_registry: Option<String>,
 }
 
 impl ControllerOpts {
@@ -60,6 +64,7 @@ impl ControllerOpts {
             cleanup_batch_size: None,
             forward_auth: self.forward_auth,
             best_of: self.best_of,
+            sandbox_runtime_registry: self.sandbox_runtime_registry,
         })
     }
 }

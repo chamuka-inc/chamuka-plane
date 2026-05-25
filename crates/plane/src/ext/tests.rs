@@ -37,33 +37,64 @@ fn trust_to_pool_mapping() {
 }
 
 #[test]
-fn resolve_image_known_runtime() {
+fn resolve_image_known_runtime_bare() {
     use super::api_v1::resolve_image;
     assert_eq!(
-        resolve_image("node22", None).expect("resolve"),
-        "node:22-slim"
+        resolve_image("node24", None, None).expect("resolve"),
+        "sandbox-runtime:node24-latest"
     );
     assert_eq!(
-        resolve_image("python313", None).expect("resolve"),
-        "python:3.13-slim"
+        resolve_image("python313", None, None).expect("resolve"),
+        "sandbox-runtime:python313-latest"
     );
-    assert_eq!(resolve_image("bun1", None).expect("resolve"), "oven/bun:1");
+    assert_eq!(
+        resolve_image("agent", None, None).expect("resolve"),
+        "sandbox-runtime:agent-latest"
+    );
 }
 
 #[test]
-fn resolve_image_explicit_overrides_runtime() {
+fn resolve_image_known_runtime_with_registry() {
     use super::api_v1::resolve_image;
     assert_eq!(
-        resolve_image("node22", Some("my-org/custom:v1")).expect("resolve"),
+        resolve_image("node24", None, Some("192.168.56.1:5000")).expect("resolve"),
+        "192.168.56.1:5000/sandbox-runtime:node24-latest"
+    );
+}
+
+#[test]
+fn resolve_image_ignores_explicit_for_known_runtime() {
+    use super::api_v1::resolve_image;
+    assert_eq!(
+        resolve_image("node24", Some("my-org/custom:v1"), None).expect("resolve"),
+        "sandbox-runtime:node24-latest"
+    );
+}
+
+#[test]
+fn resolve_image_custom_requires_explicit() {
+    use super::api_v1::resolve_image;
+    let result = resolve_image("custom", None, None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn resolve_image_custom_uses_explicit() {
+    use super::api_v1::resolve_image;
+    assert_eq!(
+        resolve_image("custom", Some("my-org/custom:v1"), None).expect("resolve"),
         "my-org/custom:v1"
     );
 }
 
 #[test]
-fn resolve_image_custom_without_explicit_fails() {
+fn resolve_image_unknown_runtime_requires_explicit() {
     use super::api_v1::resolve_image;
-    let result = resolve_image("custom", None);
-    assert!(result.is_err());
+    assert!(resolve_image("not-a-runtime", None, None).is_err());
+    assert_eq!(
+        resolve_image("not-a-runtime", Some("my-org/custom:v1"), None).expect("resolve"),
+        "my-org/custom:v1"
+    );
 }
 
 #[test]
