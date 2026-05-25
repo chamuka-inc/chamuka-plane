@@ -1,5 +1,13 @@
 use sqlx::PgPool;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteOutcome {
+    /// The secret existed (active or already soft-deleted) and is now soft-deleted.
+    Deleted,
+    /// No secret with this (id, tenant) exists.
+    NotFound,
+}
+
 pub struct SecretDatabase<'a> {
     pool: &'a PgPool,
 }
@@ -31,19 +39,42 @@ impl<'a> SecretDatabase<'a> {
         Ok(())
     }
 
-    pub async fn delete(&self, id: &str, tenant: &str) -> Result<bool, sqlx::Error> {
-        let result = sqlx::query(
+    /// Soft-delete a secret. Idempotent: re-deleting an already-deleted secret
+    /// returns `Ok(DeleteOutcome::AlreadyDeleted)` rather than `NotFound`, so
+    /// SDK retries map to 204 (no content) instead of 404.
+    pub async fn delete(&self, id: &str, tenant: &str) -> Result<DeleteOutcome, sqlx::Error> {
+        let deleted_at: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar(
             r#"
             UPDATE secret
-            SET deleted_at = now()
+            SET deleted_at = COALESCE(deleted_at, now())
+            WHERE id = $1 AND tenant = $2
+            RETURNING deleted_at
+            "#,
+        )
+        .bind(id)
+        .bind(tenant)
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(match deleted_at {
+            None => DeleteOutcome::NotFound,
+            Some(_) => DeleteOutcome::Deleted,
+        })
+    }
+
+    /// Returns true iff a secret with this (id, tenant) exists and is not soft-deleted.
+    pub async fn exists_active(&self, id: &str, tenant: &str) -> Result<bool, sqlx::Error> {
+        let exists: Option<bool> = sqlx::query_scalar(
+            r#"
+            SELECT TRUE FROM secret
             WHERE id = $1 AND tenant = $2 AND deleted_at IS NULL
             "#,
         )
         .bind(id)
         .bind(tenant)
-        .execute(self.pool)
+        .fetch_optional(self.pool)
         .await?;
-        Ok(result.rows_affected() > 0)
+        Ok(exists.is_some())
     }
 
     pub async fn cleanup_soft_deleted(

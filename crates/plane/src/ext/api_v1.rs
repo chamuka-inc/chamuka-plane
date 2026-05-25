@@ -564,6 +564,22 @@ pub async fn create_credential_binding(
     let tenant = extract_tenant(&headers)?;
     let row = get_sandbox_row(&controller, &sandbox_id, &tenant).await?;
 
+    // Reject binding to a missing or soft-deleted secret up-front. Without this,
+    // the FK only checks row existence and a tombstoned secret would silently
+    // resolve to an empty value at dispatch time.
+    let secret_active = controller
+        .db
+        .secret()
+        .exists_active(&request.secret_id, &tenant)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to check secret state");
+            ApiError::internal("Failed to validate secret")
+        })?;
+    if !secret_active {
+        return Err(ApiError::not_found("Secret not found"));
+    }
+
     let cred_id = format!("cred-{}", plane_common::util::random_string());
     let now = chrono::Utc::now();
 
@@ -734,7 +750,7 @@ pub async fn delete_secret(
 ) -> Result<StatusCode, ApiError> {
     let tenant = extract_tenant(&headers)?;
 
-    let deleted = controller
+    let outcome = controller
         .db
         .secret()
         .delete(&id, &tenant)
@@ -744,10 +760,11 @@ pub async fn delete_secret(
             ApiError::internal("Failed to delete secret")
         })?;
 
-    if deleted {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(ApiError::not_found("Secret not found"))
+    match outcome {
+        crate::database::secret::DeleteOutcome::Deleted => Ok(StatusCode::NO_CONTENT),
+        crate::database::secret::DeleteOutcome::NotFound => {
+            Err(ApiError::not_found("Secret not found"))
+        }
     }
 }
 
