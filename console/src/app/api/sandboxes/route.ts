@@ -4,7 +4,6 @@ import {
   authHeaders,
   bffError,
   cacheConnectionFromResponse,
-  resolveRuntimeImage,
 } from "@/lib/controller";
 
 export async function GET(request: NextRequest) {
@@ -25,21 +24,10 @@ export async function POST(request: NextRequest) {
     return bffError("BAD_REQUEST", "Invalid JSON", 400);
   }
 
-  let payload = body;
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "image" in payload &&
-    typeof (payload as { image?: unknown }).image === "string"
-  ) {
-    const req = payload as { image: string };
-    payload = { ...req, image: resolveRuntimeImage(req.image) };
-  }
-
   const res = await fetch(`${CONTROLLER_URL}/pub/v1/sandboxes`, {
     method: "POST",
     headers: { ...authHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
 
   let data;

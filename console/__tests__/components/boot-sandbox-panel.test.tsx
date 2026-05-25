@@ -31,9 +31,9 @@ describe("BootSandboxPanel", () => {
   beforeEach(() => {
     mockMutate.mockReset();
     mockBindMutate.mockReset();
-    mockMutate.mockImplementation((_body: unknown, opts: { onSuccess: (data: { sandbox: { id: string } }) => void }) => {
+    mockMutate.mockImplementation((_body: unknown, opts: { onSuccess: (data: { sandbox: { id: string; image: string } }) => void }) => {
       opts?.onSuccess?.({
-        sandbox: { id: "sb-new-1" },
+        sandbox: { id: "sb-new-1", image: "192.168.56.1:5000/sandbox-runtime:node24-latest" },
       });
     });
   });
@@ -57,20 +57,19 @@ describe("BootSandboxPanel", () => {
     expect(onBooted).toHaveBeenCalledWith({
       id: "sb-new-1",
       runtime: "node24",
-      image: "sandbox-runtime:node24-latest",
+      image: "192.168.56.1:5000/sandbox-runtime:node24-latest",
     });
   });
 
-  it("injects VNC env vars when booting desktop runtime", async () => {
+  it("sets interactive VNC when booting desktop runtime", async () => {
     const user = userEvent.setup();
     renderPanel();
 
     await user.click(screen.getByRole("button", { name: /Desktop/i }));
 
     const callArgs = mockMutate.mock.calls[0][0];
-    expect(callArgs.env).toBeDefined();
-    expect(callArgs.env.VNC_ENABLED).toBe("1");
     expect(callArgs.env.VNC_VIEWONLY).toBe("0");
+    expect(callArgs.env.VNC_ENABLED).toBeUndefined();
   });
 
   it("does not inject VNC env vars for non-desktop runtimes", async () => {

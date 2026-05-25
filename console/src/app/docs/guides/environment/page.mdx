@@ -83,7 +83,7 @@ In the console quickstart, open **Configure** on the boot panel and use the **En
 
 ### Desktop runtime defaults
 
-When you boot a **desktop** sandbox from the console, `VNC_ENABLED=1` and `VNC_VIEWONLY=0` are set automatically so the VNC viewer can connect. You can add additional keys in the same Environment editor.
+The controller enables VNC automatically when `runtime` is **desktop** (`VNC_ENABLED=1`, read-only `VNC_VIEWONLY=1` per the platform spec). The console boot panel sets `VNC_VIEWONLY=0` so you can interact with the desktop in the browser. You can override either variable in the Environment editor or via the SDK.
 
 ### What to put here
 

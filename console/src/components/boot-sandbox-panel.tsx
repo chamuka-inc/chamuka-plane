@@ -6,10 +6,10 @@ import { SandboxConfig, DEFAULT_CONFIG } from "@/components/sandbox-config";
 import type { SandboxConfigValues } from "@/components/sandbox-config";
 
 export const BOOT_RUNTIMES = [
-  { label: "Node.js 24", runtime: "node24", image: "sandbox-runtime:node24-latest", icon: "N" },
-  { label: "Python 3.13", runtime: "python313", image: "sandbox-runtime:python313-latest", icon: "P" },
-  { label: "Agent", runtime: "agent", image: "sandbox-runtime:agent-latest", icon: "A" },
-  { label: "Desktop", runtime: "desktop", image: "sandbox-runtime:desktop-latest", icon: "D" },
+  { label: "Node.js 24", runtime: "node24", icon: "N" },
+  { label: "Python 3.13", runtime: "python313", icon: "P" },
+  { label: "Agent", runtime: "agent", icon: "A" },
+  { label: "Desktop", runtime: "desktop", icon: "D" },
 ] as const;
 
 export type BootedSandbox = {
@@ -31,7 +31,6 @@ export function BootSandboxPanel({ onBooted }: BootSandboxPanelProps) {
     (preset: (typeof BOOT_RUNTIMES)[number]) => {
       createSandbox.mutate(
         {
-          image: preset.image,
           runtime: preset.runtime,
           trust: config.trust,
           resources: { vcpus: config.vcpus, memory_mb: config.vcpus * 2048 },
@@ -41,7 +40,7 @@ export function BootSandboxPanel({ onBooted }: BootSandboxPanelProps) {
           ...(() => {
             const env = { ...config.env };
             if (preset.runtime === "desktop") {
-              env.VNC_ENABLED = "1";
+              // Controller defaults VNC on for desktop; console wants interactive takeover.
               env.VNC_VIEWONLY = "0";
             }
             return Object.keys(env).length > 0 ? { env } : {};
@@ -62,7 +61,7 @@ export function BootSandboxPanel({ onBooted }: BootSandboxPanelProps) {
             onBooted({
               id: data.sandbox.id,
               runtime: preset.runtime,
-              image: preset.image,
+              image: data.sandbox.image,
             });
           },
         },
