@@ -671,10 +671,11 @@ mod tests {
         let f = setup(&pool, "bk-cascade").await;
 
         sqlx::query(
-            "INSERT INTO audit_egress (at, sandbox_id, destination_host, destination_port,
-                                       protocol, action)
-             VALUES (now(), $1, 'example.com', 443, 'tls', 'allow')",
+            "INSERT INTO audit_egress (at, tenant, sandbox_id, destination_host,
+                                       destination_port, protocol, action)
+             VALUES (now(), $1, $2, 'example.com', 443, 'tls', 'allow')",
         )
+        .bind(f.tenant_id())
         .bind(f.sandbox_id())
         .execute(&pool)
         .await

@@ -111,7 +111,8 @@ CREATE TABLE public.audit_egress (
     tls_sni text,
     http_host text,
     http_path text,
-    http_status integer
+    http_status integer,
+    tenant character varying(255) NOT NULL
 );
 
 
@@ -983,7 +984,8 @@ CREATE TABLE public.usage_record (
     cpu_nsec bigint NOT NULL,
     memory_mb_seconds bigint NOT NULL,
     rx_bytes bigint DEFAULT 0 NOT NULL,
-    tx_bytes bigint DEFAULT 0 NOT NULL
+    tx_bytes bigint DEFAULT 0 NOT NULL,
+    tenant character varying(255) NOT NULL
 );
 
 
@@ -1207,6 +1209,13 @@ CREATE INDEX idx_audit_egress_sandbox ON public.audit_egress USING btree (sandbo
 
 
 --
+-- Name: idx_audit_egress_tenant_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_audit_egress_tenant_at ON public.audit_egress USING btree (tenant, at DESC);
+
+
+--
 -- Name: idx_backend_action_backend; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1354,6 +1363,13 @@ CREATE INDEX idx_usage_record_bucket ON public.usage_record USING btree (bucket_
 
 
 --
+-- Name: idx_usage_record_tenant_bucket; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_usage_record_tenant_bucket ON public.usage_record USING btree (tenant, bucket_start DESC);
+
+
+--
 -- Name: acme_txt_entries acme_txt_entries_leased_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1367,6 +1383,14 @@ ALTER TABLE ONLY public.acme_txt_entries
 
 ALTER TABLE ONLY public.audit_egress
     ADD CONSTRAINT audit_egress_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audit_egress audit_egress_tenant_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.audit_egress
+    ADD CONSTRAINT audit_egress_tenant_fkey FOREIGN KEY (tenant) REFERENCES public.tenant(id);
 
 
 --
@@ -1535,6 +1559,14 @@ ALTER TABLE ONLY public.token
 
 ALTER TABLE ONLY public.usage_record
     ADD CONSTRAINT usage_record_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+
+
+--
+-- Name: usage_record usage_record_tenant_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.usage_record
+    ADD CONSTRAINT usage_record_tenant_fkey FOREIGN KEY (tenant) REFERENCES public.tenant(id);
 
 
 --

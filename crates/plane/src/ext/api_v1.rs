@@ -807,6 +807,7 @@ pub async fn get_usage(
     let records: Vec<UsageRecord> = rows
         .into_iter()
         .map(|r| UsageRecord {
+            tenant: r.tenant,
             sandbox_id: r.sandbox_id,
             bucket_start: r.bucket_start,
             cpu_nsec: r.cpu_nsec,

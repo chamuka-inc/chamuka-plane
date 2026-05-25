@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UsageRecord {
+    pub tenant: String,
     pub sandbox_id: String,
     pub bucket_start: DateTime<Utc>,
     pub cpu_nsec: u64,

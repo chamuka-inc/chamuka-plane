@@ -3,6 +3,7 @@ use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Clone, FromRow)]
 pub struct UsageRow {
+    pub tenant: String,
     pub sandbox_id: String,
     pub bucket_start: DateTime<Utc>,
     pub cpu_nsec: i64,
@@ -33,11 +34,15 @@ impl<'a> UsageRecordDatabase<'a> {
         } else {
             ("", "$3")
         };
+        // Queries the local tenant column directly — no JOIN through sandbox.
+        // This lets usage rows be retained past sandbox deletion (once the
+        // sandbox_id FK switches to SET NULL) while preserving tenant
+        // attribution for billing reconciliation.
         let sql = format!(
-            r#"SELECT u.sandbox_id, u.bucket_start, u.cpu_nsec, u.memory_mb_seconds, u.rx_bytes, u.tx_bytes
+            r#"SELECT u.tenant, u.sandbox_id, u.bucket_start, u.cpu_nsec,
+                      u.memory_mb_seconds, u.rx_bytes, u.tx_bytes
                FROM usage_record u
-               JOIN sandbox s ON s.id = u.sandbox_id
-               WHERE s.tenant = $1 AND u.bucket_start >= $2 {filter}
+               WHERE u.tenant = $1 AND u.bucket_start >= $2 {filter}
                ORDER BY u.bucket_start DESC
                LIMIT {limit}"#,
         );
@@ -58,8 +63,8 @@ impl<'a> UsageRecordDatabase<'a> {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
-            INSERT INTO usage_record (sandbox_id, bucket_start, cpu_nsec, memory_mb_seconds, rx_bytes, tx_bytes)
-            SELECT s.id, date_trunc('hour', NOW()), $2, $3, $4, $5
+            INSERT INTO usage_record (tenant, sandbox_id, bucket_start, cpu_nsec, memory_mb_seconds, rx_bytes, tx_bytes)
+            SELECT s.tenant, s.id, date_trunc('hour', NOW()), $2, $3, $4, $5
             FROM sandbox s WHERE s.backend_id = $1
             ON CONFLICT (sandbox_id, bucket_start)
             DO UPDATE SET

@@ -191,6 +191,7 @@ pub struct CredentialBinding {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UsageRecord {
+    pub tenant: String,
     pub sandbox_id: String,
     pub bucket_start: chrono::DateTime<chrono::Utc>,
     pub cpu_nsec: i64,
