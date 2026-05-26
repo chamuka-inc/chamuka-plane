@@ -308,6 +308,102 @@ async fn create_sandbox_reuse_rejects_ports_mismatch(env: TestEnvironment) {
 }
 
 #[plane_test]
+async fn create_sandbox_reuse_accepts_ports_in_different_order(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+    let _drone = env
+        .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+    let original = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "ports": [8080, 9090],
+        "key": { "name": "ports-order" }
+    });
+    // Same set of ports, different order: must be accepted as identical.
+    let permuted = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "ports": [9090, 8080],
+        "key": { "name": "ports-order" }
+    });
+
+    let r1 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&original)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status(), 201);
+
+    let r2 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&permuted)
+        .send()
+        .await
+        .unwrap();
+    let s2 = r2.status();
+    let b2: serde_json::Value = r2.json().await.unwrap();
+    assert_eq!(
+        s2, 200,
+        "reuse with the same port set in a different order must succeed, got body: {b2}"
+    );
+}
+
+#[plane_test]
+async fn create_sandbox_reuse_rejects_source_mismatch(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+    let _drone = env
+        .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+    let original = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "source": { "type": "snapshot", "snapshot_id": "snap-aaa" },
+        "key": { "name": "source-shape" }
+    });
+    let mismatched = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "source": { "type": "snapshot", "snapshot_id": "snap-bbb" },
+        "key": { "name": "source-shape" }
+    });
+
+    let r1 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&original)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status(), 201);
+
+    let r2 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&mismatched)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r2.status(),
+        409,
+        "reuse with a different source than the existing backend must 409"
+    );
+}
+
+#[plane_test]
 async fn create_sandbox_rejects_key_namespace_with_newline(env: TestEnvironment) {
     let db = env.db().await;
     let controller = controller_with_cluster(db).await;

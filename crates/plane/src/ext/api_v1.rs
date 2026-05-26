@@ -165,15 +165,22 @@ fn ensure_reuse_shape_matches(
         ));
     }
 
-    let existing_ports: Vec<u16> = existing
+    // Ports are a declarative set, not an ordered list. Sort+dedup both
+    // sides so a caller that lists the same set in a different order on
+    // reuse does not see a false 409.
+    let mut existing_ports: Vec<u16> = existing
         .ports
         .iter()
         .filter_map(|&p| u16::try_from(p).ok())
         .collect();
-    if existing_ports != request.ports {
+    existing_ports.sort_unstable();
+    existing_ports.dedup();
+    let mut requested_ports = request.ports.clone();
+    requested_ports.sort_unstable();
+    requested_ports.dedup();
+    if existing_ports != requested_ports {
         mismatches.push(format!(
-            "field `ports`: existing={existing_ports:?}, requested={:?}",
-            request.ports
+            "field `ports`: existing={existing_ports:?}, requested={requested_ports:?}"
         ));
     }
 
@@ -182,6 +189,34 @@ fn ensure_reuse_shape_matches(
             "field `persistent`: existing={}, requested={}",
             existing.persistent, request.persistent
         ));
+    }
+
+    // `source` is part of the sandbox's identity — reuse with a different
+    // snapshot_id / git ref / image must not silently return the original.
+    // We can only compare against the row's `snapshot_source` column which
+    // stores Snapshot.snapshot_id; for Git/Image sources we conservatively
+    // 409 unless `source` is omitted (request happy to take whatever exists).
+    if let Some(source) = request.source.as_ref() {
+        let source_mismatch = match source {
+            chamuka_common::ext::api::SandboxSource::Snapshot { snapshot_id } => existing
+                .snapshot_source
+                .as_deref()
+                .is_none_or(|stored| stored != snapshot_id),
+            chamuka_common::ext::api::SandboxSource::Git(_)
+            | chamuka_common::ext::api::SandboxSource::Image { .. } => {
+                // We don't currently store enough on the row to compare
+                // Git/Image sources field-by-field. Treat any non-snapshot
+                // source on a reuse request as a 409 — the caller can omit
+                // `source` if they intend to reuse the existing sandbox.
+                true
+            }
+        };
+        if source_mismatch {
+            mismatches.push(format!(
+                "field `source`: existing.snapshot_source={:?}, requested={source:?}",
+                existing.snapshot_source
+            ));
+        }
     }
 
     // `use_static_token` is a spawn-time property that lives in Plane's
