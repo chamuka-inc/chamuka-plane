@@ -84,6 +84,25 @@ impl<'a> SandboxDatabase<'a> {
         Ok(row)
     }
 
+    /// Look up the sandbox row whose `backend_id` matches, scoped to the
+    /// caller's tenant. Used by `/pub/v1/sandboxes` to return the existing
+    /// row when Plane reuses a backend (`ConnectResponse.spawned == false`).
+    /// Tenant scoping is defense-in-depth: the key namespace is already
+    /// tenant-prefixed so cross-tenant reuse should be impossible upstream.
+    pub async fn get_by_backend_id(
+        &self,
+        backend_id: &str,
+        tenant: &str,
+    ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        let sql = format!("{SANDBOX_SELECT} WHERE s.backend_id = $1 AND s.tenant = $2");
+        let row = sqlx::query_as::<_, SandboxRow>(&sql)
+            .bind(backend_id)
+            .bind(tenant)
+            .fetch_optional(self.pool)
+            .await?;
+        Ok(row)
+    }
+
     pub async fn extend_expires_at(
         &self,
         id: &str,

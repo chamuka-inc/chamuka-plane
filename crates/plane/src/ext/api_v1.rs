@@ -96,13 +96,20 @@ pub async fn create_sandbox(
     let pool = trust_to_pool(&request.trust);
     let resources = &request.resources;
 
+    // Tenant-scope the key. Plane reuses backends keyed by (name, namespace, tag);
+    // prefixing the namespace with the caller's tenant ensures one tenant's keys
+    // can never collide with — or be reused by — another. Reuse without a
+    // user-supplied key uses a random name (no reuse possible).
     let key_config = request
         .key
         .as_ref()
-        .map_or_else(KeyConfig::new_random, |k| KeyConfig {
-            name: k.name.clone(),
-            namespace: k.namespace.clone().unwrap_or_default(),
-            tag: k.tag.clone().unwrap_or_default(),
+        .map_or_else(KeyConfig::new_random, |k| {
+            let user_ns = k.namespace.as_deref().unwrap_or("");
+            KeyConfig {
+                name: k.name.clone(),
+                namespace: format!("t:{tenant}/{user_ns}"),
+                tag: k.tag.clone().unwrap_or_default(),
+            }
         });
 
     let env = super::runtime_catalog::merge_runtime_env(&request.runtime, &request.env);
@@ -151,6 +158,48 @@ pub async fn create_sandbox(
         .await
         .map_err(ApiError::from)?;
 
+    let backend_id_str = connect_response.backend_id.to_string();
+
+    let connection = SandboxConnection {
+        token: connect_response.token.to_string(),
+        url: connect_response.url.clone(),
+        secret_token: connect_response.secret_token.map(|t| t.to_string()),
+        status_url: connect_response.status_url.clone(),
+    };
+
+    // Plane reused an existing backend for this key. Return the existing
+    // sandbox row (200 OK) instead of inserting a duplicate, which would
+    // violate sandbox_backend_id_key UNIQUE.
+    if !connect_response.spawned {
+        let existing = controller
+            .db
+            .sandbox()
+            .get_by_backend_id(&backend_id_str, &tenant)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, "Failed to look up sandbox for reused backend");
+                ApiError::internal("Failed to look up existing sandbox")
+            })?
+            .ok_or_else(|| {
+                tracing::error!(
+                    backend_id = %backend_id_str,
+                    tenant = %tenant,
+                    "Plane reused backend with no matching sandbox row for tenant",
+                );
+                ApiError::internal("Reused backend has no matching sandbox row")
+            })?;
+
+        let now = chrono::Utc::now();
+        let sandbox = sandbox_from_row(existing, &controller, now);
+        return Ok((
+            StatusCode::OK,
+            Json(CreateSandboxResponse {
+                sandbox,
+                connection,
+            }),
+        ));
+    }
+
     let sandbox_id = SandboxId::new();
     let now = chrono::Utc::now();
     let expires_at = now + chrono::Duration::milliseconds(timeout_ms as i64);
@@ -171,7 +220,7 @@ pub async fn create_sandbox(
         .sandbox()
         .insert(
             sandbox_id.as_ref(),
-            &connect_response.backend_id.to_string(),
+            &backend_id_str,
             &tenant,
             &request.runtime,
             trust_str,
@@ -193,7 +242,7 @@ pub async fn create_sandbox(
 
     let sandbox = Sandbox {
         id: sandbox_id.to_string(),
-        backend_id: Some(connect_response.backend_id.to_string()),
+        backend_id: Some(backend_id_str),
         tenant,
         status: BackendStatus::Scheduled,
         runtime: request.runtime.clone(),
@@ -215,13 +264,6 @@ pub async fn create_sandbox(
         terminated_at: None,
         drone_name: connect_response.drone.map(|d| d.to_string()),
         cluster,
-    };
-
-    let connection = SandboxConnection {
-        token: connect_response.token.to_string(),
-        url: connect_response.url.clone(),
-        secret_token: connect_response.secret_token.map(|t| t.to_string()),
-        status_url: connect_response.status_url.clone(),
     };
 
     let response = CreateSandboxResponse {
