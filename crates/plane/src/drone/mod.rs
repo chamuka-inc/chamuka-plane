@@ -11,8 +11,8 @@ use self::{
     state_store::StateStore,
 };
 use crate::signals::wait_for_shutdown_signal;
-use anyhow::{anyhow, Result};
-use chrono::{Duration, Utc};
+use anyhow::Result;
+use chrono::Utc;
 use plane_common::{
     names::DroneName,
     protocol::{
@@ -39,6 +39,8 @@ use url::Url;
 
 mod backend_manager;
 pub mod command;
+pub mod egress_bootstrap;
+pub mod egress_publisher;
 mod executor;
 pub mod extension_handler;
 mod heartbeat;
@@ -251,39 +253,38 @@ impl Drone {
     pub async fn run(config: DroneConfig) -> Result<Self> {
         let client = PlaneClient::new(config.controller_url);
 
-        #[allow(deprecated)]
-        let runtime: Box<dyn Runtime> = match (config.docker_config, config.executor_config) {
-            (Some(_), Some(_)) => {
-                tracing::error!(
-                    "Only one of `docker_config` and `executor_config` may be provided."
-                );
-                return Err(anyhow!(
-                    "Only one of `docker_config` and `executor_config` may be provided."
-                ));
+        let runtime: Box<dyn Runtime> = match config.executor_config {
+            ExecutorConfig::Docker(docker_config) => {
+                let mut rt = DockerRuntime::new(docker_config).await?;
+                // Egress requires BOTH the admin URL (CA fetch) and the proxy
+                // address (env injection + iptables target). One without the
+                // other is a misconfiguration: refuse to start so the operator
+                // notices, instead of silently running sandboxes with no
+                // interception.
+                rt.egress = match (
+                    config.egress_proxy_url.as_ref(),
+                    config.egress_proxy_addr.as_ref(),
+                ) {
+                    (Some(admin_url), Some(addr)) => {
+                        let handle = egress_bootstrap::bootstrap(admin_url, addr).await?;
+                        Some(handle)
+                    }
+                    (None, None) => None,
+                    (Some(_), None) => {
+                        return Err(anyhow::anyhow!(
+                            "--egress-proxy-url is set but --egress-proxy-addr is not; both are required to enable egress interception (or neither, to disable it)",
+                        ));
+                    }
+                    (None, Some(_)) => {
+                        return Err(anyhow::anyhow!(
+                            "--egress-proxy-addr is set but --egress-proxy-url is not; both are required to enable egress interception (or neither, to disable it)",
+                        ));
+                    }
+                };
+                Box::new(rt)
             }
-            (Some(mut docker_config), None) => {
-                tracing::warn!("`docker_config` is deprecated. Use `executor_config` instead.");
-                docker_config.auto_prune = docker_config.auto_prune.or(config.auto_prune);
-                docker_config.cleanup_min_age =
-                    docker_config.cleanup_min_age.or(config.cleanup_min_age);
-
-                Box::new(DockerRuntime::new(docker_config).await?)
-            }
-            (None, Some(ExecutorConfig::Docker(mut docker_config))) => {
-                docker_config.auto_prune = docker_config.auto_prune.or(config.auto_prune);
-                docker_config.cleanup_min_age =
-                    docker_config.cleanup_min_age.or(config.cleanup_min_age);
-
-                Box::new(DockerRuntime::new(docker_config).await?)
-            }
-            (None, Some(ExecutorConfig::UnixSocket(unix_socket_config))) => {
+            ExecutorConfig::UnixSocket(unix_socket_config) => {
                 Box::new(UnixSocketRuntime::new(unix_socket_config).await?)
-            }
-            (None, None) => {
-                tracing::error!("Neither `docker_config` nor `executor_config` provided.");
-                return Err(anyhow!(
-                    "Neither `docker_config` nor `executor_config` provided."
-                ));
             }
         };
 
@@ -306,8 +307,20 @@ impl Drone {
         let runtime = Arc::new(runtime);
         let executor = Executor::new(runtime, state_store, config.ip).await;
 
+        let extension_handler = config.egress_proxy_url.map(|proxy_url| {
+            tracing::info!(url = %proxy_url, "Egress proxy configured; enabling extension handler");
+            let publisher = Arc::new(egress_publisher::HttpEgressPublisher::new(proxy_url));
+            let snapshot_rt = Arc::new(egress_publisher::NoopSnapshotRuntime);
+            Arc::new(ExtensionHandler::new(publisher, snapshot_rt))
+        });
+
         let id = config.name.clone();
-        let drone_loop = tokio::spawn(drone_loop(id.clone(), connector, executor, None));
+        let drone_loop = tokio::spawn(drone_loop(
+            id.clone(),
+            connector,
+            executor,
+            extension_handler,
+        ));
 
         Ok(Self { drone_loop, id })
     }
@@ -328,11 +341,7 @@ pub enum ExecutorConfig {
 pub struct DroneConfig {
     pub name: DroneName,
 
-    #[deprecated(since = "0.4.12", note = "Use `executor_config` instead.")]
-    pub docker_config: Option<DockerRuntimeConfig>,
-
-    // This will become non-optional when docker_config is removed.
-    pub executor_config: Option<ExecutorConfig>,
+    pub executor_config: ExecutorConfig,
 
     pub controller_url: Url,
     pub cluster: ClusterName,
@@ -340,17 +349,8 @@ pub struct DroneConfig {
     pub ip: IpAddr,
     pub db_path: Option<PathBuf>,
 
-    #[deprecated(
-        since = "0.4.12",
-        note = "Moved to `executor_config` (only applies to DockerRuntimeConfig)."
-    )]
-    pub auto_prune: Option<bool>,
-    #[serde(with = "plane_common::serialization::serialize_optional_duration_as_seconds")]
-    #[deprecated(
-        since = "0.4.12",
-        note = "Moved to `executor_config` (only applies to DockerRuntimeConfig)."
-    )]
-    pub cleanup_min_age: Option<Duration>,
+    pub egress_proxy_url: Option<Url>,
+    pub egress_proxy_addr: Option<String>,
 }
 
 pub async fn run_drone(config: DroneConfig) -> Result<()> {

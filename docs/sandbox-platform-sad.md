@@ -905,7 +905,7 @@ Snapshots are pushed by their drone of origin to the central registry, then pull
 
 ### 6.4 Dev topology
 
-VirtualBox VMs as drones on a developer workstation. See [the dev-fleet README](./sandbox-platform-dev/README.md) for the full setup. Same control plane, same SDK, same images — just running with stock Plane and without the extended controller, egress proxy, or `agentd` (those land in later phases).
+VirtualBox VMs as drones on a developer workstation. See [the dev-fleet README](./dev-fleet/README.md) for the full setup. Same control plane, same SDK, same images — running with our forked controller and runtime images.
 
 ---
 

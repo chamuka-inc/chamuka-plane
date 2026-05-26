@@ -23,7 +23,7 @@ This document tells future me: what to build first, what discipline to follow, a
 3. [Repo layout](#3-repo-layout)
 4. [Shared types via the `common` crate](#4-shared-types-via-the-common-crate)
 5. [Contract fixtures — the integration surface](#5-contract-fixtures--the-integration-surface)
-6. [Walking skeleton](#6-walking-skeleton)
+6. [Dev-fleet smoke canary](#6-dev-fleet-smoke-canary)
 7. [Per-binary spec sheets](#7-per-binary-spec-sheets)
    - [7.1 agentd-headless](#71-agentd-headless)
    - [7.2 sandbox-runtime images](#72-sandbox-runtime-images)
@@ -45,13 +45,13 @@ This document tells future me: what to build first, what discipline to follow, a
 
 Four project-specific rules. Cross-cutting engineering discipline (TDD, code shape, source control, session handoff) lives in the [discipline doc](./sandbox-platform-discipline.md), imported in every session via [CLAUDE.md](../CLAUDE.md).
 
-**Rule 1: Discovery before scaffolding.** Three discovery spikes (Phase D in §8) precede any test infrastructure or binary work. They validate that the design holds by running it, not by reading it. Spikes are disposable; their findings — corrections to the docs, verified facts about Plane's behavior, one working live-e2e test — are not. If a spike fails, the docs are wrong; update them before proceeding.
+**Rule 1: Discovery before scaffolding.** Three discovery spikes (Phase D in §8) precede any test infrastructure or binary work. They validate that the design holds by running it, not by reading it. Spikes are disposable; their findings — corrections to the docs, verified facts about Plane's behavior, one working live smoke check — are not. If a spike fails, the docs are wrong; update them before proceeding.
 
 **Rule 2: Test infrastructure before binary code.** Before any binary implementation, we need a working `contracts/` directory, the `common` crate, fixtures derived from verified Plane source, the `common::stubs` mocks, schema generation, and CI workflows that can actually run something. This is [Phase 0](#8-implementation-order) and it's not optional — without it, "test-first" is just words.
 
 **Rule 3: Rust by default, exceptions only for SDKs.** Everything in one Cargo workspace except the TS and Python SDKs (their consumers live in those ecosystems).
 
-**Rule 4: The walking skeleton always works.** Every session ends with the walking skeleton green or with an explicit note in the session-ending commit body saying "broke it, fix this first next session." The walking skeleton is the canary across time.
+**Rule 4: The dev-fleet smoke canary always works.** Every session that changes runtime behavior ends with the relevant smoke path green (`make smoke` for the canonical Vagrant fleet, or `make smoke-docker` for the Docker fallback) or with an explicit note in the session-ending commit body saying "broke smoke, fix this first next session." The smoke canary is the end-to-end check across time.
 
 Beyond these, the [discipline doc](./sandbox-platform-discipline.md) governs how code arrives: TDD per feature (red → green-impl → e2e → live e2e), the propagation rule, code-shape prohibitions enforced by clippy, source-control conventions, and git-as-status-tracker via commit trailers.
 
@@ -173,7 +173,8 @@ sandbox-platform/
 │   ├── base/Dockerfile
 │   ├── node24/Dockerfile
 │   ├── python313/Dockerfile
-│   ├── bun1/Dockerfile
+│   ├── agent/Dockerfile
+│   ├── ysweet/Dockerfile
 │   ├── desktop/Dockerfile
 │   └── build.sh
 │
@@ -183,19 +184,14 @@ sandbox-platform/
 │
 ├── dev-fleet/                       # Vagrant-based local fleet (already shipped)
 │
-├── walking-skeleton/                # the Layer-4 integration test
-│   ├── test.sh
-│   ├── docker-compose.yml
-│   └── README.md
-│
 ├── docs/                            # spec, SAD, interfaces, this file
 ├── scripts/
-│   └── status.sh                    # prints current Phase, Next, walking-skeleton status
-├── Makefile                         # bootstrap, test-all, walking-skeleton
+│   └── status.sh                    # prints current Phase, Next, recent phase tags
+├── Makefile                         # build, test, image, fleet, console targets
 └── README.md
 ```
 
-One Cargo workspace; all crates at the same level under `crates/`. The plane fork (`plane/`, `plane-common/`, `plane-dynamic-proxy/`, `plane-tests/`, `plane-test-macro/`) lives alongside our custom crates (`common`, `agentd`, `egress-proxy`, `ops-cli`). SDKs sit outside the workspace because their tooling is per-language. `runtime-images/`, `walking-skeleton/`, `contracts/`, `docs/` are language-agnostic siblings.
+One Cargo workspace; all crates at the same level under `crates/`. The plane fork (`plane/`, `plane-common/`, `plane-dynamic-proxy/`, `plane-tests/`, `plane-test-macro/`) lives alongside our custom crates (`common`, `agentd`, `egress-proxy`, `ops-cli`). SDKs sit outside the workspace because their tooling is per-language. `runtime-images/`, `dev-fleet/`, `contracts/`, and `docs/` are language-agnostic siblings.
 
 **Build note:** Always set `SQLX_OFFLINE=true` when building without a live Postgres. The `.sqlx/` directory in `crates/plane/` contains cached query metadata.
 
@@ -290,9 +286,11 @@ When a contract changes, the [propagation rule (discipline §1.8)](./sandbox-pla
 
 ---
 
-## 6. Walking skeleton
+## 6. Dev-fleet smoke canary
 
-The minimum end-to-end path. The project-wide Layer 4 test.
+The minimum maintained end-to-end path is the dev-fleet smoke test. The old
+standalone harness was deleted because it duplicated this flow and was no longer
+wired into Makefile or CI.
 
 ### 6.1 What it does
 
@@ -308,7 +306,7 @@ Stages:
 
 1. SDK posts to a controller's `/ctrl/connect`.
 2. Controller picks a drone from `untrusted` pool.
-3. Drone pulls `sandbox-runtime:node24-skel` (minimal image with `agentd-headless`).
+3. Drone pulls `sandbox-runtime:node24-latest` (the maintained Node runtime image with `agentd`).
 4. Drone starts the container; `agentd` boots, listens on `:8080`.
 5. Drone emits `BackendEvent::Ready`.
 6. SDK opens HTTPS to `<cluster>/<token>/v1/exec` via the proxy.
@@ -318,26 +316,28 @@ Stages:
 
 ### 6.2 What it uses
 
-- **Stock Plane** (`plane/plane:latest`). Not our fork yet.
+- **Forked Plane** (`chamuka-plane:latest`) from `crates/plane/docker/Dockerfile`.
 - **Stock Postgres** (container).
 - **Our `agentd-headless`** binary.
 - **Our minimal sandbox-runtime image** (base + node 24 + agentd).
-- **A minimal `sdk-typescript`** (just `create`, `runCommand`, `stop`).
+- **The dev-fleet smoke script** (`dev-fleet/scripts/smoke-test.sh`).
 - **The dev fleet** for hosting.
 
 ### 6.3 What it does NOT use
 
-- No `/pub/v1/*` wrapper.
-- No egress proxy, no network policy, no credentials.
+- No SDK client wrapper.
+- No egress proxy, no network policy, no credentials in the minimum smoke path.
 - No snapshots.
 - No desktop variant.
 - No metering aggregation.
 
-### 6.4 When it merges and why it matters
+### 6.4 When it runs and why it matters
 
-The walking skeleton is the *first* Layer 4 test that runs in CI. It merges after Phase 0 (test infrastructure) and the first two binaries (agentd-headless and the base sandbox-runtime image). From then on, every PR runs it. If a PR breaks the canary, it doesn't merge.
-
-The walking skeleton is also how I detect that a contract has drifted from reality. If the controller fork stops accepting a fixture that real Plane accepts, the walking skeleton (which uses real Plane) keeps passing while our isolated tests would also need a fix.
+Run `make smoke` against the canonical Vagrant fleet for the full local canary.
+When VirtualBox/Vagrant is unavailable, run `make smoke-docker` against the
+Docker fallback. These smoke paths detect drift between the controller, drone,
+proxy, runtime image, and `agentd` without keeping a second unowned harness in
+the repository.
 
 ---
 
@@ -376,7 +376,7 @@ Format per binary: purpose, contracts in/out, what can be stubbed, the TDD layer
 cd crates/agentd
 cargo test                  # layers 1 and 2
 cargo test --test e2e_stubbed   # layer 3
-make live-e2e              # layer 4 (requires docker)
+make smoke-docker          # layer 4 fallback, from the repo root
 ```
 
 **Acceptance criteria.**
@@ -389,7 +389,7 @@ make live-e2e              # layer 4 (requires docker)
 
 **Done definition.**
 - All four layers green.
-- Walking skeleton uses this binary and passes.
+- Dev-fleet smoke uses this binary and passes.
 - `cargo bench --bench cold_start` reports < 100 ms p95.
 
 ---
@@ -416,26 +416,25 @@ There's no Layer 1 here (these aren't testable as code). The relevant layers:
   - Curls `/health` from outside.
   - Asserts the response.
 - **Layer 3 (in-runtime).** Image smoke test extends to running a one-liner in the runtime's language via `/v1/exec` and asserting output. Verifies the runtime is actually installed and works.
-- **Layer 4 (live).** The walking skeleton uses these images. Passes there = good.
+- **Layer 4 (live).** The dev-fleet smoke tests use these images. Passes there = good.
 
 **Build & test.**
 ```bash
 cd runtime-images
 ./build.sh node24 v0.1.0          # buildx for amd64 + arm64
 ./tests/node24.sh                  # layer 2
-./tests/node24-runtime.sh          # layer 3
 ```
 
 **Acceptance criteria.**
-- Image sizes: base < 50 MB, node24 < 200 MB, python313 < 250 MB, bun1 < 100 MB.
+- Image sizes: base < 50 MB, node24 < 200 MB, python313 < 250 MB, ysweet < 250 MB.
 - Multi-arch (amd64 + arm64).
 - Cold start container → agentd ready: < 500 ms with image cached, runsc runtime.
 - Per-runtime smoke + in-runtime tests pass.
 
 **Done definition.**
-- `./build.sh all v0.1.0` produces all images for both arches.
+- Root Makefile image targets produce the maintained images.
 - All Layer 2/3 tests pass.
-- Walking skeleton uses `node24` and passes.
+- Dev-fleet smoke uses `node24` and passes.
 
 ---
 
@@ -469,7 +468,7 @@ cd runtime-images
 **Phase A — schema migration.**
 - *Layer 2:* migration applies on a fresh Plane-migrated DB; tables exist; FKs hold.
 - *Layer 3:* upstream Plane tests still pass after adding our migration directory.
-- *Layer 4:* run our forked controller (with our migrations) against the walking-skeleton; passes.
+- *Layer 4:* run our forked controller (with our migrations) against the dev-fleet smoke path; passes.
 
 **Phase B — `/pub/v1/*` routes.**
 - *Layer 1:* per-handler unit tests on request validation, idempotency-key caching, error mapping.
@@ -486,19 +485,19 @@ cd runtime-images
 **Phase D — production hardening.**
 - *Layer 1/2:* tests for cleanup logic (our extension tables match Plane's cleanup semantics).
 - *Layer 3:* multi-replica e2e — three controller replicas, stubbed drone reconnects across replicas; verify state is consistent.
-- *Layer 4:* three-replica live e2e behind a load balancer; walking skeleton against each individually.
+- *Layer 4:* three-replica live e2e behind a load balancer; smoke each replica individually.
 
 **Build & test.**
 ```bash
 cd crates/plane
 cargo test -p plane --lib                  # layers 1+2
 cargo test -p plane --test controller_e2e  # layer 3 (uses MockDrone, real Postgres)
-make live-e2e-controller                   # layer 4 (real Plane image side-by-side)
+make smoke-docker                          # layer 4 fallback
 ```
 
 **Done definition.**
 - All four phases × four layers green.
-- Walking skeleton passes against forked controller (substituting it for `plane/plane:latest`).
+- Dev-fleet smoke passes against the forked controller.
 
 ---
 
@@ -550,12 +549,12 @@ make live-e2e-controller                   # layer 4 (real Plane image side-by-s
 cd crates/plane
 cargo test -p plane --test drone_unit         # layer 1+2
 cargo test -p plane --test drone_e2e          # layer 3 (real Docker)
-make live-e2e-drone                            # layer 4 (real upstream Plane)
+make smoke-docker                              # layer 4 fallback
 ```
 
 **Done definition.**
 - All three phases × four layers green.
-- Walking skeleton runs against forked drone.
+- Dev-fleet smoke runs against the forked drone.
 
 ---
 
@@ -578,7 +577,7 @@ make live-e2e-drone                            # layer 4 (real upstream Plane)
 
 **TDD layers, phased.**
 
-**Phase A — Plane-native.** Upstream tests pass in our fork; Layer 4 = walking skeleton.
+**Phase A — Plane-native.** Upstream tests pass in our fork; Layer 4 = dev-fleet smoke.
 
 **Phase B — subdomain-port routing.**
 - *Layer 1:* unit tests on subdomain parser.
@@ -598,7 +597,7 @@ cargo test -p plane --test proxy_e2e
 
 **Done definition.**
 - All phases × four layers green.
-- Walking skeleton runs against forked proxy.
+- Dev-fleet smoke runs against the forked proxy.
 
 ---
 
@@ -631,7 +630,7 @@ cargo test -p plane --test proxy_e2e
 ```bash
 cd crates/egress-proxy
 cargo test
-make test-with-envoy   # layer 4
+make smoke-docker      # layer 4 fallback
 ```
 
 **Acceptance criteria.**
@@ -736,7 +735,7 @@ cargo test
 - **Layer 1.** Per-method unit tests with `msw` intercepts; SSE consumer state-machine tests.
 - **Layer 2.** Contract tests against `contracts/fixtures/http/*`: every endpoint exercised, request/response fixture pair.
 - **Layer 3.** Real `axum` server (an embedded test server backed by fixtures) plus an embedded WS echo for agentd; SDK end-to-end against this.
-- **Layer 4.** The walking skeleton.
+- **Layer 4.** The dev-fleet smoke path.
 
 **Build & test.**
 ```bash
@@ -745,7 +744,7 @@ pnpm install
 pnpm build
 pnpm test                       # layers 1+2
 pnpm test:e2e                   # layer 3
-pnpm test:walking-skeleton      # layer 4
+make smoke-docker               # layer 4 fallback
 ```
 
 **Acceptance criteria.**
@@ -779,8 +778,6 @@ cd sdks/python
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 pytest tests/                    # layers 1+2
-pytest tests/e2e/                # layer 3
-pytest tests/walking_skeleton/   # layer 4
 ```
 
 **Done definition.**
@@ -843,30 +840,21 @@ D.2  First Layer-4 contract verification
         directory (will be cleaned up; the verified fixtures persist).
         This is the seed of Phase 0's Layer-4 infrastructure.
 
-D.3  Walking-skeleton spike
-     ├─ Disposable end-to-end implementation. No TDD, no per-binary
+D.3  Dev-fleet smoke spike
+     ├─ Disposable end-to-end validation. No TDD, no per-binary
      │  spec sheets, no contract-test layer beyond reuse of D.2 —
-     │  just enough code to run a real sandbox lifecycle.
-     ├─ Quick-and-dirty Rust agentd: single file, /health and /v1/exec
-     │  (sync only), maybe 200 lines.
-     ├─ Minimal node24 Dockerfile that wraps agentd.
-     ├─ Stock Plane (controller + drone + proxy) from the public image.
-     ├─ 100-line TypeScript script that talks to Plane's /ctrl/connect
-     │  directly, hits agentd via the proxy, runs `echo hi`, asserts
-     │  the output, then soft-terminates.
-     ├─ Run inside the existing dev-fleet (Vagrant VM).
-     ├─ Output: a green spike run, captured as a screen recording or
-     │  log file for future reference. The spike code lives on a
-     │  branch named `spike/walking-skeleton`; it is NOT merged to
-     │  main. Phase 1 will reimplement these binaries under full TDD
-     │  discipline.
+     │  just enough infrastructure to run a real sandbox lifecycle.
+     ├─ Forked Plane image from `crates/plane/docker/Dockerfile`.
+     ├─ Maintained `sandbox-runtime:node24-latest` image with agentd.
+     ├─ Run `make smoke` against the existing dev fleet.
+     ├─ Output: a green smoke run, captured as a log file for future reference.
      └─ If the spike fails: identify why (network? Plane behavior we
-        misunderstood? our image misconfigured?), update the docs
-        with what we learned, retry the spike. Do not enter Phase 0
-        with a failing or skipped spike.
+        misunderstood? image misconfigured?), update the docs with what
+        we learned, retry the spike. Do not enter Phase 0 with a failing
+        or skipped spike.
 ```
 
-**End of Phase D:** the docs reflect verified reality, at least one Layer-4 contract test is known to work, a disposable but green walking skeleton has run. Confidence in the design is no longer based on careful reading; it's based on having executed it. From here, Phase 0's investment makes sense.
+**End of Phase D:** the docs reflect verified reality, at least one Layer-4 contract test is known to work, and a disposable but green smoke path has run. Confidence in the design is no longer based on careful reading; it's based on having executed it. From here, Phase 0's investment makes sense.
 
 Sessions estimate: Phase D is 3–6 sessions total. D.1 is one session (reading + doc updates). D.2 is 1–2 sessions (infrastructure setup, then per-fixture verification). D.3 is 1–3 sessions depending on what reality reveals.
 
@@ -886,10 +874,9 @@ This must complete before any binary work. Without it, "test-first" is not possi
 
 0.2  Fork Plane
      ├─ Clone jamsocket/plane into crates/plane/ (preserving git history)
-     ├─ Set up upstream tracking branch
      ├─ Confirm cargo build --release green
      ├─ Confirm cargo test green on upstream tests
-     └─ UPSTREAM.md documents the rebase strategy
+     └─ Treat `crates/plane/` as a hard fork; see §9
 
 0.3  Build common types
      ├─ common::protocol re-exports from plane::common
@@ -928,18 +915,17 @@ This must complete before any binary work. Without it, "test-first" is not possi
      ├─ rust-workspace.yml: cargo build / test / clippy / fmt
      ├─ contracts.yml: regenerate schemas, fail if git diff non-empty;
      │  validate every fixture against its schema
-     ├─ walking-skeleton.yml: not yet runnable; skeleton script written
-     │  but will fail until §1.1 completes
-     └─ All three jobs green or appropriately red (skeleton is allowed red
+     ├─ agentd-smoke.yml: runnable smoke check for agentd HTTP endpoints
+     └─ All three jobs green or appropriately red (smoke is allowed red
         only until binaries exist)
 ```
 
 End of Phase 0: workspace builds, types compile, schemas committed, fixtures validate, stubs work, CI runs. No binary is implemented yet, but the *infrastructure for implementing binaries test-first* is in place.
 
-### Phase 1 — Walking skeleton
+### Phase 1 — Dev-fleet smoke canary
 
 ```
-1.1  agentd-headless to passing walking-skeleton level
+1.1  agentd-headless to passing smoke level
      ├─ TDD per endpoint: /health, /info, /v1/exec (sync only), /v1/fs/read,
      │  /v1/fs/write
      ├─ Layer 1 + 2 + 3 green
@@ -950,11 +936,11 @@ End of Phase 0: workspace builds, types compile, schemas committed, fixtures val
      ├─ Smoke tests (Layer 2 + 3)
      └─ Push to local registry
 
-1.3  Walking skeleton green
-     ├─ A 50-line sdk-typescript talks to stock Plane /ctrl/connect
+1.3  Dev-fleet smoke green
+     ├─ `dev-fleet/scripts/smoke-test.sh` talks to the forked controller
      ├─ End-to-end: create, exec, stop
      ├─ This is also agentd-headless Layer 4
-     └─ Walking-skeleton CI workflow turns from "allowed red" to "must green"
+     └─ `agentd-smoke` CI stays green
 ```
 
 End of Phase 1: the canary flies. The simplest possible end-to-end works. Any future change that breaks this fails CI.
@@ -969,9 +955,9 @@ End of Phase 1: the canary flies. The simplest possible end-to-end works. Any fu
      └─ All four layers green for every endpoint
 
 2.2  sdk-typescript v0.1
-     ├─ Talks to stock Plane /ctrl/connect (still no /pub/v1/* wrapper)
+     ├─ Talks to forked Plane /ctrl/connect (still no /pub/v1/* wrapper)
      ├─ Full method surface (runCommand, writeFiles, etc.)
-     ├─ Layers 1, 2, 3 green; Layer 4 = walking skeleton
+     ├─ Layers 1, 2, 3 green; Layer 4 = dev-fleet smoke
      └─ Publish to private registry
 ```
 
@@ -981,14 +967,14 @@ End of Phase 1: the canary flies. The simplest possible end-to-end works. Any fu
 3.1  Controller Phase A — schema migration
      ├─ Our migration file in plane/schema/migrations/
      ├─ Layer 2: migration applies; Plane's tests still pass
-     └─ Layer 4: walking skeleton against our controller (with no /pub/v1/*
+     └─ Layer 4: smoke against our controller (with no /pub/v1/*
         yet, so this only validates "our migration didn't break Plane")
 
 3.2  Controller Phase B — /pub/v1/* routes
      ├─ TDD per endpoint
      ├─ Each endpoint goes through layers 1-4
      ├─ Update sdk-typescript to use /pub/v1/* (still pre-extensions)
-     └─ Walking skeleton routes through our wrapper
+     └─ Dev-fleet smoke routes through our wrapper
 
 3.3  Controller Phase C — extension action queue
      ├─ extension_action table, NOTIFY infra
@@ -1004,7 +990,7 @@ End of Phase 1: the canary flies. The simplest possible end-to-end works. Any fu
 4.1  Drone Phase A — Plane-native
      ├─ Upstream tests green in our fork (mostly nothing to do; we just
      │  haven't broken Plane)
-     └─ Layer 4: walking skeleton uses our drone
+     └─ Layer 4: dev-fleet smoke uses our drone
 
 4.2  Drone Phase B — extension handlers
      ├─ Handler for each MessageToDrone extension variant
@@ -1040,7 +1026,7 @@ End of Phase 1: the canary flies. The simplest possible end-to-end works. Any fu
 
 ```
 7.1  Controller Phase D — cleanup, multi-replica
-7.2  Comprehensive walking skeleton variants (snapshot, network policy)
+7.2  Comprehensive smoke variants (snapshot, network policy)
 ```
 
 ### Phase 8 — Full SDK + ops
@@ -1087,7 +1073,7 @@ Next: 1. Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
       2. Implement build_connect_request() in api_v1.rs.
       3. Run: cargo test -p plane --test api_v1 --
             create_sandbox_happy_path until green.
-      4. Once green, run walking-skeleton; should still pass
+      4. Once green, run the relevant smoke target; should still pass
          (this endpoint isn't on its path yet).
       5. Commit (green), then write the error-case tests.
 ```
@@ -1135,25 +1121,26 @@ This is a divergent fork. We don't maintain PR compatibility with upstream.
 .github/workflows/
 ├── rust-workspace.yml       # cargo build / test / clippy / fmt on every PR
 ├── contracts.yml            # regenerate schemas, fail if drift; validate fixtures
-├── sdk-typescript.yml       # build, test, type-check
-├── sdk-python.yml           # build, test
-├── runtime-images.yml       # docker buildx; only on tag or main
-└── walking-skeleton.yml     # the canary; on every PR
+├── docker.yml               # runtime image builds
+├── release.yml              # release packaging
+└── agentd-smoke.yml         # agentd HTTP smoke test
 ```
 
 ### 10.1 The contracts job (most critical)
 
 ```yaml
-- run: cargo run --bin generate-schemas
+- run: make schemas
 - run: git diff --exit-code contracts/schemas/
-- run: ./scripts/validate-fixtures.sh    # ajv-based
+- run: cargo test -p common --test fixtures
 ```
 
 If you changed a Rust type without regenerating schemas, CI fails. If you changed a schema without committing it, CI fails. This is the propagation rule made executable.
 
-### 10.2 The walking-skeleton job
+### 10.2 The agentd smoke job
 
-Brings up the dev fleet, builds the latest of every binary, runs the end-to-end test. If red, PR doesn't merge.
+Builds `agentd` and exercises health, exec, and filesystem endpoints. The full
+local fleet smoke path is `make smoke` for Vagrant or `make smoke-docker` for
+the Docker fallback.
 
 ### 10.3 Per-binary Layer 4 jobs
 

@@ -11,6 +11,9 @@ build/
 .pnpm-store/
 .npm/
 
+# Next.js
+.next/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -32,6 +35,7 @@ venv/
 *.crt
 *.kubeconfig
 secrets/
+certificates/
 
 # OS
 .DS_Store

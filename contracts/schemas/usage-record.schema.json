@@ -8,6 +8,7 @@
     "memory_mb_seconds",
     "rx_bytes",
     "sandbox_id",
+    "tenant",
     "tx_bytes"
   ],
   "properties": {
@@ -31,6 +32,9 @@
       "minimum": 0.0
     },
     "sandbox_id": {
+      "type": "string"
+    },
+    "tenant": {
       "type": "string"
     },
     "tx_bytes": {

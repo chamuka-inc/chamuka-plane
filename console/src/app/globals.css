@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  /* --- Surfaces --- */
+  --color-bg: #000;
+  --color-bg-1: #0a0a0a;
+  --color-bg-2: #111;
+  --color-bg-hover: #191919;
+
+  /* --- Borders --- */
+  --color-border: #222;
+  --color-border-light: #333;
+
+  /* --- Text hierarchy --- */
+  --color-text: #ededed;
+  --color-text-2: #a1a1a1;
+  --color-text-3: #666;
+  --color-text-4: #444;
+
+  /* --- Semantic status --- */
+  --color-status-green: #0cce6b;
+  --color-status-amber: #f5a623;
+  --color-status-red: #ee0000;
+
+  /* --- Accents --- */
+  --color-accent-blue: #0070f3;
+  --color-accent-purple: #7928ca;
+  --color-accent-cyan: #50e3c2;
+  --color-accent-pink: #f81ce5;
+
+  /* --- Typography --- */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Menlo", monospace;
+
+  /* --- Border radius --- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* --- Shadows (dark-optimized) --- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.7);
+
+  /* --- Animations --- */
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-slide-down: slide-down 150ms ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-light) transparent;
+  }
+}

@@ -10,3 +10,4 @@ pub mod info;
 pub mod ports;
 pub mod processes;
 pub mod signal;
+pub mod vnc;

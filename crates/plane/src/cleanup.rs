@@ -5,6 +5,12 @@ const CLEANUP_LOOP_INTERVAL_SECONDS: u64 = 60 * 3;
 const DEFAULT_BATCH_SIZE: i32 = 100;
 const SECRET_RETENTION_DAYS: i32 = 30;
 const ACKED_ACTION_RETENTION_DAYS: i32 = 1;
+// Hard-delete sandboxes whose backend has been reaped (backend_id IS NULL)
+// and whose expires_at passed more than this many days ago. Drives the
+// cascade to usage_record / audit_egress / port_route / credential_binding
+// / extension_action. snapshot.sandbox_id is SET NULL (cycle 2) so snapshots
+// survive past this and follow their own expires_at retention.
+const SANDBOX_RETENTION_DAYS: i32 = 83;
 
 pub async fn run_cleanup(
     db: &PlaneDatabase,
@@ -49,6 +55,17 @@ async fn run_extension_cleanup(db: &PlaneDatabase, batch_size: i32) -> Result<()
         .await?;
     if actions_deleted > 0 {
         tracing::info!(actions_deleted, "Cleaned up acked extension actions");
+    }
+
+    let sandboxes_deleted = db
+        .sandbox()
+        .cleanup_terminated(SANDBOX_RETENTION_DAYS, batch_size)
+        .await?;
+    if sandboxes_deleted > 0 {
+        tracing::info!(
+            sandboxes_deleted,
+            "Cleaned up terminated sandboxes past retention"
+        );
     }
 
     Ok(())
@@ -209,7 +226,6 @@ mod tests {
             ("audit_egress", "sandbox_id", &sandbox_id),
             ("port_route", "sandbox_id", &sandbox_id),
             ("usage_record", "sandbox_id", &sandbox_id),
-            ("network_policy", "sandbox_id", &sandbox_id),
             ("snapshot", "sandbox_id", &sandbox_id),
             ("backend_action", "backend_id", &backend_id),
             ("backend_key", "id", &backend_id),
@@ -657,6 +673,279 @@ mod tests {
                 .await
                 .expect("check");
         assert!(act_gone, "old acked action should be cleaned up");
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn backend_cleanup_preserves_sandbox_and_children() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "bk-preserve").await;
+
+        sqlx::query(
+            "INSERT INTO audit_egress (at, tenant, sandbox_id, destination_host,
+                                       destination_port, protocol, action)
+             VALUES (now(), $1, $2, 'example.com', 443, 'tls', 'allow')",
+        )
+        .bind(f.tenant_id())
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("insert audit row");
+
+        sqlx::query(
+            "UPDATE backend
+             SET last_status = 'terminated',
+                 last_status_time = now() - interval '8 days'
+             WHERE id = $1",
+        )
+        .bind(f.backend_id())
+        .execute(&pool)
+        .await
+        .expect("mark backend terminated");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.backend()
+            .cleanup(7, 100)
+            .await
+            .expect("backend cleanup should succeed");
+
+        let backend_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM backend WHERE id = $1)")
+                .bind(f.backend_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check backend");
+        assert!(!backend_exists, "terminated backend should be deleted");
+
+        // After 20260607: backend deletion sets sandbox.backend_id to NULL
+        // rather than cascading. Sandbox + child rows are preserved past
+        // backend reaping; sandbox-level retention drives later hard-delete.
+        let sandbox_backend_id: Option<String> =
+            sqlx::query_scalar("SELECT backend_id FROM sandbox WHERE id = $1")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(
+            sandbox_backend_id.is_none(),
+            "sandbox.backend_id should be SET NULL by backend reaping (got {sandbox_backend_id:?})"
+        );
+
+        let audit_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM audit_egress WHERE sandbox_id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check audit");
+        assert!(
+            audit_exists,
+            "audit_egress should survive backend reaping (cascades only on sandbox delete)"
+        );
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_terminated_deletes_orphaned_past_retention() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-retention").await;
+
+        // Simulate backend already reaped: NULL out backend_id, push expires_at well past.
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                expires_at = now() - interval '100 days'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox orphaned + expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        let deleted = db
+            .sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+        assert!(
+            deleted >= 1,
+            "expected at least one sandbox deleted, got {deleted}"
+        );
+
+        let sandbox_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(!sandbox_exists, "sandbox should be hard-deleted");
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_preserves_within_retention() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-retain-within").await;
+
+        // Orphaned but expires_at only 1 day ago — should NOT be cleaned up.
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                expires_at = now() - interval '1 day'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox orphaned + recently expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+
+        let sandbox_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(
+            sandbox_exists,
+            "sandbox within retention should be preserved"
+        );
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_preserves_persistent_sandboxes() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-persistent").await;
+
+        // Mark sandbox persistent + orphaned + long-expired. Per spec §11.4
+        // persistent sandboxes are resume targets; cleanup_terminated must
+        // never hard-delete them.
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                persistent = TRUE,
+                                expires_at = now() - interval '100 days'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox persistent + orphaned + expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+
+        let sandbox_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(
+            sandbox_exists,
+            "persistent sandbox must survive cleanup regardless of expires_at"
+        );
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    /// After 20260608: audit_egress.sandbox_id is SET NULL on sandbox delete,
+    /// not CASCADE. The audit trail outlives sandbox hard-delete.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_preserves_audit_egress_via_set_null() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-audit-preserve").await;
+
+        sqlx::query(
+            "INSERT INTO audit_egress (at, tenant, sandbox_id, destination_host,
+                                       destination_port, protocol, action)
+             VALUES (now(), $1, $2, 'example.com', 443, 'tls', 'allow')",
+        )
+        .bind(f.tenant_id())
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("insert audit row");
+
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                expires_at = now() - interval '100 days'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox orphaned + expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+
+        let audit_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM audit_egress WHERE tenant = $1")
+                .bind(f.tenant_id())
+                .fetch_one(&pool)
+                .await
+                .expect("count audit");
+        assert_eq!(
+            audit_count, 1,
+            "audit_egress row should survive sandbox hard-delete (sandbox_id is SET NULL)"
+        );
+
+        let audit_sandbox_id: Option<String> =
+            sqlx::query_scalar("SELECT sandbox_id FROM audit_egress WHERE tenant = $1")
+                .bind(f.tenant_id())
+                .fetch_one(&pool)
+                .await
+                .expect("audit row sandbox_id");
+        assert!(
+            audit_sandbox_id.is_none(),
+            "audit_egress.sandbox_id should be NULL after sandbox cleanup, got {audit_sandbox_id:?}"
+        );
+
+        // Cleanup the orphaned audit row explicitly (it no longer cascades).
+        sqlx::query("DELETE FROM audit_egress WHERE tenant = $1")
+            .bind(f.tenant_id())
+            .execute(&pool)
+            .await
+            .expect("clean orphan audit");
 
         teardown(&pool, &f.suffix).await;
     }

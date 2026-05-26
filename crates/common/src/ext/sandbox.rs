@@ -76,7 +76,11 @@ pub struct SandboxResources {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Sandbox {
     pub id: String,
-    pub backend_id: String,
+    /// Plane backend currently (or most recently) hosting this sandbox.
+    /// Null once the backend has been reaped by post-termination cleanup
+    /// — the sandbox row itself outlives its backend per spec retention.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_id: Option<String>,
     pub tenant: String,
     pub status: BackendStatus,
     pub runtime: String,

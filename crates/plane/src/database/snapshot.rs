@@ -103,7 +103,7 @@ impl<'a> SnapshotDatabase<'a> {
 #[derive(Debug, Clone, FromRow)]
 pub struct SnapshotRow {
     pub id: String,
-    pub sandbox_id: String,
+    pub sandbox_id: Option<String>,
     pub tenant: String,
     pub image_ref: String,
     pub digest: String,

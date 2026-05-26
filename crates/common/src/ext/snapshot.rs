@@ -9,7 +9,11 @@ use super::sandbox::Arch;
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Snapshot {
     pub id: String,
-    pub sandbox_id: String,
+    /// Origin sandbox id. Null if the originating sandbox has been deleted —
+    /// snapshots are durable artifacts (their own retention TTL via
+    /// `expires_at`) and survive sandbox/backend cleanup.
+    #[serde(default)]
+    pub sandbox_id: Option<String>,
     pub tenant: String,
     pub image_ref: String,
     pub digest: String,

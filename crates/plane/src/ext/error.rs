@@ -66,6 +66,30 @@ impl ApiError {
             details: None,
         }
     }
+
+    /// 410 Gone — used when a resource exists but its execution substrate is
+    /// no longer available (e.g., a terminated sandbox whose backend has
+    /// been reaped past retention).
+    pub fn gone(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::GONE,
+            code: "GONE",
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    /// 409 Conflict — used when a reuse request collides on shape with the
+    /// existing backend associated with the same key (different runtime,
+    /// resources, trust, etc.).
+    pub fn key_conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            code: "KEY_CONFLICT",
+            message: message.into(),
+            details: None,
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

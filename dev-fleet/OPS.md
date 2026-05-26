@@ -19,13 +19,32 @@ no shell, no curl. `/bin/wget` is copied from busybox for healthchecks.
 Use `CMD` format (not `CMD-SHELL`) since there is no shell.
 
 Other runtime variants: `sandbox-runtime:agent-latest` (node24 + git + jq + curl + wget + procps),
-`sandbox-runtime:desktop-test` (with X11/VNC),
+`sandbox-runtime:desktop-latest` (with X11/VNC),
 `sandbox-runtime:ysweet-latest` (y-sweet 0.6.3 pre-installed on port 3000).
 
 ## Starting the fleet
 
+### Canonical (Vagrant)
+
 ```bash
-cd dev-fleet && docker compose up -d
+make fleet-images
+make fleet-up
+make smoke
+```
+
+Host services run via `dev-fleet/host/docker-compose.yml`; drones run in
+VirtualBox VMs. Cluster name: `192.168.56.1:9090`.
+
+### Docker fallback
+
+```bash
+make fleet-images
+make fleet-up-docker
+make smoke-docker
+```
+
+```bash
+cd dev-fleet && docker compose up -d   # equivalent to make fleet-up-docker
 ```
 
 Seven containers: `fleet-postgres`, `fleet-controller`, `fleet-proxy`,
@@ -52,11 +71,11 @@ Add `-v` to also wipe Postgres data and registry contents.
 ## Fleet status
 
 ```bash
-./dev-fleet/scripts/fleet-status.sh
+make fleet-status
 ```
 
-Shows: fleet container state, controller health, drone/proxy registration
-(with backend counts and heartbeat ages), and active sandbox containers.
+Shows the canonical Vagrant fleet status. For Docker-only fallback status, use
+`make fleet-status-docker`.
 
 ## Running the smoke test
 

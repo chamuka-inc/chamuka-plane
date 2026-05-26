@@ -38,6 +38,23 @@ impl<'a> CredentialDatabase<'a> {
         Ok(())
     }
 
+    pub async fn resolve_secret_value(
+        &self,
+        credential_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar(
+            r#"
+            SELECT s.encrypted_value
+            FROM credential_binding cb
+            JOIN secret s ON s.id = cb.secret_id
+            WHERE cb.id = $1 AND s.deleted_at IS NULL
+            "#,
+        )
+        .bind(credential_id)
+        .fetch_optional(self.pool)
+        .await
+    }
+
     pub async fn delete(&self, id: &str, sandbox_id: &str) -> Result<bool, sqlx::Error> {
         let result = sqlx::query(
             r#"

@@ -89,7 +89,7 @@ Examples:
 - **agentd.** Run agentd in a real container in the dev fleet. Hit it with HTTP from outside. Compare responses to fixtures.
 - **egress-proxy.** Stand up real Envoy. Push fixture-derived policies. Send real curl traffic from inside a sandbox netns. Verify Envoy's behavior matches.
 
-The walking skeleton ([build plan §6](./sandbox-platform-build-plan.md#6-walking-skeleton)) is the project-wide Layer 4 test, run on every PR.
+The dev-fleet smoke canary ([build plan §6](./sandbox-platform-build-plan.md#6-dev-fleet-smoke-canary)) is the maintained project-wide Layer 4 path.
 
 ### 1.6 What "live e2e against contracts" prevents
 
@@ -111,7 +111,7 @@ When a live e2e fails, the order of suspicion is: (a) fixture is wrong, (b) our 
 | 3 e2e against stubs | Often (locally) | Yes | < 2 min per binary |
 | 4 Live e2e | Sometimes (locally; expensive) | Yes, with infra | < 10 min per binary |
 
-The walking skeleton runs on every PR. Per-binary Layer 4 tests run on every PR that touches that binary (CI determines this via path filters).
+The `agentd-smoke` job runs on every PR. Per-binary Layer 4 tests run on every PR that touches that binary where CI coverage exists; otherwise use `make smoke` or `make smoke-docker` locally.
 
 ### 1.8 What this means for new features
 
@@ -121,15 +121,26 @@ For a new endpoint, new message variant, or new behavior, the order is:
 1. Update interfaces.md   (the spec change)
 2. Update the Rust type in common::ext   (the implementation contract)
 3. cargo run --bin generate-schemas   (the JSON Schema)
-4. Add or update fixtures in contracts/fixtures/   (the wire examples)
-5. Write a red Layer 2 contract test   (the verification target)
-6. TDD inner loop: red → green-impl   (the code)
-7. Add a Layer 3 e2e test with stubs   (the integration)
-8. Add a Layer 4 live e2e test where it makes sense   (the reality check)
-9. Commit with `Phase:` and `Next:` trailers (the handoff)
+4. Regenerate SDK types from schemas   (the SDK contract)
+     TS:  cargo run --bin generate-sdk-types -- --lang ts
+     Py:  cargo run --bin generate-sdk-types -- --lang py
+5. Add or update fixtures in contracts/fixtures/   (the wire examples)
+6. Write a red Layer 2 contract test   (the verification target)
+7. TDD inner loop: red → green-impl   (the code)
+8. Add a Layer 3 e2e test with stubs   (the integration)
+9. Add a Layer 4 live e2e test where it makes sense   (the reality check)
+10. Commit with `Phase:` and `Next:` trailers (the handoff)
 ```
 
-Skipping any step is technical debt that compounds. Especially: do not write code in step 6 without having a red test in step 5 first.
+The full propagation chain is:
+
+```
+interfaces.md → Rust type → JSON Schema → SDK types (TS + Py) → fixtures → test → code
+```
+
+Steps 3 and 4 are mechanically enforced: CI fails if schemas or SDK types are stale relative to Rust types. The `generated/` directory in each SDK is truly generated — never hand-edited. If a generated type doesn't fit the SDK's ergonomic needs, the fix goes in the generator, not in the output.
+
+Skipping any step is technical debt that compounds. Especially: do not write code in step 7 without having a red test in step 6 first.
 
 ---
 
@@ -193,7 +204,13 @@ The TDD discipline (§1) says how code arrives in the tree. This section says wh
 
 **No request_id correlation when Plane uses action_id.** I made this mistake in an early doc revision. The pattern is durable queue + per-message id + ack. We follow it; we don't invent a new correlation scheme.
 
-**No bypassing the propagation rule.** Adding an optional field "just for testing" goes through interfaces.md → type → schema → fixture → test → code, like everything else.
+**No bypassing the propagation rule.** Adding an optional field "just for testing" goes through interfaces.md → type → schema → SDK types → fixture → test → code, like everything else.
+
+**No hand-written SDK types in `generated/` directories.** Files under `sdks/typescript/src/generated/` and `sdks/python/src/sandbox_platform/generated/` are produced by `generate-sdk-types` from `contracts/schemas/`. Editing them by hand is how drift starts — the edit looks correct today and silently diverges from the contract tomorrow. If a generated type has the wrong shape, the bug is in one of: (a) interfaces.md, (b) the Rust type, (c) the generator. Fix the source; regenerate.
+
+**No SDK-only types that shadow contract types.** If the SDK needs a type that represents a contract surface (request, response, entity), that type comes from the generator. SDK-specific convenience types (e.g., options bags, builder patterns) are fine as long as they delegate to generated types internally, never redefine the wire shape.
+
+**No legacy API paths in public SDK surface.** The SDKs expose one creation path: `SandboxClient` → `/pub/v1/sandboxes`. Internal Plane endpoints (`/ctrl/connect`, `/ctrl/status`) are not part of the SDK contract and must not be reachable from public SDK methods. If legacy paths exist for migration, they are `@deprecated`/`@internal` with a removal date.
 
 **Boy-scout the Plane fork.** `crates/plane/` is a hard fork — modify any file freely. Apply the boy-scout principle: leave code cleaner than you found it (fix warnings, improve naming, simplify logic) whenever you're working in an area.
 
@@ -201,11 +218,11 @@ The TDD discipline (§1) says how code arrives in the tree. This section says wh
 
 **No skipping clippy or rustfmt.** CI runs `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check`. Local pre-commit should run both.
 
-**No merge without green CI.** All workflows green: rust-workspace, contracts, walking-skeleton, per-binary live e2e.
+**No merge without green CI.** All workflows green: rust-workspace, contracts, agentd-smoke, and any relevant per-binary live e2e.
 
 **No `#[allow(...)]` without justification comment.** Same shape as `unsafe`: a comment explaining why this lint is being silenced.
 
-**No PRs that change types without regenerating schemas.** The contracts workflow catches this; the discipline is to run `cargo run --bin generate-schemas` before pushing, not let CI tell me.
+**No PRs that change types without regenerating schemas and SDK types.** The contracts workflow catches this; the discipline is to run `cargo run --bin generate-schemas && cargo run --bin generate-sdk-types` before pushing, not let CI tell me. A type change that updates schemas but not SDK types (or vice versa) is an incomplete propagation.
 
 ### 2.5 Enforcement
 
@@ -243,7 +260,7 @@ Each binary crate inherits via `lints.workspace = true`.
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+cargo test --workspace --all-features --exclude plane-tests
 ```
 
 Any violation fails the build.
@@ -264,7 +281,7 @@ Git is the audit trail. For solo TDD work it matters more than for a team: the c
 
 - `main` is the only long-lived branch.
 - Feature branches are short-lived (one session, sometimes two). They merge into `main` via fast-forward or rebase-merge, never via merge commits. Once merged, they're deleted.
-- `main` always has the walking skeleton green. Always.
+- `main` always has the maintained smoke canary green. Always.
 - `crates/plane/` is a hard fork — no upstream-tracking branch, no rebase cadence. See [build plan §9](./sandbox-platform-build-plan.md#9-fork-management).
 
 **No long-running feature branches.** A branch alive for more than a week is a smell. Either it should have merged a long time ago, or it's actually a different thing trying to be a single change.
@@ -368,7 +385,7 @@ in commit abcd1234.
 **Generated-but-committed exceptions:**
 - `Cargo.lock` — committed for binary crates (this whole workspace is binaries).
 - `contracts/schemas/*.schema.json` — generated from Rust types but committed; CI fails if they're stale (§3.8).
-- `sdks/typescript/packages/*/src/generated/types.ts` and `sdks/python/.../generated/`— generated from schemas but committed for the same reason.
+- `sdks/typescript/src/generated/types.ts` and `sdks/python/src/sandbox_platform/generated/`— generated from schemas but committed for the same reason.
 
 ### 3.5 .gitignore
 
@@ -472,6 +489,13 @@ if ! git diff --quiet contracts/schemas/; then
     exit 1
 fi
 
+# SDK types in sync with schemas
+cargo run --quiet --bin generate-sdk-types
+if ! git diff --quiet sdks/typescript/src/generated/ sdks/python/src/sandbox_platform/generated/; then
+    echo "ERROR: SDK generated types are stale. Run 'cargo run --bin generate-sdk-types' and commit."
+    exit 1
+fi
+
 # Basic secret scan (very rough; primary defense is .gitignore + discipline)
 if git diff --cached | grep -E '(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]+ PRIVATE KEY-----)' > /dev/null; then
     echo "ERROR: Possible secret detected in staged changes."
@@ -519,7 +543,7 @@ For pre-1.0 (which we'll be in for a long time), the rules apply with one shift:
 Solo doesn't mean skipping the audit trail. For any non-trivial change (more than a few commits, or anything touching contracts, schemas, or fork code), push to a branch and open a self-PR. Then:
 
 1. Read the diff on the GitHub web UI. The web view catches things the terminal doesn't — naming inconsistency across files, misplaced new files, accidental whitespace changes.
-2. CI runs against the PR; the walking-skeleton job's result is on record.
+2. CI runs against the PR; the `agentd-smoke` job's result is on record.
 3. Merge via "Squash and merge" only if the branch has chatty commits that aren't worth keeping (mostly `wip:` or `try:` ones, which shouldn't have happened in the first place). Default: "Rebase and merge" to preserve the TDD commit rhythm.
 4. Delete the branch immediately after merge.
 
@@ -540,10 +564,11 @@ Three layers, parallel to §2.5:
 **Layer 1 — Pre-commit hooks.** `.githooks/pre-commit` runs fmt, clippy, schema-sync, and basic secret scan. Bypassable with `--no-verify` only in emergencies (and the next commit fixes whatever the bypass was for).
 
 **Layer 2 — CI.** Branch protection on `main`:
-- Required status checks: rust-workspace, contracts, walking-skeleton.
+- Required status checks: rust-workspace, contracts, agentd-smoke.
 - Linear history required (no merge commits).
 - No force-pushes to `main`.
 - Even self-merges go through PR if the change is non-trivial.
+- The `sdk-types` check regenerates SDK types from schemas and fails if the output differs from what's committed. This closes the Rust → schema → SDK type pipeline end-to-end.
 
 **Layer 3 — Self-review.** Things tooling can't catch:
 - Commit message quality: subject is imperative, body explains *why*.
@@ -581,7 +606,7 @@ Blocked: <optional; only if something genuinely prevents progress>
 Next: Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
       mapping). Implement build_connect_request() in api_v1.rs.
       Run: cargo test -p plane --test api_v1 -- create_sandbox_happy_path
-      until green. Then run walking-skeleton; should pass.
+      until green. Then run the relevant smoke target; should pass.
 ```
 
 **`Blocked:`** — only present if something genuinely prevents the next step (e.g., upstream dependency is broken in a way I don't yet know how to fix). A TDD `red:` commit is not blocked — it's the expected mid-cycle state where the next commit makes it green.
@@ -604,7 +629,6 @@ Next: Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
       mapping). Implement build_connect_request() in api_v1.rs.
       Run: cargo test -p plane --test api_v1 -- create_sandbox_happy_path
       until green.
-Walking skeleton: last CI run 2h ago — PASS
 Tree state: clean
 Recent phase tags:
   phase-0.8-done    (3 days ago)
@@ -625,7 +649,7 @@ All four layers green:
   Layer 1: 47 unit tests, 84% coverage
   Layer 2: contract tests for all 11 endpoints
   Layer 3: e2e stubbed pass
-  Layer 4: walking skeleton green
+  Layer 4: smoke canary green
 
 Cold start: 87ms p95 (target 100ms).
 Binary size: 12.4 MB stripped (target 15 MB).
@@ -644,7 +668,7 @@ Every session ends with:
 1. **A commit.** Always. Even just a doc tweak.
 2. **`Phase:` and `Next:` trailers populated.** `Blocked:` only if applicable.
 3. **`git push`** — or at minimum, local main at a known state with no uncommitted changes.
-4. **Walking skeleton run** if any code changed. If it broke, the commit body says so explicitly and `Next:` starts with "fix the walking skeleton before anything else."
+4. **Smoke run** if runtime behavior changed. If it broke, the commit body says so explicitly and `Next:` starts with "fix smoke before anything else."
 5. **Phase-completion tag** if this session finished an implementation-order item.
 
 ### 4.5 Mid-task recovery example
@@ -666,7 +690,7 @@ Phase: 7.3-B
 Next: Read interfaces.md §3.2 (CreateSandboxRequest -> ConnectRequest
       mapping). Implement build_connect_request() in api_v1.rs.
       Run: cargo test -p plane --test api_v1 -- create_sandbox_happy_path
-      until green. Then run walking-skeleton; should pass.
+      until green. Then run the relevant smoke target; should pass.
       Then commit and continue with error-case tests.
 ```
 
@@ -703,7 +727,7 @@ This rule and the git-as-tracker rule reinforce each other: the tree is the curr
 
 **Anti-pattern 6: skipping the propagation rule.** Code-first changes leave types, schemas, fixtures, and tests behind. They'll be wrong in three different ways and you won't catch it until much later.
 
-**Anti-pattern 7: leaving the walking skeleton red.** If a session breaks the canary, fixing it is the first thing in the next session. The session-ending commit's `Next:` trailer says so.
+**Anti-pattern 7: leaving the smoke canary red.** If a session breaks the canary, fixing it is the first thing in the next session. The session-ending commit's `Next:` trailer says so.
 
 **Anti-pattern 8: trying to do too much in one session.** Better to over-commit small green checkpoints, end at a known state with tight `Phase:` and `Next:` trailers, than push into uncertain territory and end mid-work.
 
@@ -716,6 +740,10 @@ This rule and the git-as-tracker rule reinforce each other: the tree is the curr
 **Anti-pattern 12: bypassing pre-commit hooks with `--no-verify`.** The hooks exist because mistakes are cheap to catch pre-commit and expensive later. Every `--no-verify` is a future debugging session. If the hook is wrong, fix the hook.
 
 **Anti-pattern 13: committing secrets "just for testing."** No. Use `.env.example` with placeholder values, a local-kms container for KMS dev, and never `git add` a real credential. A committed secret in git history is treated as compromised, period.
+
+**Anti-pattern 14: hand-writing types in a `generated/` directory.** The directory name is a promise: its contents are machine-produced from a single source of truth. Hand-writing types there — even "just this once, I'll wire up codegen later" — creates immediate drift. The SDK type divergence of May 2026 started exactly this way: types were hand-transcribed into `sdks/typescript/src/generated/types.ts`, the transcription introduced field-name errors (`env_var` vs `destination`/`header_name`, `repo` vs `url`), and the Python SDK copied the already-wrong TS types. No CI check existed to catch it because the codegen pipeline was never built. The fix is structural: the generator is the only writer, CI is the only verifier, humans never edit generated output.
+
+**Anti-pattern 15: exposing internal Plane endpoints through the public SDK.** The SDK's public surface covers `/pub/v1/*` (our platform API) and `/v1/*` (agentd data plane). Plane-internal endpoints like `/ctrl/connect`, `/ctrl/status`, `/ctrl/drain` are implementation details — they bypass tenant auth, skip resource validation, and use raw Plane types that don't match our contracts. An SDK method that calls an internal endpoint will work today and break silently when the platform layer changes the contract it was supposed to enforce.
 
 ---
 

@@ -93,12 +93,31 @@ image-base: ## Build sandbox-runtime:base-latest.
 image-node24: ## Build sandbox-runtime:node24-latest.
 	@bash runtime-images/build.sh node24 latest
 
+.PHONY: image-python313
+image-python313: ## Build sandbox-runtime:python313-latest.
+	@bash runtime-images/build.sh python313 latest
+
+.PHONY: image-agent
+image-agent: ## Build sandbox-runtime:agent-latest.
+	@bash runtime-images/build.sh agent latest
+
 .PHONY: image-desktop
 image-desktop: ## Build sandbox-runtime:desktop-latest.
 	@bash runtime-images/build.sh desktop latest
 
+.PHONY: image-plane
+image-plane: docker-check ## Build chamuka-plane:latest for the local cluster.
+	docker build -t chamuka-plane:latest -f crates/plane/docker/Dockerfile crates
+
+.PHONY: image-ysweet
+image-ysweet: ## Build sandbox-runtime:ysweet-latest.
+	@bash runtime-images/build.sh ysweet latest
+
+.PHONY: fleet-images
+fleet-images: image-plane image-node24 ## Build images required by the canonical Vagrant fleet.
+
 .PHONY: images
-images: test-image image-base image-node24 image-desktop ## Build all runtime images.
+images: test-image image-base image-node24 image-python313 image-agent image-desktop ## Build all runtime images.
 
 # ─── Contracts / schemas ────────────────────────────────────────────
 
@@ -126,31 +145,44 @@ sqlx-prepare: ## Regenerate sqlx offline cache (requires DATABASE_URL).
 ##@ Dev fleet
 
 .PHONY: fleet-up
-fleet-up: ## Start local dev fleet (Postgres, controller, proxy, drones).
+fleet-up: ## Start canonical Vagrant dev fleet (host services + VM drones).
 	@$(MAKE) -C dev-fleet up
 
 .PHONY: fleet-down
-fleet-down: ## Stop drones (host services keep running).
+fleet-down: ## Stop Vagrant drones (host services keep running).
 	@$(MAKE) -C dev-fleet down
 
 .PHONY: fleet-nuke
-fleet-nuke: ## Destroy everything (VMs + host services + volumes).
+fleet-nuke: ## Destroy Vagrant fleet (VMs + host services + volumes).
 	@$(MAKE) -C dev-fleet nuke
 
 .PHONY: fleet-status
-fleet-status: ## Show fleet status.
+fleet-status: ## Show canonical Vagrant fleet status.
 	@$(MAKE) -C dev-fleet status
 
 .PHONY: smoke
-smoke: ## End-to-end smoke test against running fleet.
+smoke: ## End-to-end smoke test against canonical Vagrant fleet.
 	@$(MAKE) -C dev-fleet smoke
+
+.PHONY: fleet-up-docker fleet-down-docker fleet-status-docker smoke-docker
+fleet-up-docker: ## Start Docker-only fallback fleet.
+	@$(MAKE) -C dev-fleet docker-up
+
+fleet-down-docker: ## Stop Docker-only fallback fleet.
+	@$(MAKE) -C dev-fleet docker-down
+
+fleet-status-docker: ## Show Docker-only fallback fleet status.
+	@$(MAKE) -C dev-fleet docker-status
+
+smoke-docker: ## Run smoke test against Docker-only fallback fleet.
+	@$(MAKE) -C dev-fleet smoke-docker
 
 # ─── Ops ────────────────────────────────────────────────────────────
 
 ##@ Ops
 
 .PHONY: status
-status: ## Show project phase, next step, walking skeleton state.
+status: ## Show project phase, next step, and recent phase tags.
 	@./scripts/status.sh
 
 .PHONY: hooks
@@ -161,3 +193,30 @@ hooks: ## Configure git hooks.
 .PHONY: clean
 clean: ## Remove build artifacts.
 	$(CARGO) clean $(CARGO_OPTS)
+
+# ─── Console ────────────────────────────────────────────────────────
+
+##@ Console
+
+.PHONY: console-install console-dev console-dev-next console-dev-relay console-build console-test console-lint
+
+console-install: ## Install console npm dependencies.
+	cd console && npm install
+
+console-dev: ## Start console dev server (Next.js :3000 + ws-relay :3101).
+	cd console && npm run dev
+
+console-dev-next: ## Start Next.js dev server only (:3000).
+	cd console && npm run dev:next
+
+console-dev-relay: ## Start ws-relay dev server only (:3101).
+	cd console && npm run dev:relay
+
+console-build: ## Build console for production.
+	cd console && npm run build
+
+console-test: ## Run console test suite.
+	cd console && npm run test
+
+console-lint: ## Lint console sources.
+	cd console && npm run lint

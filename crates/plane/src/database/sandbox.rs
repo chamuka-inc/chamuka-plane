@@ -1,6 +1,33 @@
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
 
+const SANDBOX_SELECT: &str = r#"
+    SELECT
+        s.id, s.backend_id, s.tenant, s.runtime, s.trust_tier, s.arch, s.image,
+        s.vcpus, s.memory_mb, s.ports, s.tags,
+        s.persistent, s.snapshot_source,
+        s.created_at, s.updated_at, s.expires_at, s.ready_at, s.terminated_at,
+        b.last_status AS "live_status",
+        n.name AS "drone_name",
+        t.token AS "bearer_token"
+    FROM sandbox s
+    LEFT JOIN backend b ON b.id = s.backend_id
+    LEFT JOIN node n ON n.id = b.drone_id
+    -- Pick the most-recently-expiring non-expired token for this backend.
+    -- Plane's create_token INSERTs a fresh row per connect without deleting
+    -- prior ones, so a backend that has been reused N times has N token rows
+    -- in the table. Without LATERAL + ORDER BY + LIMIT 1 the LEFT JOIN would
+    -- multiply result rows and fetch_optional would silently take whichever
+    -- Postgres ordered first — potentially a stale or near-expired token.
+    LEFT JOIN LATERAL (
+        SELECT token
+        FROM token
+        WHERE backend_id = s.backend_id AND expiration_time > now()
+        ORDER BY expiration_time DESC
+        LIMIT 1
+    ) t ON true
+"#;
+
 pub struct SandboxDatabase<'a> {
     pool: &'a PgPool,
 }
@@ -10,7 +37,6 @@ impl<'a> SandboxDatabase<'a> {
         Self { pool }
     }
 
-    // Maps 1:1 to the INSERT column list; a wrapper struct would just duplicate these fields
     #[allow(clippy::too_many_arguments)]
     pub async fn insert(
         &self,
@@ -56,26 +82,99 @@ impl<'a> SandboxDatabase<'a> {
         Ok(())
     }
 
+    /// Insert a sandbox row, treating a `sandbox_backend_id_key` UNIQUE
+    /// violation as a "someone else already inserted a row for this backend"
+    /// signal rather than a hard error — the typical case is two concurrent
+    /// reuse-recovery handlers racing on the same backend_id. Returns the
+    /// final row, which may be the caller's insert or the winner's.
+    ///
+    /// `ready_at` is for the recovery path: when Plane reports the reused
+    /// backend already past Scheduled, we record that timestamp so SDK
+    /// awaiters that gate on `ready_at != null` don't hang forever waiting
+    /// for a state transition that already happened.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_or_get_by_backend_id(
+        &self,
+        id: &str,
+        backend_id: &str,
+        tenant: &str,
+        runtime: &str,
+        trust_tier: &str,
+        arch: &str,
+        image: &str,
+        vcpus: i32,
+        memory_mb: i32,
+        ports: &[i32],
+        tags: &serde_json::Value,
+        persistent: bool,
+        snapshot_source: Option<&str>,
+        expires_at: DateTime<Utc>,
+        ready_at: Option<DateTime<Utc>>,
+    ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO sandbox (
+                id, backend_id, tenant, runtime, trust_tier, arch, image,
+                vcpus, memory_mb, ports, tags, persistent, snapshot_source, expires_at, ready_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            ON CONFLICT (backend_id) DO NOTHING
+            "#,
+        )
+        .bind(id)
+        .bind(backend_id)
+        .bind(tenant)
+        .bind(runtime)
+        .bind(trust_tier)
+        .bind(arch)
+        .bind(image)
+        .bind(vcpus)
+        .bind(memory_mb)
+        .bind(ports)
+        .bind(tags)
+        .bind(persistent)
+        .bind(snapshot_source)
+        .bind(expires_at)
+        .bind(ready_at)
+        .execute(self.pool)
+        .await?;
+
+        // Either we won the race (our row is now there), or someone else won
+        // (their row is there); look up by (backend_id, tenant) to fetch it.
+        // If neither — i.e., a row was inserted under a different tenant —
+        // returns None and the caller surfaces a tenant-mismatch error.
+        self.get_by_backend_id(backend_id, tenant).await
+    }
+
     pub async fn get_by_id(
         &self,
         id: &str,
         tenant: &str,
     ) -> Result<Option<SandboxRow>, sqlx::Error> {
-        let row = sqlx::query_as::<_, SandboxRow>(
-            r#"
-            SELECT
-                id, backend_id, tenant, runtime, trust_tier, arch, image,
-                vcpus, memory_mb, ports, tags,
-                persistent, snapshot_source,
-                created_at, updated_at, expires_at, ready_at, terminated_at
-            FROM sandbox
-            WHERE id = $1 AND tenant = $2
-            "#,
-        )
-        .bind(id)
-        .bind(tenant)
-        .fetch_optional(self.pool)
-        .await?;
+        let sql = format!("{SANDBOX_SELECT} WHERE s.id = $1 AND s.tenant = $2");
+        let row = sqlx::query_as::<_, SandboxRow>(&sql)
+            .bind(id)
+            .bind(tenant)
+            .fetch_optional(self.pool)
+            .await?;
+        Ok(row)
+    }
+
+    /// Look up the sandbox row whose `backend_id` matches, scoped to the
+    /// caller's tenant. Used by `/pub/v1/sandboxes` to return the existing
+    /// row when Plane reuses a backend (`ConnectResponse.spawned == false`).
+    /// Tenant scoping is defense-in-depth: the key namespace is already
+    /// tenant-prefixed so cross-tenant reuse should be impossible upstream.
+    pub async fn get_by_backend_id(
+        &self,
+        backend_id: &str,
+        tenant: &str,
+    ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        let sql = format!("{SANDBOX_SELECT} WHERE s.backend_id = $1 AND s.tenant = $2");
+        let row = sqlx::query_as::<_, SandboxRow>(&sql)
+            .bind(backend_id)
+            .bind(tenant)
+            .fetch_optional(self.pool)
+            .await?;
         Ok(row)
     }
 
@@ -85,24 +184,63 @@ impl<'a> SandboxDatabase<'a> {
         tenant: &str,
         additional: chrono::Duration,
     ) -> Result<Option<SandboxRow>, sqlx::Error> {
-        let row = sqlx::query_as::<_, SandboxRow>(
+        let updated = sqlx::query(
             r#"
             UPDATE sandbox
             SET expires_at = expires_at + $3, updated_at = NOW()
             WHERE id = $1 AND tenant = $2
-            RETURNING
-                id, backend_id, tenant, runtime, trust_tier, arch, image,
-                vcpus, memory_mb, ports, tags,
-                persistent, snapshot_source,
-                created_at, updated_at, expires_at, ready_at, terminated_at
             "#,
         )
         .bind(id)
         .bind(tenant)
         .bind(additional)
-        .fetch_optional(self.pool)
+        .execute(self.pool)
         .await?;
-        Ok(row)
+
+        if updated.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.get_by_id(id, tenant).await
+    }
+
+    /// Push the sandbox's `expires_at` forward to `target` iff `target` is
+    /// later than the current value, returning the (possibly updated) row.
+    /// Used on key reuse so a fresh request can extend a sandbox's lifetime
+    /// without ever shrinking it.
+    ///
+    /// Implemented as two independent queries (UPDATE then SELECT) without a
+    /// transaction — the API caller treats `Ok(None)` as "row was concurrently
+    /// deleted, surface 500", so cross-statement snapshot consistency isn't
+    /// needed. Dropping the transaction means each query holds a pool
+    /// connection only for its own round-trip, not across the UPDATE+SELECT
+    /// pair. Under bursts of reuse-with-extend this is the difference between
+    /// briefly holding 1 connection per call and holding 1 connection across
+    /// two round-trips per call — meaningful when max_connections is small.
+    pub async fn set_expires_at_at_least(
+        &self,
+        id: &str,
+        tenant: &str,
+        target: DateTime<Utc>,
+    ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE sandbox
+            SET expires_at = $3, updated_at = NOW()
+            WHERE id = $1 AND tenant = $2 AND expires_at < $3
+            "#,
+        )
+        .bind(id)
+        .bind(tenant)
+        .bind(target)
+        .execute(self.pool)
+        .await?;
+
+        let sql = format!("{SANDBOX_SELECT} WHERE s.id = $1 AND s.tenant = $2");
+        sqlx::query_as::<_, SandboxRow>(&sql)
+            .bind(id)
+            .bind(tenant)
+            .fetch_optional(self.pool)
+            .await
     }
 
     pub async fn update_network_policy(
@@ -126,6 +264,46 @@ impl<'a> SandboxDatabase<'a> {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Hard-delete orphaned non-persistent sandboxes past retention.
+    ///
+    /// Eligible rows:
+    ///   - backend_id IS NULL (Plane's backend cleanup has already reaped it,
+    ///     which implies the backend was Terminated at least min_age_days ago)
+    ///   - expires_at older than retention_days
+    ///   - persistent = FALSE (persistent sandboxes are resume targets via
+    ///     Sandbox.resume(sandbox_id); the user retains intent to bring them
+    ///     back from snapshot_source, so we never hard-delete them here)
+    ///
+    /// The cascade then fires on usage_record / port_route / credential_binding
+    /// / extension_action. snapshot.sandbox_id (cycle 2) and audit_egress.sandbox_id
+    /// (cycle 6) are SET NULL, so snapshots and audit trails outlive sandbox
+    /// hard-delete and follow their own retention.
+    ///
+    /// Returns the number of sandbox rows deleted.
+    pub async fn cleanup_terminated(
+        &self,
+        retention_days: i32,
+        batch_size: i32,
+    ) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM sandbox
+            WHERE id IN (
+                SELECT id FROM sandbox
+                WHERE backend_id IS NULL
+                  AND persistent = FALSE
+                  AND expires_at < now() - make_interval(days => $1)
+                LIMIT $2
+            )
+            "#,
+        )
+        .bind(retention_days)
+        .bind(batch_size)
+        .execute(self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
     pub async fn get_drone_id_for_backend(
         &self,
         backend_id: &str,
@@ -144,42 +322,23 @@ impl<'a> SandboxDatabase<'a> {
         cursor: Option<DateTime<Utc>>,
     ) -> Result<Vec<SandboxRow>, sqlx::Error> {
         let rows = if let Some(before) = cursor {
-            sqlx::query_as::<_, SandboxRow>(
-                r#"
-                SELECT
-                    id, backend_id, tenant, runtime, trust_tier, arch, image,
-                    vcpus, memory_mb, ports, tags,
-                    persistent, snapshot_source,
-                    created_at, updated_at, expires_at, ready_at, terminated_at
-                FROM sandbox
-                WHERE tenant = $1 AND created_at < $2
-                ORDER BY created_at DESC
-                LIMIT $3
-                "#,
-            )
-            .bind(tenant)
-            .bind(before)
-            .bind(limit)
-            .fetch_all(self.pool)
-            .await?
+            let sql = format!(
+                "{SANDBOX_SELECT} WHERE s.tenant = $1 AND s.created_at < $2 ORDER BY s.created_at DESC LIMIT $3"
+            );
+            sqlx::query_as::<_, SandboxRow>(&sql)
+                .bind(tenant)
+                .bind(before)
+                .bind(limit)
+                .fetch_all(self.pool)
+                .await?
         } else {
-            sqlx::query_as::<_, SandboxRow>(
-                r#"
-                SELECT
-                    id, backend_id, tenant, runtime, trust_tier, arch, image,
-                    vcpus, memory_mb, ports, tags,
-                    persistent, snapshot_source,
-                    created_at, updated_at, expires_at, ready_at, terminated_at
-                FROM sandbox
-                WHERE tenant = $1
-                ORDER BY created_at DESC
-                LIMIT $2
-                "#,
-            )
-            .bind(tenant)
-            .bind(limit)
-            .fetch_all(self.pool)
-            .await?
+            let sql =
+                format!("{SANDBOX_SELECT} WHERE s.tenant = $1 ORDER BY s.created_at DESC LIMIT $2");
+            sqlx::query_as::<_, SandboxRow>(&sql)
+                .bind(tenant)
+                .bind(limit)
+                .fetch_all(self.pool)
+                .await?
         };
         Ok(rows)
     }
@@ -188,7 +347,7 @@ impl<'a> SandboxDatabase<'a> {
 #[derive(Debug, Clone, FromRow)]
 pub struct SandboxRow {
     pub id: String,
-    pub backend_id: String,
+    pub backend_id: Option<String>,
     pub tenant: String,
     pub runtime: String,
     pub trust_tier: String,
@@ -205,4 +364,7 @@ pub struct SandboxRow {
     pub expires_at: DateTime<Utc>,
     pub ready_at: Option<DateTime<Utc>>,
     pub terminated_at: Option<DateTime<Utc>>,
+    pub live_status: Option<String>,
+    pub drone_name: Option<String>,
+    pub bearer_token: Option<String>,
 }

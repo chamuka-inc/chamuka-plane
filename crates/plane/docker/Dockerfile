@@ -15,6 +15,7 @@ COPY agentd/Cargo.toml /work/agentd/Cargo.toml
 COPY egress-proxy/Cargo.toml /work/egress-proxy/Cargo.toml
 COPY ops-cli/Cargo.toml /work/ops-cli/Cargo.toml
 COPY tools/generate-schemas/Cargo.toml /work/tools/generate-schemas/Cargo.toml
+COPY tools/generate-sdk-types/Cargo.toml /work/tools/generate-sdk-types/Cargo.toml
 
 RUN mkdir -p /work/plane/src && echo "fn main() {}" > /work/plane/src/main.rs
 RUN mkdir -p /work/plane-dynamic-proxy/src && touch /work/plane-dynamic-proxy/src/lib.rs
@@ -26,6 +27,7 @@ RUN mkdir -p /work/agentd/src && echo "fn main() {}" > /work/agentd/src/main.rs
 RUN mkdir -p /work/egress-proxy/src && echo "fn main() {}" > /work/egress-proxy/src/main.rs
 RUN mkdir -p /work/ops-cli/src && echo "fn main() {}" > /work/ops-cli/src/main.rs
 RUN mkdir -p /work/tools/generate-schemas/src && echo "fn main() {}" > /work/tools/generate-schemas/src/main.rs
+RUN mkdir -p /work/tools/generate-sdk-types/src && echo "fn main() {}" > /work/tools/generate-sdk-types/src/main.rs
 
 # Pre-build dependencies
 ENV SQLX_OFFLINE=true

@@ -1,4 +1,4 @@
-use super::{types::ContainerId, DockerRuntime};
+use super::{types::ContainerId, DockerRuntime, EgressContext};
 use anyhow::Result;
 use bollard::{
     auth::DockerCredentials,
@@ -14,7 +14,6 @@ use plane_common::{
 use std::{
     collections::HashMap,
     path::{Component, Path, PathBuf},
-    time::Duration,
 };
 
 /// Port inside the container to expose.
@@ -56,12 +55,12 @@ fn create_labels() -> HashMap<String, String> {
     HashMap::from([(super::PLANE_DOCKER_LABEL.to_string(), "true".to_string())])
 }
 
-fn create_port_bindings() -> HashMap<String, Option<Vec<PortBinding>>> {
+fn create_port_bindings(host_port: Option<u16>) -> HashMap<String, Option<Vec<PortBinding>>> {
     vec![(
         format!("{}/tcp", CONTAINER_PORT),
         Some(vec![bollard::models::PortBinding {
             host_ip: None,
-            host_port: None,
+            host_port: host_port.map(|p| p.to_string()),
         }]),
     )]
     .into_iter()
@@ -76,42 +75,6 @@ pub async fn image_exists(docker: &Docker, image: &str) -> Result<bool> {
         }) => Ok(false),
         Err(e) => Err(e.into()),
     }
-}
-
-async fn try_get_port(docker: &Docker, container_id: &ContainerId) -> Result<u16> {
-    let info = docker
-        .inspect_container(&container_id.to_string(), None)
-        .await?;
-
-    // TODO: avoid clones.
-
-    let port = info
-        .network_settings
-        .and_then(|settings| settings.ports)
-        .and_then(|ports| ports.get(&format!("{}/tcp", CONTAINER_PORT)).cloned())
-        .and_then(|bindings| bindings.clone())
-        .and_then(|bindings| bindings.first().cloned())
-        .and_then(|binding| binding.host_port.clone())
-        .and_then(|port| port.parse::<u16>().ok())
-        .ok_or_else(|| anyhow::anyhow!("Failed to get port for container."))?;
-
-    Ok(port)
-}
-
-pub async fn get_port(docker: &Docker, container_id: &ContainerId) -> Result<u16> {
-    // There can be a race condition where the container is ready but has
-    // not yet received a port assignment, so we retry a few times.
-    for _ in 0..3 {
-        match try_get_port(docker, container_id).await {
-            Ok(port) => return Ok(port),
-            Err(e) => {
-                tracing::info!(?e, "Failed to get port, retrying...");
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
-    Err(anyhow::anyhow!("Failed to get port after retries."))
 }
 
 // Disallow absolute paths or paths with dots (.. or .)
@@ -130,6 +93,7 @@ pub fn validate_mount_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn get_container_config_from_executor_config(
     backend_id: Option<&BackendName>,
     exec_config: DockerExecutorConfig,
@@ -138,9 +102,20 @@ pub fn get_container_config_from_executor_config(
     static_token: Option<&BearerToken>,
     log_config: Option<&HostConfigLogConfig>,
     mount_base: Option<&PathBuf>,
+    egress: Option<&EgressContext>,
+    host_port: Option<u16>,
 ) -> Result<bollard::container::Config<String>> {
     let mut env = exec_config.env;
     env.insert("PORT".to_string(), CONTAINER_PORT.to_string());
+
+    if let Some(ctx) = egress {
+        env.insert("SANDBOX_EGRESS_PROXY".to_string(), ctx.addr.clone());
+        env.insert("SANDBOX_EGRESS_PROXY_IP".to_string(), ctx.ip.clone());
+        env.insert(
+            "SANDBOX_EGRESS_CA_PEM".to_string(),
+            ctx.ca_pem.as_ref().clone(),
+        );
+    }
 
     if let Some(backend_id) = backend_id {
         env.insert("SESSION_BACKEND_ID".to_string(), backend_id.to_string());
@@ -211,7 +186,7 @@ pub fn get_container_config_from_executor_config(
                 .collect(),
         ),
         host_config: Some(HostConfig {
-            port_bindings: Some(create_port_bindings()),
+            port_bindings: Some(create_port_bindings(host_port)),
             runtime: runtime.map(|s| s.to_string()),
             memory: exec_config.resource_limits.memory_limit_bytes,
             log_config: log_config.cloned(),
@@ -247,6 +222,11 @@ pub fn get_container_config_from_executor_config(
                 hm.insert("size".to_string(), lim.to_string());
                 hm
             }),
+            cap_add: if egress.is_some() {
+                Some(vec!["NET_ADMIN".to_string()])
+            } else {
+                None
+            },
             binds,
             ..Default::default()
         }),
@@ -260,6 +240,8 @@ pub async fn run_container(
     exec_config: DockerExecutorConfig,
     acquired_key: Option<&AcquiredKey>,
     static_token: Option<&BearerToken>,
+    egress: Option<&EgressContext>,
+    host_port: Option<u16>,
 ) -> Result<ContainerId> {
     let container_id: ContainerId = backend_id.into();
 
@@ -276,6 +258,8 @@ pub async fn run_container(
         static_token,
         docker.config.log_config.as_ref(),
         docker.config.mount_base.as_ref(),
+        egress,
+        host_port,
     )?;
 
     docker
@@ -333,6 +317,8 @@ mod tests {
             None,
             None,
             Some(&PathBuf::from(mount_base)),
+            None,
+            None,
         )
     }
 
@@ -363,6 +349,8 @@ mod tests {
             exec_config,
             None,
             acquired_key.as_ref(),
+            None,
+            None,
             None,
             None,
             None,

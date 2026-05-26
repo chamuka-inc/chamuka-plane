@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { SandboxClient } from "../src/client.js";
+import { Sandbox } from "../src/sandbox.js";
 import type {
   CreateSandboxResponse,
   Sandbox as SandboxType,
@@ -46,17 +46,25 @@ const mockCreateResponse: CreateSandboxResponse = {
 const mockSnapshot: Snapshot = {
   id: "snap-001",
   sandbox_id: "sbx-test001",
-  image: "registry.internal/snap-001:latest",
+  tenant: "tenant-abc",
+  image_ref: "registry.internal/snap-001:latest",
+  digest: "sha256:abc123",
+  base_image: "node:24-slim",
+  arch: "amd64",
   runtime: "node24",
-  tag: "v1",
+  name: "v1",
   size_bytes: 2048,
   created_at: "2026-05-17T10:01:00Z",
+  expires_at: "2026-06-17T10:01:00Z",
 };
 
 const mockCredentialBinding: CredentialBinding = {
   id: "cred-bind-001",
+  sandbox_id: "sbx-test001",
+  destination: "https://api.example.com",
+  header_name: "Authorization",
+  header_format: "Bearer {value}",
   secret_id: "secret-abc",
-  env_var: "API_KEY",
   created_at: "2026-05-17T10:02:00Z",
 };
 
@@ -100,13 +108,15 @@ afterAll(() => server.close());
 
 describe("Sandbox instance control-plane methods", () => {
   async function createSandbox() {
-    const client = new SandboxClient({ controlUrl: CONTROL_URL, token: "test-token" });
-    return client.createSandbox({ runtime: "node24", resources: { vcpus: 2, memory_mb: 4096 } });
+    return Sandbox.create(
+      { runtime: "node24", resources: { vcpus: 2 } },
+      { controlUrl: CONTROL_URL, token: "test-token" },
+    );
   }
 
   it("snapshot() creates a snapshot of this sandbox", async () => {
     const sandbox = await createSandbox();
-    const result = await sandbox.snapshot({ tag: "v1" });
+    const result = await sandbox.snapshot({ name: "v1" });
 
     expect(result.snapshot.id).toBe("snap-001");
     expect(result.snapshot.sandbox_id).toBe("sbx-test001");
@@ -126,7 +136,8 @@ describe("Sandbox instance control-plane methods", () => {
     const sandbox = await createSandbox();
     const result = await sandbox.createCredential({
       secret_id: "secret-abc",
-      env_var: "API_KEY",
+      destination: "https://api.example.com",
+      header_name: "Authorization",
     });
 
     expect(result.id).toBe("cred-bind-001");

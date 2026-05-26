@@ -225,7 +225,37 @@ pub async fn process_pending_extension_actions(
             }
             ExtensionActionKind::PushCredential => {
                 let mut wire: PushCredentialWire = serde_json::from_value(row.payload)?;
-                wire.action_id = action_id;
+                wire.action_id = action_id.clone();
+
+                if wire.binding.value.is_empty() {
+                    let cred_id = &wire.binding.id;
+                    match db.credential().resolve_secret_value(cred_id).await {
+                        Ok(Some(value)) => wire.binding.value = value,
+                        Ok(None) => {
+                            // Binding was deleted or secret was soft-deleted
+                            // (the latter is a real race; create_credential_binding
+                            // checks exists_active but the secret can transition
+                            // to soft-deleted between that check and the action
+                            // being delivered). Ack the action so it stops
+                            // retrying every poll cycle; we'll never be able to
+                            // dispatch a meaningful credential value.
+                            tracing::warn!(
+                                cred_id,
+                                action_id = %action_id,
+                                "Credential or secret unresolvable at dispatch; acking action to drop from queue"
+                            );
+                            if let Err(e) = db.extension_action().ack(&action_id).await {
+                                tracing::error!(error = ?e, "Failed to ack unresolvable credential action");
+                            }
+                            continue;
+                        }
+                        Err(e) => {
+                            tracing::error!(error = ?e, "Failed to resolve secret value");
+                            continue;
+                        }
+                    }
+                }
+
                 MessageToDrone::PushCredential(wire)
             }
             ExtensionActionKind::RevokeCredential => {

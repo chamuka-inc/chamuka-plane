@@ -1,0 +1,162 @@
+# Environment Variables
+
+Configure variables at three levels: SDK client auth, sandbox container defaults, and per-command overrides.
+
+## Overview
+
+| Level | Where | Scope | Typical use |
+|---|---|---|---|
+| **SDK auth** | Your machine / CI | Control-plane API calls | `SANDBOX_CONTROL_URL`, `SANDBOX_TOKEN` |
+| **Sandbox** | `CreateSandboxRequest.env` | Entire sandbox lifetime | `NODE_ENV`, `LOG_LEVEL`, feature flags |
+| **Command** | `runCommand` `options.env` | Single execution | One-off overrides, test fixtures |
+
+<Callout type="info">For API keys used in outbound HTTP from the sandbox, prefer [credential binding](/docs/guides/credentials) over putting secrets in sandbox `env`. Credentials are injected by the egress proxy and never stored inside the container filesystem.</Callout>
+
+---
+
+## SDK authentication
+
+The SDK resolves control-plane credentials in this order:
+
+1. Explicit `auth` argument on static methods
+2. Environment variables on the host running the SDK (TypeScript)
+3. Error if the control URL is missing
+
+| Variable | Required | SDK | Description |
+|---|---|---|---|
+| `SANDBOX_CONTROL_URL` | Yes | TypeScript | Base URL of the control plane (e.g. `http://localhost:8080`) |
+| `SANDBOX_TOKEN` | No | TypeScript | Bearer token for API authentication |
+| `SANDBOX_TENANT` | No | TypeScript only | Tenant header for multi-tenant deployments |
+
+Python uses the same env vars for URL and token (`SANDBOX_CONTROL_URL`, `SANDBOX_TOKEN`). Pass `control_url` / `token` to `Sandbox.create()` explicitly; there is no `SANDBOX_TENANT` in the Python SDK today.
+
+<CodeTabs
+  ts={`export SANDBOX_CONTROL_URL=http://localhost:8080
+export SANDBOX_TOKEN=your-token-here
+
+// Or pass explicitly:
+const sandbox = await Sandbox.create(
+  { runtime: "node24", image: "sandbox-runtime:node24-latest" },
+  { controlUrl: "http://localhost:8080", token: "your-token" },
+);`}
+  python={`import os
+os.environ["SANDBOX_CONTROL_URL"] = "http://localhost:8080"
+os.environ["SANDBOX_TOKEN"] = "your-token-here"
+
+# Or pass explicitly via client configuration`}
+/>
+
+These variables apply only to the SDK process on your laptop or CI runner. They are **not** copied into the sandbox container.
+
+---
+
+## Sandbox-level environment
+
+Pass `env` when creating a sandbox. Values are written into the container configuration at spawn time and are visible to every process for the life of the sandbox (including the default shell, long-running servers, and subsequent `runCommand` calls).
+
+<CodeTabs
+  ts={`const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+  env: {
+    NODE_ENV: "production",
+    LOG_LEVEL: "info",
+    APP_ROOT: "/workspace",
+  },
+});`}
+  python={`from sandbox_platform import Sandbox, CreateSandboxRequest
+
+sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+    env={
+        "NODE_ENV": "production",
+        "LOG_LEVEL": "info",
+        "APP_ROOT": "/workspace",
+    },
+))`}
+/>
+
+### Console UI
+
+In the console quickstart, open **Configure** on the boot panel and use the **Environment** section to add key/value pairs. They are sent as `env` on create, same as the SDK.
+
+### Desktop runtime defaults
+
+The controller enables VNC automatically when `runtime` is **desktop** (`VNC_ENABLED=1`, read-only `VNC_VIEWONLY=1` per the platform spec). The console boot panel sets `VNC_VIEWONLY=0` so you can interact with the desktop in the browser. You can override either variable in the Environment editor or via the SDK.
+
+### What to put here
+
+- Non-secret configuration: log levels, feature flags, paths, `NODE_ENV`
+- Variables your app reads with `process.env` / `os.environ` inside the sandbox
+
+### What not to put here
+
+- Control-plane tokens (`SANDBOX_TOKEN`) — those belong on the SDK host only
+- Third-party API keys — use [credentials](/docs/guides/credentials) so values stay out of the container and process list
+
+---
+
+## Per-command environment
+
+`runCommand` accepts an `env` map that applies only to that execution. Use it to override or supplement sandbox-level variables without changing the container defaults.
+
+<CodeTabs
+  ts={`// Sandbox was created with LOG_LEVEL=info
+const result = await sandbox.runCommand("/bin/bash", {
+  args: ["-c", "echo $LOG_LEVEL"],
+  env: { LOG_LEVEL: "debug" },
+});
+console.log(result.stdout); // "debug\\n"`}
+  python={`result = sandbox.run_command(
+    "/bin/bash",
+    args=["-c", "echo $LOG_LEVEL"],
+    env={"LOG_LEVEL": "debug"},
+)
+print(result["stdout"])  # "debug\\n"`}
+/>
+
+Detached and PTY executions support the same `env` field:
+
+<CodeTabs
+  ts={`await sandbox.runCommand("node", {
+  args: ["server.js"],
+  detached: true,
+  env: { PORT: "3000", NODE_ENV: "development" },
+});`}
+  python={`sandbox.run_command_detached(
+    "node",
+    args=["server.js"],
+    env={"PORT": "3000", "NODE_ENV": "development"},
+)`}
+/>
+
+### Precedence
+
+For a given key, the effective value inside a command is typically:
+
+1. **Command `env`** — wins when both are set for that invocation
+2. **Sandbox `env`** — default for all commands in that sandbox
+3. **Image defaults** — whatever the OCI image defines if neither layer sets the key
+
+Exact merge behavior is implemented by agentd when spawning the process; treat command-level `env` as the override surface for one-off runs.
+
+---
+
+## Secrets vs environment variables
+
+| Approach | Secret in container? | Best for |
+|---|---|---|
+| Sandbox `env` | Yes (visible to processes) | Public config, non-sensitive toggles |
+| Credential binding | No (proxy injects headers) | API keys, tokens, passwords |
+| SDK `SANDBOX_TOKEN` | No (stays on client) | Authenticating to the control plane |
+
+When generating SDK snippets from the console with secrets configured, the snippet reads API keys from **your** environment (e.g. `OPENAI_API_KEY`) via `Sandbox.createSecret`, then binds them as credentials — it does not place those values in `CreateSandboxRequest.env`.
+
+---
+
+## Related
+
+- [Quickstart](/docs/quickstart) — set `SANDBOX_CONTROL_URL` and create your first sandbox
+- [SDK Reference](/docs/sdk-reference) — `Sandbox.create` and `sandbox.runCommand` parameters
+- [Credentials](/docs/guides/credentials) — inject API keys without sandbox env vars

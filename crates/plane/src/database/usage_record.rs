@@ -1,4 +1,16 @@
-use sqlx::PgPool;
+use chrono::{DateTime, Utc};
+use sqlx::{FromRow, PgPool};
+
+#[derive(Debug, Clone, FromRow)]
+pub struct UsageRow {
+    pub tenant: String,
+    pub sandbox_id: String,
+    pub bucket_start: DateTime<Utc>,
+    pub cpu_nsec: i64,
+    pub memory_mb_seconds: i64,
+    pub rx_bytes: i64,
+    pub tx_bytes: i64,
+}
 
 pub struct UsageRecordDatabase<'a> {
     pool: &'a PgPool,
@@ -9,6 +21,38 @@ impl<'a> UsageRecordDatabase<'a> {
         Self { pool }
     }
 
+    const MAX_USAGE_ROWS: i64 = 10_000;
+
+    pub async fn query_by_tenant(
+        &self,
+        tenant: &str,
+        since: DateTime<Utc>,
+        sandbox_id: Option<&str>,
+    ) -> Result<Vec<UsageRow>, sqlx::Error> {
+        let (filter, limit) = if sandbox_id.is_some() {
+            ("AND u.sandbox_id = $3", "$4")
+        } else {
+            ("", "$3")
+        };
+        // Queries the local tenant column directly — no JOIN through sandbox.
+        // This lets usage rows be retained past sandbox deletion (once the
+        // sandbox_id FK switches to SET NULL) while preserving tenant
+        // attribution for billing reconciliation.
+        let sql = format!(
+            r#"SELECT u.tenant, u.sandbox_id, u.bucket_start, u.cpu_nsec,
+                      u.memory_mb_seconds, u.rx_bytes, u.tx_bytes
+               FROM usage_record u
+               WHERE u.tenant = $1 AND u.bucket_start >= $2 {filter}
+               ORDER BY u.bucket_start DESC
+               LIMIT {limit}"#,
+        );
+        let mut q = sqlx::query_as::<_, UsageRow>(&sql).bind(tenant).bind(since);
+        if let Some(sid) = sandbox_id {
+            q = q.bind(sid);
+        }
+        q.bind(Self::MAX_USAGE_ROWS).fetch_all(self.pool).await
+    }
+
     pub async fn accumulate_for_backend(
         &self,
         backend_id: &str,
@@ -17,10 +61,10 @@ impl<'a> UsageRecordDatabase<'a> {
         rx_bytes_delta: i64,
         tx_bytes_delta: i64,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query(
+        let result = sqlx::query(
             r#"
-            INSERT INTO usage_record (sandbox_id, bucket_start, cpu_nsec, memory_mb_seconds, rx_bytes, tx_bytes)
-            SELECT s.id, date_trunc('hour', NOW()), $2, $3, $4, $5
+            INSERT INTO usage_record (tenant, sandbox_id, bucket_start, cpu_nsec, memory_mb_seconds, rx_bytes, tx_bytes)
+            SELECT s.tenant, s.id, date_trunc('hour', NOW()), $2, $3, $4, $5
             FROM sandbox s WHERE s.backend_id = $1
             ON CONFLICT (sandbox_id, bucket_start)
             DO UPDATE SET
@@ -37,6 +81,19 @@ impl<'a> UsageRecordDatabase<'a> {
         .bind(tx_bytes_delta)
         .execute(self.pool)
         .await?;
+        // Drone heartbeated metrics for a backend that has no sandbox row
+        // (sandbox.backend_id was SET NULL by backend cleanup, or no sandbox
+        // ever bound to this backend). The drone is reporting for work the
+        // controller can't attribute — surface it instead of silently dropping
+        // the billable interval.
+        if result.rows_affected() == 0 {
+            tracing::warn!(
+                backend_id,
+                cpu_nsec_delta,
+                memory_mb_seconds_delta,
+                "Dropped usage delta: no sandbox row matches backend_id (likely reaped)"
+            );
+        }
         Ok(())
     }
 }

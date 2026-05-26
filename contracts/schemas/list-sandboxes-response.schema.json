@@ -91,7 +91,6 @@
       "type": "object",
       "required": [
         "arch",
-        "backend_id",
         "cluster",
         "created_at",
         "expires_at",
@@ -111,7 +110,11 @@
           "$ref": "#/definitions/Arch"
         },
         "backend_id": {
-          "type": "string"
+          "description": "Plane backend currently (or most recently) hosting this sandbox. Null once the backend has been reaped by post-termination cleanup — the sandbox row itself outlives its backend per spec retention.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "cluster": {
           "type": "string"

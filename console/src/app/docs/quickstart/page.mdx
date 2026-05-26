@@ -1,0 +1,91 @@
+# Quickstart
+
+Get a sandbox running in under a minute.
+
+## Install the SDK
+
+<CodeTabs
+  ts={`npm install @sandbox-platform/sdk`}
+  python={`pip install sandbox-platform`}
+/>
+
+## Set environment variables
+
+Configure **SDK auth** on your machine so the SDK can reach your control plane (this is separate from variables inside the sandbox — see [Environment variables](/docs/guides/environment)):
+
+```bash
+export SANDBOX_CONTROL_URL=http://localhost:8080
+export SANDBOX_TOKEN=your-token-here
+```
+
+The SDK reads `SANDBOX_CONTROL_URL` and `SANDBOX_TOKEN` from the environment automatically. You can also pass them explicitly to any static method.
+
+## Create a sandbox
+
+<CodeTabs
+  ts={`import { Sandbox } from "@sandbox-platform/sdk";
+
+const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+  resources: { vcpus: 2 },
+});
+console.log(sandbox.id);`}
+  python={`from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec
+
+sandbox = Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+    resources=ResourcesSpec(vcpus=2),
+))
+print(sandbox.id)`}
+/>
+
+This boots a Node.js 24 sandbox with 2 vCPUs and 4 GB RAM. The call blocks until the sandbox is ready.
+
+## Run a command
+
+<CodeTabs
+  ts={`const result = await sandbox.runCommand("/bin/bash", {
+  args: ["-c", "echo Hello from the sandbox"],
+});
+console.log(result.stdout); // "Hello from the sandbox\\n"
+console.log(result.exitCode); // 0`}
+  python={`result = sandbox.run_command("/bin/bash", args=["-c", "echo Hello from the sandbox"])
+print(result["stdout"])  # "Hello from the sandbox\\n"
+print(result["exit_code"])  # 0`}
+/>
+
+## Read and write files
+
+<CodeTabs
+  ts={`// Write a file
+await sandbox.writeFile("/tmp/hello.txt", "Hello, world!");
+
+// Read it back
+const content = await sandbox.readTextFile("/tmp/hello.txt");
+console.log(content); // "Hello, world!"`}
+  python={`# Write a file
+sandbox.write_file("/tmp/hello.txt", "Hello, world!")
+
+# Read it back
+content = sandbox.read_text_file("/tmp/hello.txt")
+print(content)  # "Hello, world!"`}
+/>
+
+## Stop the sandbox
+
+<CodeTabs
+  ts={`await sandbox.stop();`}
+  python={`sandbox.stop()`}
+/>
+
+Sandboxes also stop automatically after their timeout expires (default: 5 minutes).
+
+## Next steps
+
+- [SDK Reference](/docs/sdk-reference) — full method documentation
+- [Environment variables](/docs/guides/environment) — sandbox `env`, per-command `env`, and auth vars
+- [Runtimes & Trust](/docs/guides/runtimes) — available images and isolation tiers
+- [Credentials](/docs/guides/credentials) — inject API keys into sandboxes
+- [Lifecycle](/docs/guides/lifecycle) — timeouts, snapshots, persistence

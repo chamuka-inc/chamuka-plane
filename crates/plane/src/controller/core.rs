@@ -16,6 +16,8 @@ pub struct Controller {
     pub client: PlaneClient,
     pub default_cluster: Option<ClusterName>,
     pub best_of: i64,
+    /// Host:port prefix prepended to catalog runtime images (drone-pullable registry).
+    pub sandbox_runtime_registry: Option<String>,
 }
 
 pub struct NodeHandle {
@@ -79,6 +81,7 @@ impl Controller {
         controller_url: Url,
         default_cluster: Option<ClusterName>,
         best_of: i64,
+        sandbox_runtime_registry: Option<String>,
     ) -> Self {
         let client = PlaneClient::new(controller_url);
 
@@ -88,6 +91,7 @@ impl Controller {
             client,
             default_cluster,
             best_of,
+            sandbox_runtime_registry,
         }
     }
 

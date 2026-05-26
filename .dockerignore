@@ -8,8 +8,6 @@ node_modules/
 docs/
 dev-fleet/
 sdks/
-walking-skeleton/
-spike/
 __pycache__/
 .venv/
 *.box

@@ -6,13 +6,19 @@ on:
     paths:
       - "crates/common/src/ext/**"
       - "crates/tools/generate-schemas/**"
+      - "crates/tools/generate-sdk-types/**"
       - "contracts/**"
+      - "sdks/typescript/src/generated/**"
+      - "sdks/python/src/sandbox_platform/generated/**"
   pull_request:
     branches: [main]
     paths:
       - "crates/common/src/ext/**"
       - "crates/tools/generate-schemas/**"
+      - "crates/tools/generate-sdk-types/**"
       - "contracts/**"
+      - "sdks/typescript/src/generated/**"
+      - "sdks/python/src/sandbox_platform/generated/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -57,3 +63,27 @@ jobs:
 
       - name: Validate fixtures against types
         run: cargo test -p common --test fixtures
+
+  sdk-type-freshness:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Regenerate SDK types
+        run: cargo run --bin generate-sdk-types
+
+      - name: Check SDK generated types are up to date
+        run: |
+          if ! git diff --quiet ../sdks/typescript/src/generated/ ../sdks/python/src/sandbox_platform/generated/; then
+            echo "ERROR: SDK generated types are stale."
+            echo "Run 'cargo run --bin generate-sdk-types' and commit."
+            git diff ../sdks/typescript/src/generated/ ../sdks/python/src/sandbox_platform/generated/
+            exit 1
+          fi

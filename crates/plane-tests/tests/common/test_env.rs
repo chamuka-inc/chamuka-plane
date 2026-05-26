@@ -123,6 +123,7 @@ impl TestEnvironment {
             None,
             None,
             2,
+            None,
         )
         .await
         .expect("Unable to construct controller.")
@@ -185,6 +186,7 @@ impl TestEnvironment {
             None,
             Some(forward_auth.clone()),
             2,
+            None,
         )
         .await
         .expect("Unable to construct controller.")
@@ -204,17 +206,15 @@ impl TestEnvironment {
             cleanup_min_age: Some(Duration::zero()),
         };
 
-        #[allow(deprecated)] // `docker_config` field is deprecated.
         let drone_config = DroneConfig {
             name: DroneName::new_random(),
             cluster: TEST_CLUSTER.parse().unwrap(),
             ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
             db_path: Some(self.scratch_dir.join("drone.db")),
             pool: pool.clone(),
-            auto_prune: None,
-            cleanup_min_age: None,
-            executor_config: Some(ExecutorConfig::Docker(docker_config)),
-            docker_config: None,
+            egress_proxy_url: None,
+            egress_proxy_addr: None,
+            executor_config: ExecutorConfig::Docker(docker_config),
             controller_url: controller.url().clone(),
         };
 
@@ -250,17 +250,15 @@ impl TestEnvironment {
             socket_path: socket_path.clone(),
         });
 
-        #[allow(deprecated)] // `docker_config` field is deprecated.
         let drone_config = DroneConfig {
             name: DroneName::new_random(),
             cluster: TEST_CLUSTER.parse().unwrap(),
             ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
             db_path: Some(self.scratch_dir.join("drone.db")),
             pool: self.pool.clone(),
-            auto_prune: None,
-            cleanup_min_age: None,
-            executor_config: Some(executor_config),
-            docker_config: None,
+            egress_proxy_url: None,
+            egress_proxy_addr: None,
+            executor_config,
             controller_url: controller.url().clone(),
         };
 

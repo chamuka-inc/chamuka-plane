@@ -26,6 +26,7 @@ Notation: TypeScript-style types for readability; the wire format is JSON (UTF-8
 13. [Internal coordination — Postgres LISTEN/NOTIFY](#13-internal-coordination--postgres-listennotify)
 14. [Shared type reference](#14-shared-type-reference)
 15. [Postgres schema](#15-postgres-schema)
+16. [SDK public surface](#16-sdk-public-surface)
 
 ---
 
@@ -469,7 +470,7 @@ Public:
 
 ### 4.2 `GET /ctrl/c/:cluster/state` — `ClusterState`
 
-Returns the verified shape (`common/src/types/mod.rs:498`):
+Returns the verified shape (`crates/plane-common/src/types/mod.rs`):
 
 ```ts
 type ClusterState = {
@@ -512,7 +513,7 @@ URL format constructed by `ConnectResponse::new`:
 {protocol}://{[subdomain.]cluster}/{token}/
 ```
 
-`protocol` is `https` if the cluster name lacks a port; `http` if it has one (dev cluster). Verified at `common/src/types/mod.rs:407`.
+`protocol` is `https` if the cluster name lacks a port; `http` if it has one (dev cluster). Verified at `crates/plane-common/src/types/mod.rs`.
 
 ### 4.4 Our extensions to `/ctrl/*`
 
@@ -1092,6 +1093,7 @@ WS is byte-piped through the proxy: client opens `wss://<cluster>/<token>/v1/exe
 | GET | `/v1/ports` | List listening sockets |
 | GET | `/v1/processes` | ps-style list |
 | POST | `/v1/computer` | Computer-use action (desktop variant only) |
+| GET (WS) | `/v1/vnc` | VNC WebSocket relay (desktop variant only) |
 
 ### 10.2 `GET /health`
 
@@ -1252,6 +1254,26 @@ type ComputerOutput =
   | { type: "ok" };
 ```
 
+### 10.9 `GET /v1/vnc` (WS, desktop variant)
+
+WebSocket upgrade. Relays binary VNC/RFB frames between the caller and local websockify (`ws://127.0.0.1:6080/websockify`). No protocol interpretation — agentd is a transparent byte relay.
+
+**Upgrade:** Standard WebSocket handshake. On success, binary frames flow bidirectionally. Either side closing terminates both connections.
+
+**503 when websockify not running:**
+
+```ts
+// HTTP 503 Service Unavailable
+type VncUnavailableResponse = {
+  error: "vnc_not_available";
+  message: string;
+}
+```
+
+This doubles as a VNC readiness probe. The console retries with backoff until the upgrade succeeds.
+
+**Note:** Only meaningful on desktop sandboxes where `VNC_ENABLED=1`. Non-desktop sandboxes have no websockify process; the endpoint will always return 503.
+
 ---
 
 ## 11. Egress proxy ↔ internet (our extension)
@@ -1410,7 +1432,7 @@ type BackendStatus =
   | "terminated";
 ```
 
-Serialized as `lowercase`. Source: `common/src/types/backend_state.rs:9`.
+Serialized as `lowercase`. Source: `crates/plane-common/src/types/backend_state.rs`.
 
 Forward-only. The integer ordering (used for `last_status_number`):
 
@@ -1427,7 +1449,7 @@ Forward-only. The integer ordering (used for `last_status_number`):
 
 ### 14.2 `BackendState` — Plane
 
-A **tagged union**, not a flat string. Wire shape: `{"status": "<status>", ...other fields}`. Source: `common/src/types/backend_state.rs:88`.
+A **tagged union**, not a flat string. Wire shape: `{"status": "<status>", ...other fields}`. Source: `crates/plane-common/src/types/backend_state.rs`.
 
 ```ts
 type BackendState =
@@ -1466,7 +1488,7 @@ This is the type carried on the **Drone↔Controller WebSocket** (`MessageFromDr
 
 ### 14.4 `BackendStatusStreamEntry` — Plane
 
-The type returned by `GET /pub/b/:backend/status` and emitted as the `data:` payload on `GET /pub/b/:backend/status-stream`. Source: `common/src/types/backend_state.rs`.
+The type returned by `GET /pub/b/:backend/status` and emitted as the `data:` payload on `GET /pub/b/:backend/status-stream`. Source: `crates/plane-common/src/types/backend_state.rs`.
 
 ```ts
 type BackendStatusStreamEntry = {
@@ -1491,7 +1513,7 @@ Derivation from `BackendState` (the richer type the drone reports):
 
 ### 14.5 `DockerExecutorConfig` — Plane
 
-Source: `common/src/types/mod.rs:224`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type DockerExecutorConfig = {
@@ -1528,7 +1550,7 @@ type ResourceLimits = {
 
 ### 14.6 `KeyConfig` — Plane
 
-Source: `common/src/types/mod.rs:287`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type KeyConfig = {
@@ -1542,7 +1564,7 @@ A random key has `name: "lk-<random>"`, namespace and tag empty.
 
 ### 14.7 `SpawnConfig` — Plane
 
-Source: `common/src/types/mod.rs:251`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type SpawnConfig = {
@@ -1559,7 +1581,7 @@ type SpawnConfig = {
 
 ### 14.8 `ConnectRequest` — Plane
 
-Source: `common/src/types/mod.rs:315`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type ConnectRequest = {
@@ -1572,7 +1594,7 @@ type ConnectRequest = {
 
 ### 14.9 `ConnectResponse` — Plane
 
-Source: `common/src/types/mod.rs:382`.
+Source: `crates/plane-common/src/types/mod.rs`.
 
 ```ts
 type ConnectResponse = {
@@ -2073,6 +2095,234 @@ event (notification log)
 - **No `tenants` table in the controller for fine-grained ACLs.** Auth happens at the front door; we just store the tenant string as opaque text. If a future product needs in-controller ACLs, that's an additive change.
 - **No separate `drone_capability` table.** Drone capabilities (arch, supported runtimes) are reported in the WebSocket and held in memory; we don't persist them. If the controller restarts, drones reconnect and re-report.
 - **No `secret_version` table.** Secret rotation creates a new secret with a new id and updates the bindings; old secrets are deleted. No history.
+
+---
+
+## 16. SDK public surface
+
+This section defines the ergonomic API that SDK consumers use. The wire contracts (§3, §10) do not change — this section specifies how they're exposed through the `Sandbox` class hierarchy.
+
+**Design principle:** Match Vercel Sandbox SDK conventions. Static factory methods, env-var auth, Sandbox-as-entry-point (no separate client in public surface).
+
+### 16.1 Auth resolution
+
+Both SDKs resolve credentials in this order:
+
+1. Explicit options passed to the static method (`controlUrl`, `token`).
+2. Environment variables: `SANDBOX_CONTROL_URL`, `SANDBOX_TOKEN`.
+3. If neither is set, the method throws a descriptive error.
+
+```ts
+type SandboxAuth = {
+  controlUrl?: string;   // default: process.env.SANDBOX_CONTROL_URL
+  token?: string;        // default: process.env.SANDBOX_TOKEN
+};
+```
+
+`SandboxClient` continues to exist as an internal implementation detail. It is not part of the public API and is not re-exported from the package index.
+
+### 16.2 TypeScript SDK (`@sandbox-platform/sdk`)
+
+#### Static methods (control-plane)
+
+```ts
+class Sandbox {
+  // Create a sandbox; returns a connected instance.
+  static async create(
+    request: CreateSandboxRequest,
+    auth?: SandboxAuth,
+  ): Promise<Sandbox>;
+
+  // Reconnect to an existing sandbox by ID.
+  // Fetches sandbox metadata + connection info from the control plane.
+  static async get(
+    sandboxId: string,
+    auth?: SandboxAuth,
+  ): Promise<Sandbox>;
+
+  // List sandboxes (returns raw response; no Sandbox instances).
+  static async list(
+    options?: ListOptions,
+    auth?: SandboxAuth,
+  ): Promise<ListSandboxesResponse>;
+}
+```
+
+#### Instance methods (data-plane + control-plane delegation)
+
+```ts
+class Sandbox {
+  // --- Identity (read-only) ---
+  readonly id: string;
+  readonly status: BackendStatus;
+  readonly runtime: string;
+
+  // --- Command execution ---
+  // Blocking: returns result after command finishes.
+  async runCommand(cmd: string, options?: RunCommandOptions): Promise<RunCommandResult>;
+
+  // Detached: command runs in background; returns handle.
+  // Overloaded: when options.detached is true, return type changes.
+  async runCommand(cmd: string, options: RunCommandOptions & { detached: true }): Promise<SpawnResult>;
+
+  // --- Filesystem ---
+  async readFile(path: string): Promise<Uint8Array>;
+  async readTextFile(path: string): Promise<string>;
+  async writeFile(path: string, content: string | Uint8Array, options?: WriteFileOptions): Promise<void>;
+  async mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
+  async rm(path: string, options?: { recursive?: boolean }): Promise<void>;
+  async listDir(path: string): Promise<DirEntry[]>;
+  async move(source: string, destination: string): Promise<void>;
+
+  // --- Ports ---
+  async listPorts(): Promise<ListeningPort[]>;
+  async waitForPort(port: number, timeoutMs?: number): Promise<void>;
+
+  // --- Control-plane delegation ---
+  async snapshot(options?: SnapshotOptions): Promise<SnapshotResponse>;
+  async setNetworkPolicy(policy: NetworkPolicy): Promise<NetworkPolicy>;
+  async createCredential(binding: CreateCredentialBindingRequest): Promise<CredentialBinding>;
+  async deleteCredential(credentialId: string): Promise<void>;
+  async extend(additionalMs: number): Promise<Sandbox>;
+  async stop(options?: StopOptions): Promise<void>;
+}
+```
+
+#### Detached exec overload
+
+TypeScript uses a single `runCommand` method. When `options.detached` is `true`, the return type is `SpawnResult` (containing `cmdId`). When `detached` is absent or `false`, the return type is `RunCommandResult`. This is expressed via TypeScript function overloads.
+
+PTY options (`pty`, `ptySize`) are only valid when `detached: true`.
+
+### 16.3 Python SDK (`sandbox-platform`)
+
+#### Two classes: sync and async
+
+```python
+class AsyncSandbox:
+    """Async variant — all methods are coroutines."""
+
+    @classmethod
+    async def create(
+        cls,
+        request: CreateSandboxRequest,
+        *,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> AsyncSandbox: ...
+
+    @classmethod
+    async def get(
+        cls,
+        sandbox_id: str,
+        *,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> AsyncSandbox: ...
+
+    @classmethod
+    async def list(
+        cls,
+        *,
+        status: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        control_url: str | None = None,
+        token: str | None = None,
+    ) -> ListSandboxesResponse: ...
+
+    # --- Properties ---
+    id: str
+    status: str
+    runtime: str
+
+    # --- Command execution ---
+    async def run_command(self, cmd: str, ...) -> ExecResult: ...
+    async def run_command_detached(self, cmd: str, ...) -> SpawnResult: ...
+
+    # --- Filesystem ---
+    async def read_file(self, path: str) -> bytes: ...
+    async def read_text_file(self, path: str) -> str: ...
+    async def write_file(self, path: str, content: bytes | str) -> None: ...
+    async def mkdir(self, path: str, *, recursive: bool = False) -> None: ...
+    async def rm(self, path: str, *, recursive: bool = False) -> None: ...
+    async def list_dir(self, path: str) -> list[DirEntry]: ...
+
+    # --- Control-plane delegation ---
+    async def snapshot(self, request: SnapshotRequest | None = None) -> SnapshotResponse: ...
+    async def set_network_policy(self, policy: NetworkPolicy) -> NetworkPolicy: ...
+    async def create_credential(self, binding: CreateCredentialBindingRequest) -> CredentialBinding: ...
+    async def delete_credential(self, credential_id: str) -> None: ...
+    async def extend(self, additional_ms: int) -> SandboxData: ...
+    async def stop(self, *, force: bool = False) -> None: ...
+
+
+class Sandbox:
+    """Sync variant — wraps AsyncSandbox; blocks on each call."""
+
+    @classmethod
+    def create(cls, request: CreateSandboxRequest, ...) -> Sandbox: ...
+
+    @classmethod
+    def get(cls, sandbox_id: str, ...) -> Sandbox: ...
+
+    @classmethod
+    def list(cls, ...) -> ListSandboxesResponse: ...
+
+    def run_command(self, cmd: str, ...) -> ExecResult: ...
+    def run_command_detached(self, cmd: str, ...) -> SpawnResult: ...
+
+    # Same methods as AsyncSandbox, but synchronous.
+```
+
+The sync `Sandbox` class uses an internal event loop (`asyncio.run()` or a private loop) to execute the async operations. If called from within an existing event loop, it raises a descriptive error suggesting `AsyncSandbox` instead.
+
+#### Detached exec (Python)
+
+Python uses two separate methods: `run_command` (blocking) and `run_command_detached` (returns immediately with a handle). This matches Vercel's Python SDK convention and is more Pythonic than an overloaded method.
+
+The old `spawn()` method name is removed. No deprecation shim — this is a pre-1.0 breaking change.
+
+### 16.4 What's removed from public surface
+
+| Removed | Replacement |
+|---------|-------------|
+| `SandboxClient` (TS export) | `Sandbox.create()`, `Sandbox.get()`, `Sandbox.list()` |
+| `SandboxClient` (Python export) | `AsyncSandbox.create()`, `Sandbox.create()` |
+| `ManagedSandbox` (TS class) | Merged into `Sandbox` |
+| `SandboxConnectionInfo` (TS export) | Internal implementation detail |
+| `ClientOptions` (TS export) | `SandboxAuth` on each static method |
+| `Sandbox.spawn()` (both SDKs) | `runCommand({ detached: true })` (TS) / `run_command_detached()` (Py) |
+
+`SandboxClient` may still exist internally for code organization but is not exported. Tests that need fine-grained control can import it from a `_internal` or `internal` subpath.
+
+### 16.5 Console snippet alignment
+
+The console's SDK snippet generator (`console/src/components/sdk-snippet.tsx`) must emit code matching this surface:
+
+**TypeScript snippet:**
+```ts
+import { Sandbox } from "@sandbox-platform/sdk";
+
+const sandbox = await Sandbox.create({
+  runtime: "node24",
+  image: "sandbox-runtime:node24-latest",
+  resources: { vcpus: 2 },
+});
+```
+
+**Python snippet:**
+```python
+from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec
+
+sandbox = await Sandbox.create(CreateSandboxRequest(
+    runtime="node24",
+    image="sandbox-runtime:node24-latest",
+    resources=ResourcesSpec(vcpus=2),
+))
+```
+
+Note: the Python snippet uses `Sandbox` (which is `AsyncSandbox` aliased as `Sandbox` in the top-level `__init__.py` for the common case). Users who need the sync variant import `SyncSandbox` explicitly.
 
 ---
 

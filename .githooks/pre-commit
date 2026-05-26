@@ -18,6 +18,14 @@ if [ -f tools/generate-schemas/src/main.rs ] && grep -q "write_schema" tools/gen
     fi
 fi
 
+if [ -f tools/generate-sdk-types/src/main.rs ]; then
+    cargo run --quiet --bin generate-sdk-types
+    if ! git diff --quiet "$REPO_ROOT/sdks/typescript/src/generated/" "$REPO_ROOT/sdks/python/src/sandbox_platform/generated/"; then
+        echo "ERROR: SDK generated types are stale. Run 'cargo run --bin generate-sdk-types' and commit."
+        exit 1
+    fi
+fi
+
 if git diff --cached | grep -E '(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]+ PRIVATE KEY-----)' > /dev/null 2>&1; then
     echo "ERROR: Possible secret detected in staged changes."
     exit 1

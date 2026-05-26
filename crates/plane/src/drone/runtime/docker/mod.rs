@@ -1,8 +1,4 @@
-use self::{
-    commands::{get_port, run_container},
-    types::ContainerId,
-    wait_backend::wait_for_backend,
-};
+use self::{commands::run_container, types::ContainerId, wait_backend::wait_for_backend};
 use crate::{
     drone::runtime::{docker::metrics::metrics_loop, Runtime},
     heartbeat_consts::KILL_AFTER_SOFT_TERMINATE_SECONDS,
@@ -23,10 +19,17 @@ use plane_common::{
     types::{backend_state::BackendError, BearerToken, DockerExecutorConfig, PullPolicy},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, pin::Pin};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    pin::Pin,
+};
 use std::{
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        Arc, Mutex, RwLock,
+    },
 };
 use tokio::sync::broadcast::Sender;
 use tokio_stream::wrappers::BroadcastStream;
@@ -34,6 +37,10 @@ use tokio_stream::{Stream, StreamExt};
 
 /// Clean up containers and images every minute.
 const CLEANUP_INTERVAL_SECS: i64 = 60;
+
+/// Ephemeral port range for pre-assigned container host ports (IANA dynamic range).
+const PORT_RANGE_START: u16 = 49152;
+const PORT_RANGE_END: u16 = 65535;
 
 pub mod commands;
 pub mod metrics;
@@ -59,11 +66,30 @@ pub struct DockerRuntimeConfig {
 
 pub type MetricsCallback = Box<dyn Fn(BackendMetricsMessage) + Send + Sync + 'static>;
 
+/// Snapshot of egress-proxy info captured at drone startup (and refreshed
+/// periodically). Each sandbox spawn loads the latest snapshot from the
+/// [`EgressHandle`][crate::drone::egress_bootstrap::EgressHandle] held on
+/// `DockerRuntime` and injects its fields into the container environment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EgressContext {
+    /// `host:port` form, surfaced into sandbox env as `SANDBOX_EGRESS_PROXY`.
+    pub addr: String,
+    /// Pre-resolved IPv4 of the proxy host, surfaced as `SANDBOX_EGRESS_PROXY_IP`
+    /// so the container can skip its first-call DNS bootstrap.
+    pub ip: String,
+    /// PEM-encoded CA the proxy presents for HTTPS interception, surfaced as
+    /// `SANDBOX_EGRESS_CA_PEM`.
+    pub ca_pem: Arc<String>,
+}
+
 pub struct DockerRuntime {
     pub docker: Docker,
     config: DockerRuntimeConfig,
+    pub egress: Option<super::super::egress_bootstrap::EgressHandle>,
     metrics_callback: Arc<Mutex<Option<MetricsCallback>>>,
     events_sender: Sender<TerminateEvent>,
+    port_allocator: AtomicU16,
+    image_cache: RwLock<HashSet<String>>,
     _events_loop_handle: GuardHandle,
     _cleanup_handle: GuardHandle,
 }
@@ -160,12 +186,22 @@ impl Runtime for DockerRuntime {
             PullPolicy::IfNotPresent => false,
             PullPolicy::Always => true,
             PullPolicy::Never => {
-                // Skip the loading step.
                 return Ok(());
             }
         };
 
+        if !force {
+            let cache = self.image_cache.read().expect("Image cache lock poisoned");
+            if cache.contains(image) {
+                tracing::debug!(image, "Image already cached, skipping Docker API check");
+                return Ok(());
+            }
+        }
+
         commands::pull_image(&self.docker, image, credentials.as_ref(), force).await?;
+
+        let mut cache = self.image_cache.write().expect("Image cache lock poisoned");
+        cache.insert(image.clone());
         Ok(())
     }
 
@@ -177,14 +213,22 @@ impl Runtime for DockerRuntime {
         static_token: Option<&BearerToken>,
     ) -> Result<SpawnResult> {
         let executable: DockerExecutorConfig = serde_json::from_value(executable.clone())?;
-        let container_id =
-            run_container(self, backend_id, executable, acquired_key, static_token).await?;
-        let port = get_port(&self.docker, &container_id).await?;
+        let port = self.next_port();
+        // Snapshot the egress context for this spawn so the refresh task
+        // can swap a new one in without affecting an in-flight create_container.
+        let egress = self.egress.as_ref().map(|h| h.load());
+        let container_id = run_container(
+            self,
+            backend_id,
+            executable,
+            acquired_key,
+            static_token,
+            egress.as_deref(),
+            Some(port),
+        )
+        .await?;
 
-        Ok(SpawnResult {
-            container_id: container_id.clone(),
-            port,
-        })
+        Ok(SpawnResult { container_id, port })
     }
 
     async fn terminate(&self, backend_id: &BackendName, hard: bool) -> Result<bool, anyhow::Error> {
@@ -325,11 +369,20 @@ impl DockerRuntime {
         Ok(Self {
             docker,
             config,
+            egress: None,
             metrics_callback,
             events_sender,
+            port_allocator: AtomicU16::new(0),
+            image_cache: RwLock::new(HashSet::new()),
             _events_loop_handle: event_loop_handle,
             _cleanup_handle: cleanup_handle,
         })
+    }
+
+    fn next_port(&self) -> u16 {
+        let idx = self.port_allocator.fetch_add(1, Ordering::Relaxed);
+        let range = PORT_RANGE_END - PORT_RANGE_START + 1;
+        PORT_RANGE_START + (idx % range)
     }
 }
 

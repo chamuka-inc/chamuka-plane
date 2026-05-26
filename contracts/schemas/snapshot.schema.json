@@ -11,7 +11,6 @@
     "id",
     "image_ref",
     "runtime",
-    "sandbox_id",
     "size_bytes",
     "tenant"
   ],
@@ -49,7 +48,12 @@
       "type": "string"
     },
     "sandbox_id": {
-      "type": "string"
+      "description": "Origin sandbox id. Null if the originating sandbox has been deleted — snapshots are durable artifacts (their own retention TTL via `expires_at`) and survive sandbox/backend cleanup.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "size_bytes": {
       "type": "integer",

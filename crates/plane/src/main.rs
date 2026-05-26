@@ -73,7 +73,7 @@ async fn run(opts: Opts) -> Result<()> {
                 Plan::Controller(config) => run_controller(config).await?,
                 Plan::Dns(config) => run_dns(config).await?,
                 Plan::Proxy(config) => run_proxy(config).await?,
-                Plan::Drone(config) => run_drone(config).await?,
+                Plan::Drone(config) => run_drone(*config).await?,
             }
         }
     }

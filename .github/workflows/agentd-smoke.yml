@@ -1,0 +1,71 @@
+name: Agentd Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+
+jobs:
+  agentd-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: plane
+          POSTGRES_USER: plane
+          POSTGRES_PASSWORD: plane
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U plane"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Build agentd
+        working-directory: crates
+        run: cargo build --release -p agentd
+
+      - name: agentd smoke test
+        working-directory: crates
+        run: |
+          ./target/release/agentd &
+          AGENTD_PID=$!
+          sleep 1
+
+          # Health check
+          HEALTH=$(curl -sf http://127.0.0.1:8080/health)
+          echo "Health: $HEALTH"
+          echo "$HEALTH" | grep -q '"ready"'
+
+          # Exec test
+          EXEC_RESULT=$(curl -sf -X POST http://127.0.0.1:8080/v1/exec \
+            -H 'Content-Type: application/json' \
+            -d '{"cmd":"echo","args":["agentd-smoke"],"timeout_ms":5000}')
+          echo "Exec: $EXEC_RESULT"
+          echo "$EXEC_RESULT" | grep -q '"exit_code":0'
+          echo "$EXEC_RESULT" | grep -q 'agentd-smoke'
+
+          # Fs write + read test
+          curl -sf -X PUT http://127.0.0.1:8080/v1/fs/write \
+            -F "path=/tmp/ws-test.txt" \
+            -F "file=@-;filename=f.txt" <<< "agentd-smoke-data"
+          FS_READ=$(curl -sf "http://127.0.0.1:8080/v1/fs/read?path=/tmp/ws-test.txt")
+          echo "Fs read: $FS_READ"
+          [ "$FS_READ" = "agentd-smoke-data" ]
+
+          kill $AGENTD_PID 2>/dev/null || true
+          echo "Agentd smoke: PASS"

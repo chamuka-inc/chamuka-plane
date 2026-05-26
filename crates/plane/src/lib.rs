@@ -28,5 +28,5 @@ pub enum Plan {
     Controller(ControllerConfig),
     Dns(DnsConfig),
     Proxy(ProxyConfig),
-    Drone(DroneConfig),
+    Drone(Box<DroneConfig>),
 }

@@ -35,6 +35,7 @@ pub fn router() -> Router {
         .route("/v1/ports", get(handlers::ports::get))
         .route("/v1/processes", get(handlers::processes::get))
         .route("/v1/computer", post(handlers::computer::post))
+        .route("/v1/vnc", get(handlers::vnc::stream))
         .with_state(registry)
 }
 

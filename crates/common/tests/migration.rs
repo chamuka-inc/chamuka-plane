@@ -35,10 +35,16 @@ fn migration_file_exists_and_sorts_after_plane() {
         .position(|f| f == our_filename)
         .expect("our migration in sorted list");
 
-    assert_eq!(
-        our_pos,
-        filenames.len() - 1,
-        "our migration must sort last (after all Plane migrations)"
+    // Our base migration must sort after all upstream Plane migrations
+    // (timestamps before 2026). Our own subsequent migrations may follow it.
+    let last_upstream_pos = filenames
+        .iter()
+        .rposition(|f| f.as_str() < our_filename && f.starts_with("202") && !f.starts_with("2026"))
+        .expect("at least one upstream Plane migration");
+
+    assert!(
+        our_pos > last_upstream_pos,
+        "our migration must sort after all upstream Plane migrations"
     );
 }
 
@@ -88,5 +94,32 @@ fn migration_references_plane_tables() {
     assert!(
         sql.contains("REFERENCES drone(id)"),
         "extension_action must reference Plane's drone table"
+    );
+}
+
+#[test]
+fn fix_migration_cascades_and_drops_unused_network_policy_table() {
+    let migration_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("parent")
+        .join("plane/schema/migrations/20260603000000_fix-sandbox-fk-cascade-and-schema.sql");
+
+    let sql = fs::read_to_string(&migration_path).expect("read fix migration");
+
+    assert!(
+        sql.contains("DROP TABLE IF EXISTS network_policy"),
+        "fix migration must drop unused network_policy table"
+    );
+    assert!(
+        sql.contains("REFERENCES backend(id) ON DELETE CASCADE"),
+        "sandbox.backend_id must cascade on backend delete"
+    );
+    assert!(
+        sql.contains("REFERENCES sandbox(id) ON DELETE CASCADE"),
+        "child tables must cascade on sandbox delete"
+    );
+    assert!(
+        sql.contains("secret_storage_present"),
+        "fix migration must enforce secret storage shape"
     );
 }

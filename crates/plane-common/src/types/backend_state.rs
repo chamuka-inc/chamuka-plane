@@ -79,15 +79,13 @@ pub enum BackendState {
         address: BackendAddr,
     },
     Terminating {
-        /// Last status before either soft or hard termination.
+        /// Last status before soft termination.
         last_status: BackendStatus,
-        #[deprecated(note = "Use HardTerminating instead")]
-        termination: TerminationKind,
         reason: TerminationReason,
     },
     #[serde(rename = "hard-terminating")]
     HardTerminating {
-        /// Last status before either soft or hard termination.
+        /// Last status before hard termination.
         last_status: BackendStatus,
         reason: TerminationReason,
     },
@@ -172,7 +170,6 @@ impl BackendState {
 
         BackendState::Terminating {
             last_status: self.status(),
-            termination: TerminationKind::Soft,
             reason,
         }
     }
@@ -210,14 +207,12 @@ impl BackendState {
                 reason: Some(*reason),
                 exit_code,
             },
-            #[allow(deprecated)]
             BackendState::Terminating {
                 last_status,
-                termination,
                 reason,
             } => BackendState::Terminated {
                 last_status: *last_status,
-                termination: Some(*termination),
+                termination: Some(TerminationKind::Soft),
                 reason: Some(*reason),
                 exit_code,
             },

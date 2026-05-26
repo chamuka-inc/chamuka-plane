@@ -1,4 +1,7 @@
-# Host-side control plane.
+# Canonical Vagrant host services (control plane + registry).
+#
+# Used by `make fleet-up` together with Vagrant drone VMs.
+# Do not run alongside dev-fleet/docker-compose.yml (Docker fallback).
 #
 # Image and CLI flags verified against github.com/jamsocket/plane
 # (docker/docker-compose.yml, plane/src/controller/command.rs,
@@ -44,6 +47,8 @@ services:
       - "${CONTROLLER_PORT:-8080}"
       - --default-cluster
       - "${CLUSTER_NAME:-192.168.56.1:9090}"
+    environment:
+      SANDBOX_RUNTIME_REGISTRY: "${SANDBOX_RUNTIME_REGISTRY:-192.168.56.1:5000}"
     ports:
       - "0.0.0.0:${CONTROLLER_PORT:-8080}:${CONTROLLER_PORT:-8080}"
     healthcheck:

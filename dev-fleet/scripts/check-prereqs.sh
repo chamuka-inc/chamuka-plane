@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # scripts/check-prereqs.sh
 #
-# Verify the host has everything needed to bring up the local fleet.
+# Verify the host has everything needed to bring up the canonical
+# Vagrant-backed local fleet.
 
 set -euo pipefail
 
@@ -18,7 +19,7 @@ FAILED=0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FLEET_DIR="$(dirname "$SCRIPT_DIR")"
 
-echo "Checking host prerequisites..."
+echo "Checking canonical Vagrant fleet prerequisites..."
 
 # ---- VirtualBox ----------------------------------------------------------
 
@@ -94,20 +95,33 @@ fi
 # ---- Conflicting fleet containers ----------------------------------------
 
 if docker compose -f "${FLEET_DIR}/docker-compose.yml" ps --status running -q 2>/dev/null | grep -q .; then
-    fail "The Docker-only dev fleet has running containers."
-    warn "Stop it first: cd dev-fleet && docker compose down"
+    fail "The Docker-only fallback fleet has running containers."
+    warn "Stop it first: make fleet-down-docker (from repo root)"
+fi
+
+if docker compose -f "${FLEET_DIR}/host/docker-compose.yml" ps --status running -q 2>/dev/null | grep -q .; then
+    ok "Canonical Vagrant host services already running"
+    HOST_SERVICES_UP=1
+else
+    HOST_SERVICES_UP=0
 fi
 
 # ---- Port availability ---------------------------------------------------
 
-for port in 8080 9090 5432 5000; do
-    if lsof -i ":${port}" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
-        owner=$(lsof -i ":${port}" -sTCP:LISTEN -P -n 2>/dev/null | awk 'NR==2{print $1}')
-        fail "Port ${port} is already in use (by ${owner:-unknown}). Free it or override in .env."
-    else
-        ok "Port ${port} is available"
-    fi
-done
+if [[ "${HOST_SERVICES_UP}" -eq 0 ]]; then
+    for port in 8080 9090 5432 5000; do
+        if lsof -i ":${port}" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
+            owner=$(lsof -i ":${port}" -sTCP:LISTEN -P -n 2>/dev/null | awk 'NR==2{print $1}')
+            fail "Port ${port} is already in use (by ${owner:-unknown})."
+            warn "If the Docker fallback fleet is active, run: make fleet-down-docker"
+            warn "If another process holds the port, stop it or override ports in .env."
+        else
+            ok "Port ${port} is available"
+        fi
+    done
+else
+    ok "Skipping port checks (host services already running)"
+fi
 
 # ---- Required images -----------------------------------------------------
 
@@ -116,19 +130,17 @@ if docker image inspect chamuka-plane:latest >/dev/null 2>&1; then
     if docker run --rm --entrypoint /bin/wget chamuka-plane:latest --help >/dev/null 2>&1; then
         ok "chamuka-plane:latest has /bin/wget (health check will work)"
     else
-        fail "chamuka-plane:latest lacks /bin/wget. Rebuild with: docker build -t chamuka-plane:latest -f plane/docker/Dockerfile crates/"
+        fail "chamuka-plane:latest lacks /bin/wget. Rebuild with: make image-plane (from repo root)"
     fi
 else
-    fail "chamuka-plane:latest image not found. Build it first: make -C .. build && docker build ..."
+    fail "chamuka-plane:latest image not found. Build it first: make fleet-images (from repo root)"
 fi
 
-for img in "sandbox-runtime:test-latest" "sandbox-runtime:node24-latest"; do
-    if docker image inspect "$img" >/dev/null 2>&1; then
-        ok "Image $img exists locally"
-    else
-        warn "Image $img not found locally (drones may fail to pull it)"
-    fi
-done
+if docker image inspect sandbox-runtime:node24-latest >/dev/null 2>&1; then
+    ok "sandbox-runtime:node24-latest image exists"
+else
+    fail "sandbox-runtime:node24-latest not found. Run: make fleet-images (from repo root)"
+fi
 
 # ---- IP forwarding -------------------------------------------------------
 

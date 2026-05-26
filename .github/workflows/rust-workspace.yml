@@ -35,7 +35,7 @@ jobs:
         run: cargo build --workspace --all-features
 
       - name: Test
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features --exclude plane-tests
 
   check-plane:
     runs-on: ubuntu-latest

@@ -659,7 +659,7 @@ images/
   base-arm64.Dockerfile       → same for ARM64
   runtime-node24.Dockerfile   → FROM base + Node 24
   runtime-python313.Dockerfile
-  runtime-bun1.Dockerfile
+  runtime-ysweet.Dockerfile
   runtime-desktop.Dockerfile  → FROM base + Xvfb, openbox, chromium
 ```
 
@@ -1087,11 +1087,11 @@ Per-tenant defaults (modelled on [Vercel Sandbox's pricing page](https://vercel.
 
 ## 17. Build phases and milestones
 
-### Phase 1 — Walking skeleton (2–3 weeks)
+### Phase 1 — Dev-fleet smoke canary (2–3 weeks)
 
 **Goal:** End-to-end create/exec/stop on one EC2 host and one Pi.
 
-- Deploy stock Plane (controller + drone + proxy + Postgres) via Docker Compose.
+- Deploy the forked Plane controller, drone, proxy, and Postgres via Docker Compose.
 - Build `agentd` v0 with `/health`, `/v1/exec`, `/v1/fs/read`, `/v1/fs/write`.
 - Build base + node24 runtime images (multi-arch).
 - SDK skeleton: `Sandbox.create`, `runCommand`, `writeFiles`, `stop`.

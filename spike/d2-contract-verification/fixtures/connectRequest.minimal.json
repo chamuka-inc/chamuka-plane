@@ -1,7 +1,0 @@
-{
-  "spawn_config": {
-    "executable": {
-      "image": "sandbox-runtime:test-latest"
-    }
-  }
-}
