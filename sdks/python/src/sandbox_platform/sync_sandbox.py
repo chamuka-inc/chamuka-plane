@@ -102,7 +102,7 @@ class Sandbox:
         return self._async.id
 
     @property
-    def backend_id(self) -> str:
+    def backend_id(self) -> str | None:
         return self._async.backend_id
 
     @property

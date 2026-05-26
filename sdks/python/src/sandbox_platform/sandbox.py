@@ -105,7 +105,10 @@ class AsyncSandbox:
         return self._data.id
 
     @property
-    def backend_id(self) -> str:
+    def backend_id(self) -> str | None:
+        """Plane backend currently hosting this sandbox. None once the backend
+        has been reaped past retention — the sandbox row outlives its backend.
+        Operations requiring drone dispatch return 410 Gone in that state."""
         return self._data.backend_id
 
     @property

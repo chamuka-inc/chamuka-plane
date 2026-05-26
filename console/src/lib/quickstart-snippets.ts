@@ -9,28 +9,26 @@ export const ENV_OPTIONS = [
 ] as const;
 
 const CLI_RUNTIME_META = {
-  typescript: { runtime: "node24", image: "sandbox-runtime:node24-latest" },
-  python: { runtime: "python313", image: "sandbox-runtime:python313-latest" },
+  typescript: { runtime: "node24" },
+  python: { runtime: "python313" },
 } as const;
 
 function cliStep1Ts(lang: SnippetLanguage): string {
-  const { runtime, image } = CLI_RUNTIME_META[lang];
+  const { runtime } = CLI_RUNTIME_META[lang];
   return `import { Sandbox } from "@sandbox-platform/sdk";
 
 const sandbox = await Sandbox.create({
   runtime: "${runtime}",
-  image: "${image}",
   resources: { vcpus: 2 },
 });`;
 }
 
 function cliStep1Py(lang: SnippetLanguage): string {
-  const { runtime, image } = CLI_RUNTIME_META[lang];
+  const { runtime } = CLI_RUNTIME_META[lang];
   return `from sandbox_platform import Sandbox, CreateSandboxRequest, ResourcesSpec
 
 sandbox = Sandbox.create(CreateSandboxRequest(
     runtime="${runtime}",
-    image="${image}",
     resources=ResourcesSpec(vcpus=2),
 ))`;
 }
@@ -57,7 +55,6 @@ const DESKTOP_STEP1_TS = `import { Sandbox } from "@sandbox-platform/sdk";
 
 const desktop = await Sandbox.create({
   runtime: "desktop",
-  image: "sandbox-runtime:desktop-latest",
   resources: { vcpus: 4 },
 });`;
 
@@ -65,7 +62,6 @@ const DESKTOP_STEP1_PY = `from sandbox_platform import Sandbox, CreateSandboxReq
 
 desktop = Sandbox.create(CreateSandboxRequest(
     runtime="desktop",
-    image="sandbox-runtime:desktop-latest",
     resources=ResourcesSpec(vcpus=4),
 ))`;
 

@@ -3,7 +3,6 @@ import { Sandbox } from "../../src/index.js";
 import { SandboxClient } from "../../src/client.js";
 
 const CONTROL_URL = process.env.CONTROL_URL ?? "http://localhost:8080";
-const IMAGE = process.env.SANDBOX_IMAGE ?? "localhost:5000/sandbox-runtime:node24-latest";
 const TIMEOUT_MS = 120_000;
 const RUN_ID = process.env.RUN_ID ?? String(Date.now());
 const seed = parseInt(RUN_ID.replace(/\D/g, "").slice(-6), 10) || 123456;
@@ -17,7 +16,6 @@ beforeAll(async () => {
   sandbox = await Sandbox.create(
     {
       runtime: "node24",
-      image: IMAGE,
       trust: "untrusted",
       resources: { vcpus: 1, memory_mb: 512 },
       timeout_ms: TIMEOUT_MS,

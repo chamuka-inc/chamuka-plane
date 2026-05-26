@@ -10,7 +10,8 @@ export type BackendStatus =
 
 export type Sandbox = {
   id: string;
-  backend_id: string;
+  /** Null after the Plane backend has been reaped past retention. */
+  backend_id: string | null;
   tenant: string;
   status: BackendStatus;
   runtime: string;
