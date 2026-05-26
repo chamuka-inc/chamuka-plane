@@ -362,6 +362,7 @@ pub async fn create_sandbox(
                 &image,
                 pool,
                 timeout_ms,
+                connect_response.status,
             )
             .await?;
             return Ok((
@@ -538,6 +539,7 @@ async fn insert_and_build_sandbox(
 /// requests don't collide on `sandbox_backend_id_key UNIQUE`. Renders the
 /// response from the returned row via `sandbox_from_row` so drone_name and
 /// live_status come from the same JOIN every other endpoint uses.
+#[allow(clippy::too_many_arguments)]
 async fn insert_recovery_sandbox(
     controller: &Controller,
     tenant: &str,
@@ -546,10 +548,26 @@ async fn insert_recovery_sandbox(
     image: &str,
     pool: &str,
     timeout_ms: u64,
+    reused_backend_status: BackendStatus,
 ) -> Result<Sandbox, ApiError> {
     let sandbox_id = SandboxId::new();
     let now = chrono::Utc::now();
     let expires_at = now + chrono::Duration::milliseconds(timeout_ms as i64);
+
+    // Plane reports the live status of the backend it just handed us.
+    // If it's already past Scheduled (Loading/Starting/Waiting/Ready/...)
+    // record `ready_at = now` so SDK awaiters gating on a populated
+    // ready_at don't hang waiting for a transition that already happened.
+    // We deliberately use the broader threshold (>= Loading) rather than
+    // strict equality to Ready: by the time the recovery path runs, the
+    // backend has been alive long enough that Plane noticed it's reused,
+    // and a freshly-created sandbox row showing ready_at=null while
+    // status=Ready is a worse lie than ready_at=now while status=Loading.
+    let ready_at = if reused_backend_status > BackendStatus::Scheduled {
+        Some(now)
+    } else {
+        None
+    };
 
     let arch_str = request.arch.to_string();
     let ports_i32: Vec<i32> = request.ports.iter().map(|&p| i32::from(p)).collect();
@@ -573,6 +591,7 @@ async fn insert_recovery_sandbox(
             request.persistent,
             None,
             expires_at,
+            ready_at,
         )
         .await
         .map_err(|e| {

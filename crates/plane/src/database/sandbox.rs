@@ -13,7 +13,19 @@ const SANDBOX_SELECT: &str = r#"
     FROM sandbox s
     LEFT JOIN backend b ON b.id = s.backend_id
     LEFT JOIN node n ON n.id = b.drone_id
-    LEFT JOIN token t ON t.backend_id = s.backend_id
+    -- Pick the most-recently-expiring non-expired token for this backend.
+    -- Plane's create_token INSERTs a fresh row per connect without deleting
+    -- prior ones, so a backend that has been reused N times has N token rows
+    -- in the table. Without LATERAL + ORDER BY + LIMIT 1 the LEFT JOIN would
+    -- multiply result rows and fetch_optional would silently take whichever
+    -- Postgres ordered first — potentially a stale or near-expired token.
+    LEFT JOIN LATERAL (
+        SELECT token
+        FROM token
+        WHERE backend_id = s.backend_id AND expiration_time > now()
+        ORDER BY expiration_time DESC
+        LIMIT 1
+    ) t ON true
 "#;
 
 pub struct SandboxDatabase<'a> {
@@ -75,6 +87,11 @@ impl<'a> SandboxDatabase<'a> {
     /// signal rather than a hard error — the typical case is two concurrent
     /// reuse-recovery handlers racing on the same backend_id. Returns the
     /// final row, which may be the caller's insert or the winner's.
+    ///
+    /// `ready_at` is for the recovery path: when Plane reports the reused
+    /// backend already past Scheduled, we record that timestamp so SDK
+    /// awaiters that gate on `ready_at != null` don't hang forever waiting
+    /// for a state transition that already happened.
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_or_get_by_backend_id(
         &self,
@@ -92,13 +109,14 @@ impl<'a> SandboxDatabase<'a> {
         persistent: bool,
         snapshot_source: Option<&str>,
         expires_at: DateTime<Utc>,
+        ready_at: Option<DateTime<Utc>>,
     ) -> Result<Option<SandboxRow>, sqlx::Error> {
         sqlx::query(
             r#"
             INSERT INTO sandbox (
                 id, backend_id, tenant, runtime, trust_tier, arch, image,
-                vcpus, memory_mb, ports, tags, persistent, snapshot_source, expires_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                vcpus, memory_mb, ports, tags, persistent, snapshot_source, expires_at, ready_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (backend_id) DO NOTHING
             "#,
         )
@@ -116,6 +134,7 @@ impl<'a> SandboxDatabase<'a> {
         .bind(persistent)
         .bind(snapshot_source)
         .bind(expires_at)
+        .bind(ready_at)
         .execute(self.pool)
         .await?;
 
