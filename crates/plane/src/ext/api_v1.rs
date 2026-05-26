@@ -361,6 +361,12 @@ pub async fn extend_sandbox(
 ) -> Result<Json<Sandbox>, ApiError> {
     let tenant = extract_tenant(&headers)?;
 
+    // Reject extension on a reaped-backend sandbox. Without this guard
+    // expires_at keeps moving forward and cleanup_terminated never reclaims
+    // the orphaned row.
+    let existing = get_sandbox_row(&controller, &id, &tenant).await?;
+    require_backend_id(&existing)?;
+
     let additional = chrono::Duration::milliseconds(request.additional_ms as i64);
     let row = controller
         .db

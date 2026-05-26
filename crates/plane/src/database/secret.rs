@@ -39,9 +39,12 @@ impl<'a> SecretDatabase<'a> {
         Ok(())
     }
 
-    /// Soft-delete a secret. Idempotent: re-deleting an already-deleted secret
-    /// returns `Ok(DeleteOutcome::AlreadyDeleted)` rather than `NotFound`, so
-    /// SDK retries map to 204 (no content) instead of 404.
+    /// Soft-delete a secret. Idempotent: a second delete on an already-tombstoned
+    /// row still returns `DeleteOutcome::Deleted` (not `NotFound`) so SDK
+    /// retries map to 204 (no content) instead of 404. `NotFound` is reserved
+    /// for the case where no row with this (id, tenant) ever existed.
+    /// Implementation: COALESCE preserves the original deleted_at on a repeat
+    /// call, and RETURNING distinguishes "row matched" from "no match".
     pub async fn delete(&self, id: &str, tenant: &str) -> Result<DeleteOutcome, sqlx::Error> {
         let deleted_at: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar(
             r#"

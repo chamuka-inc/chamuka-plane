@@ -61,7 +61,7 @@ impl<'a> UsageRecordDatabase<'a> {
         rx_bytes_delta: i64,
         tx_bytes_delta: i64,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO usage_record (tenant, sandbox_id, bucket_start, cpu_nsec, memory_mb_seconds, rx_bytes, tx_bytes)
             SELECT s.tenant, s.id, date_trunc('hour', NOW()), $2, $3, $4, $5
@@ -81,6 +81,19 @@ impl<'a> UsageRecordDatabase<'a> {
         .bind(tx_bytes_delta)
         .execute(self.pool)
         .await?;
+        // Drone heartbeated metrics for a backend that has no sandbox row
+        // (sandbox.backend_id was SET NULL by backend cleanup, or no sandbox
+        // ever bound to this backend). The drone is reporting for work the
+        // controller can't attribute — surface it instead of silently dropping
+        // the billable interval.
+        if result.rows_affected() == 0 {
+            tracing::warn!(
+                backend_id,
+                cpu_nsec_delta,
+                memory_mb_seconds_delta,
+                "Dropped usage delta: no sandbox row matches backend_id (likely reaped)"
+            );
+        }
         Ok(())
     }
 }

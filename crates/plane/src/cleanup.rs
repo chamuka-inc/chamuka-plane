@@ -834,4 +834,119 @@ mod tests {
 
         teardown(&pool, &f.suffix).await;
     }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_preserves_persistent_sandboxes() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-persistent").await;
+
+        // Mark sandbox persistent + orphaned + long-expired. Per spec §11.4
+        // persistent sandboxes are resume targets; cleanup_terminated must
+        // never hard-delete them.
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                persistent = TRUE,
+                                expires_at = now() - interval '100 days'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox persistent + orphaned + expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+
+        let sandbox_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sandbox WHERE id = $1)")
+                .bind(f.sandbox_id())
+                .fetch_one(&pool)
+                .await
+                .expect("check sandbox");
+        assert!(
+            sandbox_exists,
+            "persistent sandbox must survive cleanup regardless of expires_at"
+        );
+
+        teardown(&pool, &f.suffix).await;
+    }
+
+    /// After 20260608: audit_egress.sandbox_id is SET NULL on sandbox delete,
+    /// not CASCADE. The audit trail outlives sandbox hard-delete.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn sandbox_cleanup_preserves_audit_egress_via_set_null() {
+        let _guard = DB_LOCK.lock().unwrap();
+        let pool = match test_pool().await {
+            Some(p) => p,
+            None => return,
+        };
+        let f = setup(&pool, "sb-audit-preserve").await;
+
+        sqlx::query(
+            "INSERT INTO audit_egress (at, tenant, sandbox_id, destination_host,
+                                       destination_port, protocol, action)
+             VALUES (now(), $1, $2, 'example.com', 443, 'tls', 'allow')",
+        )
+        .bind(f.tenant_id())
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("insert audit row");
+
+        sqlx::query(
+            "UPDATE sandbox SET backend_id = NULL,
+                                expires_at = now() - interval '100 days'
+             WHERE id = $1",
+        )
+        .bind(f.sandbox_id())
+        .execute(&pool)
+        .await
+        .expect("mark sandbox orphaned + expired");
+
+        let db = PlaneDatabase::new(pool.clone());
+        db.sandbox()
+            .cleanup_terminated(83, 100)
+            .await
+            .expect("sandbox cleanup should run");
+
+        let audit_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM audit_egress WHERE tenant = $1")
+                .bind(f.tenant_id())
+                .fetch_one(&pool)
+                .await
+                .expect("count audit");
+        assert_eq!(
+            audit_count, 1,
+            "audit_egress row should survive sandbox hard-delete (sandbox_id is SET NULL)"
+        );
+
+        let audit_sandbox_id: Option<String> =
+            sqlx::query_scalar("SELECT sandbox_id FROM audit_egress WHERE tenant = $1")
+                .bind(f.tenant_id())
+                .fetch_one(&pool)
+                .await
+                .expect("audit row sandbox_id");
+        assert!(
+            audit_sandbox_id.is_none(),
+            "audit_egress.sandbox_id should be NULL after sandbox cleanup, got {audit_sandbox_id:?}"
+        );
+
+        // Cleanup the orphaned audit row explicitly (it no longer cascades).
+        sqlx::query("DELETE FROM audit_egress WHERE tenant = $1")
+            .bind(f.tenant_id())
+            .execute(&pool)
+            .await
+            .expect("clean orphan audit");
+
+        teardown(&pool, &f.suffix).await;
+    }
 }

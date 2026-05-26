@@ -98,7 +98,7 @@ COMMENT ON COLUMN public.acme_txt_entries.txt_value IS 'The TXT value of the ent
 CREATE TABLE public.audit_egress (
     id integer NOT NULL,
     at timestamp with time zone NOT NULL,
-    sandbox_id character varying(255) NOT NULL,
+    sandbox_id character varying(255),
     destination_host text NOT NULL,
     destination_port integer NOT NULL,
     destination_ip inet,
@@ -1382,7 +1382,7 @@ ALTER TABLE ONLY public.acme_txt_entries
 --
 
 ALTER TABLE ONLY public.audit_egress
-    ADD CONSTRAINT audit_egress_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE CASCADE;
+    ADD CONSTRAINT audit_egress_sandbox_id_fkey FOREIGN KEY (sandbox_id) REFERENCES public.sandbox(id) ON DELETE SET NULL;
 
 
 --
@@ -1486,7 +1486,7 @@ ALTER TABLE ONLY public.extension_action
 --
 
 ALTER TABLE ONLY public.sandbox
-    ADD CONSTRAINT fk_sandbox_snapshot_source FOREIGN KEY (snapshot_source) REFERENCES public.snapshot(id);
+    ADD CONSTRAINT fk_sandbox_snapshot_source FOREIGN KEY (snapshot_source) REFERENCES public.snapshot(id) ON DELETE SET NULL;
 
 
 --

@@ -130,13 +130,20 @@ impl<'a> SandboxDatabase<'a> {
         Ok(result.rows_affected() > 0)
     }
 
-    /// Hard-delete orphaned terminated sandboxes.
+    /// Hard-delete orphaned non-persistent sandboxes past retention.
     ///
-    /// Eligible rows: backend_id IS NULL (backend already reaped by Plane's
-    /// own cleanup at min_age_days) AND expires_at older than retention_days.
-    /// The cascade then fires on usage_record / audit_egress / port_route /
-    /// credential_binding / extension_action. snapshot.sandbox_id is SET NULL
-    /// (cycle 2), so snapshots survive and follow their own expires_at TTL.
+    /// Eligible rows:
+    ///   - backend_id IS NULL (Plane's backend cleanup has already reaped it,
+    ///     which implies the backend was Terminated at least min_age_days ago)
+    ///   - expires_at older than retention_days
+    ///   - persistent = FALSE (persistent sandboxes are resume targets via
+    ///     Sandbox.resume(sandbox_id); the user retains intent to bring them
+    ///     back from snapshot_source, so we never hard-delete them here)
+    ///
+    /// The cascade then fires on usage_record / port_route / credential_binding
+    /// / extension_action. snapshot.sandbox_id (cycle 2) and audit_egress.sandbox_id
+    /// (cycle 6) are SET NULL, so snapshots and audit trails outlive sandbox
+    /// hard-delete and follow their own retention.
     ///
     /// Returns the number of sandbox rows deleted.
     pub async fn cleanup_terminated(
@@ -150,6 +157,7 @@ impl<'a> SandboxDatabase<'a> {
             WHERE id IN (
                 SELECT id FROM sandbox
                 WHERE backend_id IS NULL
+                  AND persistent = FALSE
                   AND expires_at < now() - make_interval(days => $1)
                 LIMIT $2
             )
