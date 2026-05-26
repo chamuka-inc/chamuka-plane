@@ -5,8 +5,9 @@ WORKDIR /build/crates
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/crates/target \
-    SQLX_OFFLINE=true cargo build --release --locked -p agentd \
-    && cp target/release/agentd /agentd
+    SQLX_OFFLINE=true cargo build --release --locked -p agentd --bins \
+    && cp target/release/agentd /agentd \
+    && cp target/release/sandbox-init /sandbox-init
 
 FROM node:24-bookworm-slim
 
@@ -14,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     ca-certificates \
     curl \
+    iptables \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash sandbox || true
@@ -25,15 +27,14 @@ RUN mkdir -p /data && chown sandbox:sandbox /data
 WORKDIR /workspace
 
 COPY --from=builder /agentd /usr/local/bin/agentd
+COPY --from=builder /sandbox-init /usr/local/bin/sandbox-init
 COPY runtime-images/ysweet/start.sh /usr/local/bin/start.sh
-COPY runtime-images/sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
-RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/sandbox-entrypoint.sh
+RUN chmod +x /usr/local/bin/start.sh
 
 ENV YSWEET_HOST=0.0.0.0
 ENV YSWEET_PORT=3000
 ENV YSWEET_DATA_DIR=/data
 
-ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]
-CMD ["start.sh"]
+ENTRYPOINT ["tini", "--", "sandbox-init", "/usr/local/bin/start.sh"]
 
 EXPOSE 8080 3000

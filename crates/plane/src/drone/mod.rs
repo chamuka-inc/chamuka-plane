@@ -39,6 +39,7 @@ use url::Url;
 
 mod backend_manager;
 pub mod command;
+pub mod egress_bootstrap;
 pub mod egress_publisher;
 mod executor;
 pub mod extension_handler;
@@ -255,7 +256,22 @@ impl Drone {
         let runtime: Box<dyn Runtime> = match config.executor_config {
             ExecutorConfig::Docker(docker_config) => {
                 let mut rt = DockerRuntime::new(docker_config).await?;
-                rt.egress_proxy_addr = config.egress_proxy_addr.clone();
+                // If egress is configured (both URL and addr present), fetch the CA
+                // and resolve the proxy IP once now so each spawn is a pure env-var
+                // injection — no in-container DNS or HTTP needed at bootstrap time.
+                if let (Some(admin_url), Some(addr)) = (
+                    config.egress_proxy_url.as_ref(),
+                    config.egress_proxy_addr.as_ref(),
+                ) {
+                    let ctx = egress_bootstrap::bootstrap(admin_url, addr).await?;
+                    tracing::info!(
+                        proxy_addr = %ctx.addr,
+                        proxy_ip = %ctx.ip,
+                        ca_bytes = ctx.ca_pem.len(),
+                        "Egress bootstrap complete",
+                    );
+                    rt.egress_context = Some(ctx);
+                }
                 Box::new(rt)
             }
             ExecutorConfig::UnixSocket(unix_socket_config) => {

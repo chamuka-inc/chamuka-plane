@@ -3,7 +3,6 @@ FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     ca-certificates \
-    curl \
     iptables \
     && rm -rf /var/lib/apt/lists/*
 
@@ -12,10 +11,8 @@ RUN useradd -m -s /bin/bash sandbox || true
 WORKDIR /workspace
 
 COPY agentd /usr/local/bin/agentd
-COPY sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
-RUN chmod +x /usr/local/bin/sandbox-entrypoint.sh
+COPY sandbox-init /usr/local/bin/sandbox-init
 
-ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]
-CMD ["agentd"]
+ENTRYPOINT ["tini", "--", "sandbox-init", "agentd"]
 
 EXPOSE 8080

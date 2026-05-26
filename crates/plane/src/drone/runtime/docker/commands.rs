@@ -1,4 +1,4 @@
-use super::{types::ContainerId, DockerRuntime};
+use super::{types::ContainerId, DockerRuntime, EgressContext};
 use anyhow::Result;
 use bollard::{
     auth::DockerCredentials,
@@ -102,14 +102,19 @@ pub fn get_container_config_from_executor_config(
     static_token: Option<&BearerToken>,
     log_config: Option<&HostConfigLogConfig>,
     mount_base: Option<&PathBuf>,
-    egress_proxy_addr: Option<&str>,
+    egress: Option<&EgressContext>,
     host_port: Option<u16>,
 ) -> Result<bollard::container::Config<String>> {
     let mut env = exec_config.env;
     env.insert("PORT".to_string(), CONTAINER_PORT.to_string());
 
-    if let Some(addr) = egress_proxy_addr {
-        env.insert("SANDBOX_EGRESS_PROXY".to_string(), addr.to_string());
+    if let Some(ctx) = egress {
+        env.insert("SANDBOX_EGRESS_PROXY".to_string(), ctx.addr.clone());
+        env.insert("SANDBOX_EGRESS_PROXY_IP".to_string(), ctx.ip.clone());
+        env.insert(
+            "SANDBOX_EGRESS_CA_PEM".to_string(),
+            ctx.ca_pem.as_ref().clone(),
+        );
     }
 
     if let Some(backend_id) = backend_id {
@@ -217,7 +222,7 @@ pub fn get_container_config_from_executor_config(
                 hm.insert("size".to_string(), lim.to_string());
                 hm
             }),
-            cap_add: if egress_proxy_addr.is_some() {
+            cap_add: if egress.is_some() {
                 Some(vec!["NET_ADMIN".to_string()])
             } else {
                 None
@@ -235,7 +240,7 @@ pub async fn run_container(
     exec_config: DockerExecutorConfig,
     acquired_key: Option<&AcquiredKey>,
     static_token: Option<&BearerToken>,
-    egress_proxy_addr: Option<&str>,
+    egress: Option<&EgressContext>,
     host_port: Option<u16>,
 ) -> Result<ContainerId> {
     let container_id: ContainerId = backend_id.into();
@@ -253,7 +258,7 @@ pub async fn run_container(
         static_token,
         docker.config.log_config.as_ref(),
         docker.config.mount_base.as_ref(),
-        egress_proxy_addr,
+        egress,
         host_port,
     )?;
 

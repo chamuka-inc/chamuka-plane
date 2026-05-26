@@ -5,8 +5,9 @@ WORKDIR /build/crates
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/crates/target \
-    SQLX_OFFLINE=true cargo build --release --locked -p agentd \
-    && cp target/release/agentd /agentd
+    SQLX_OFFLINE=true cargo build --release --locked -p agentd --bins \
+    && cp target/release/agentd /agentd \
+    && cp target/release/sandbox-init /sandbox-init
 
 FROM node:24-bookworm-slim
 
@@ -29,10 +30,8 @@ RUN useradd -m -s /bin/bash sandbox || true
 WORKDIR /workspace
 
 COPY --from=builder /agentd /usr/local/bin/agentd
-COPY runtime-images/sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
-RUN chmod +x /usr/local/bin/sandbox-entrypoint.sh
+COPY --from=builder /sandbox-init /usr/local/bin/sandbox-init
 
-ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]
-CMD ["agentd"]
+ENTRYPOINT ["tini", "--", "sandbox-init", "agentd"]
 
 EXPOSE 8080

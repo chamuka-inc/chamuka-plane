@@ -66,10 +66,25 @@ pub struct DockerRuntimeConfig {
 
 pub type MetricsCallback = Box<dyn Fn(BackendMetricsMessage) + Send + Sync + 'static>;
 
+/// Everything the drone needs to know about the egress proxy at spawn time.
+/// Populated once at drone startup so each spawn injects the values into the
+/// container environment without any per-spawn network I/O.
+#[derive(Debug, Clone)]
+pub struct EgressContext {
+    /// `host:port` form, surfaced into sandbox env as `SANDBOX_EGRESS_PROXY`.
+    pub addr: String,
+    /// Pre-resolved IPv4 of the proxy host, surfaced as `SANDBOX_EGRESS_PROXY_IP`
+    /// so the container can skip its first-call DNS bootstrap.
+    pub ip: String,
+    /// PEM-encoded CA the proxy presents for HTTPS interception, surfaced as
+    /// `SANDBOX_EGRESS_CA_PEM`. Shared via `Arc` because every spawn reads it.
+    pub ca_pem: Arc<String>,
+}
+
 pub struct DockerRuntime {
     pub docker: Docker,
     config: DockerRuntimeConfig,
-    pub egress_proxy_addr: Option<String>,
+    pub egress_context: Option<EgressContext>,
     metrics_callback: Arc<Mutex<Option<MetricsCallback>>>,
     events_sender: Sender<TerminateEvent>,
     port_allocator: AtomicU16,
@@ -204,7 +219,7 @@ impl Runtime for DockerRuntime {
             executable,
             acquired_key,
             static_token,
-            self.egress_proxy_addr.as_deref(),
+            self.egress_context.as_ref(),
             Some(port),
         )
         .await?;
@@ -350,7 +365,7 @@ impl DockerRuntime {
         Ok(Self {
             docker,
             config,
-            egress_proxy_addr: None,
+            egress_context: None,
             metrics_callback,
             events_sender,
             port_allocator: AtomicU16::new(0),

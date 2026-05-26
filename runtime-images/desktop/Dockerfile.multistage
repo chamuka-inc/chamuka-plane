@@ -6,7 +6,7 @@ COPY contracts/ contracts/
 
 WORKDIR /build/crates
 ENV SQLX_OFFLINE=true
-RUN cargo build --release -p agentd --features desktop
+RUN cargo build --release -p agentd --bins --features desktop
 
 FROM debian:bookworm-slim
 
@@ -44,10 +44,8 @@ WORKDIR /workspace
 COPY runtime-images/desktop/start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 COPY --from=builder /build/crates/target/release/agentd /usr/local/bin/agentd
-COPY runtime-images/sandbox-entrypoint.sh /usr/local/bin/sandbox-entrypoint.sh
-RUN chmod +x /usr/local/bin/sandbox-entrypoint.sh
+COPY --from=builder /build/crates/target/release/sandbox-init /usr/local/bin/sandbox-init
 
-ENTRYPOINT ["tini", "--", "sandbox-entrypoint.sh"]
-CMD ["/usr/local/bin/start.sh"]
+ENTRYPOINT ["tini", "--", "sandbox-init", "/usr/local/bin/start.sh"]
 
 EXPOSE 8080 6080
