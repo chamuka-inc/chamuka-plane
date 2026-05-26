@@ -70,6 +70,62 @@ impl<'a> SandboxDatabase<'a> {
         Ok(())
     }
 
+    /// Insert a sandbox row, treating a `sandbox_backend_id_key` UNIQUE
+    /// violation as a "someone else already inserted a row for this backend"
+    /// signal rather than a hard error — the typical case is two concurrent
+    /// reuse-recovery handlers racing on the same backend_id. Returns the
+    /// final row, which may be the caller's insert or the winner's.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_or_get_by_backend_id(
+        &self,
+        id: &str,
+        backend_id: &str,
+        tenant: &str,
+        runtime: &str,
+        trust_tier: &str,
+        arch: &str,
+        image: &str,
+        vcpus: i32,
+        memory_mb: i32,
+        ports: &[i32],
+        tags: &serde_json::Value,
+        persistent: bool,
+        snapshot_source: Option<&str>,
+        expires_at: DateTime<Utc>,
+    ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO sandbox (
+                id, backend_id, tenant, runtime, trust_tier, arch, image,
+                vcpus, memory_mb, ports, tags, persistent, snapshot_source, expires_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ON CONFLICT (backend_id) DO NOTHING
+            "#,
+        )
+        .bind(id)
+        .bind(backend_id)
+        .bind(tenant)
+        .bind(runtime)
+        .bind(trust_tier)
+        .bind(arch)
+        .bind(image)
+        .bind(vcpus)
+        .bind(memory_mb)
+        .bind(ports)
+        .bind(tags)
+        .bind(persistent)
+        .bind(snapshot_source)
+        .bind(expires_at)
+        .execute(self.pool)
+        .await?;
+
+        // Either we won the race (our row is now there), or someone else won
+        // (their row is there); look up by (backend_id, tenant) to fetch it.
+        // If neither — i.e., a row was inserted under a different tenant —
+        // returns None and the caller surfaces a tenant-mismatch error.
+        self.get_by_backend_id(backend_id, tenant).await
+    }
+
     pub async fn get_by_id(
         &self,
         id: &str,

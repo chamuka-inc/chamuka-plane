@@ -364,12 +364,18 @@ pub async fn create_sandbox(
             // Plane's lifetime expired and the key freed. Insert a fresh
             // sandbox row pointing at the reused backend so subsequent
             // operations work.
+            //
+            // Concurrency: two simultaneous recovery requests for the same
+            // missing backend would both INSERT; the second would otherwise
+            // violate `sandbox_backend_id_key UNIQUE`. The conflict-tolerant
+            // helper turns the loser of the race into a SELECT of the winner's
+            // row, so both callers get a consistent response.
             tracing::warn!(
                 backend_id = %backend_id_str,
                 tenant = %tenant,
                 "Plane reused a backend with no matching sandbox row — recovering by inserting fresh row",
             );
-            let (sandbox, status) = insert_and_build_sandbox(
+            let sandbox = insert_recovery_sandbox(
                 &controller,
                 &tenant,
                 &backend_id_str,
@@ -377,11 +383,10 @@ pub async fn create_sandbox(
                 &image,
                 pool,
                 timeout_ms,
-                connect_response.drone.as_ref().map(|d| d.to_string()),
             )
             .await?;
             return Ok((
-                status,
+                StatusCode::CREATED,
                 Json(CreateSandboxResponse {
                     sandbox,
                     connection,
@@ -546,6 +551,67 @@ async fn insert_and_build_sandbox(
     };
 
     Ok((sandbox, StatusCode::CREATED))
+}
+
+/// Recovery-path sibling of `insert_and_build_sandbox` for the case where
+/// Plane reports a reused backend but our DB has no row for it. Uses the
+/// conflict-tolerant `insert_or_get_by_backend_id` so two concurrent recovery
+/// requests don't collide on `sandbox_backend_id_key UNIQUE`. Renders the
+/// response from the returned row via `sandbox_from_row` so drone_name and
+/// live_status come from the same JOIN every other endpoint uses.
+async fn insert_recovery_sandbox(
+    controller: &Controller,
+    tenant: &str,
+    backend_id: &str,
+    request: &CreateSandboxRequest,
+    image: &str,
+    pool: &str,
+    timeout_ms: u64,
+) -> Result<Sandbox, ApiError> {
+    let sandbox_id = SandboxId::new();
+    let now = chrono::Utc::now();
+    let expires_at = now + chrono::Duration::milliseconds(timeout_ms as i64);
+
+    let arch_str = request.arch.to_string();
+    let ports_i32: Vec<i32> = request.ports.iter().map(|&p| i32::from(p)).collect();
+    let tags_json = serde_json::to_value(&request.tags).unwrap_or_default();
+
+    let row = controller
+        .db
+        .sandbox()
+        .insert_or_get_by_backend_id(
+            sandbox_id.as_ref(),
+            backend_id,
+            tenant,
+            &request.runtime,
+            pool,
+            &arch_str,
+            image,
+            request.resources.vcpus as i32,
+            request.resources.memory_mb() as i32,
+            &ports_i32,
+            &tags_json,
+            request.persistent,
+            None,
+            expires_at,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, "Failed to insert recovery sandbox row");
+            ApiError::internal("Failed to persist sandbox")
+        })?
+        .ok_or_else(|| {
+            tracing::error!(
+                backend_id = %backend_id,
+                tenant = %tenant,
+                "Recovery insert found an existing row for this backend in a different tenant",
+            );
+            ApiError::key_conflict(
+                "Backend exists under a different tenant; cannot recover into the requesting tenant",
+            )
+        })?;
+
+    Ok(sandbox_from_row(row, controller, now))
 }
 
 pub async fn get_sandbox(
