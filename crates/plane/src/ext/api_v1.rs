@@ -191,33 +191,12 @@ fn ensure_reuse_shape_matches(
         ));
     }
 
-    // `source` is part of the sandbox's identity — reuse with a different
-    // snapshot_id / git ref / image must not silently return the original.
-    // We can only compare against the row's `snapshot_source` column which
-    // stores Snapshot.snapshot_id; for Git/Image sources we conservatively
-    // 409 unless `source` is omitted (request happy to take whatever exists).
-    if let Some(source) = request.source.as_ref() {
-        let source_mismatch = match source {
-            chamuka_common::ext::api::SandboxSource::Snapshot { snapshot_id } => existing
-                .snapshot_source
-                .as_deref()
-                .is_none_or(|stored| stored != snapshot_id),
-            chamuka_common::ext::api::SandboxSource::Git(_)
-            | chamuka_common::ext::api::SandboxSource::Image { .. } => {
-                // We don't currently store enough on the row to compare
-                // Git/Image sources field-by-field. Treat any non-snapshot
-                // source on a reuse request as a 409 — the caller can omit
-                // `source` if they intend to reuse the existing sandbox.
-                true
-            }
-        };
-        if source_mismatch {
-            mismatches.push(format!(
-                "field `source`: existing.snapshot_source={:?}, requested={source:?}",
-                existing.snapshot_source
-            ));
-        }
-    }
+    // `source` is intentionally NOT compared here. Persisting and validating
+    // it end-to-end requires snapshot-existence checks (the `snapshot_source`
+    // column has a FK to `snapshot(id)`) and per-variant origin columns we
+    // don't have yet. Until that's built, source is treated as a hint —
+    // callers who need source-aware reuse should pick a unique key per
+    // source variant (e.g., include the snapshot_id in `key.tag`).
 
     // `use_static_token` is a spawn-time property that lives in Plane's
     // SpawnConfig, not on our SandboxRow — we can't reconstruct it from the
