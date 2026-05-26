@@ -189,17 +189,20 @@ impl<'a> SandboxDatabase<'a> {
     /// Used on key reuse so a fresh request can extend a sandbox's lifetime
     /// without ever shrinking it.
     ///
-    /// Wrapped in a transaction so the conditional UPDATE and the follow-up
-    /// SELECT see a consistent snapshot. A concurrent DELETE happening between
-    /// the UPDATE and the SELECT in non-transactional code would silently
-    /// return a stale pre-UPDATE row.
+    /// Implemented as two independent queries (UPDATE then SELECT) without a
+    /// transaction — the API caller treats `Ok(None)` as "row was concurrently
+    /// deleted, surface 500", so cross-statement snapshot consistency isn't
+    /// needed. Dropping the transaction means each query holds a pool
+    /// connection only for its own round-trip, not across the UPDATE+SELECT
+    /// pair. Under bursts of reuse-with-extend this is the difference between
+    /// briefly holding 1 connection per call and holding 1 connection across
+    /// two round-trips per call — meaningful when max_connections is small.
     pub async fn set_expires_at_at_least(
         &self,
         id: &str,
         tenant: &str,
         target: DateTime<Utc>,
     ) -> Result<Option<SandboxRow>, sqlx::Error> {
-        let mut tx = self.pool.begin().await?;
         sqlx::query(
             r#"
             UPDATE sandbox
@@ -210,17 +213,15 @@ impl<'a> SandboxDatabase<'a> {
         .bind(id)
         .bind(tenant)
         .bind(target)
-        .execute(&mut *tx)
+        .execute(self.pool)
         .await?;
 
         let sql = format!("{SANDBOX_SELECT} WHERE s.id = $1 AND s.tenant = $2");
-        let row = sqlx::query_as::<_, SandboxRow>(&sql)
+        sqlx::query_as::<_, SandboxRow>(&sql)
             .bind(id)
             .bind(tenant)
-            .fetch_optional(&mut *tx)
-            .await?;
-        tx.commit().await?;
-        Ok(row)
+            .fetch_optional(self.pool)
+            .await
     }
 
     pub async fn update_network_policy(
