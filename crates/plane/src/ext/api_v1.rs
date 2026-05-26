@@ -61,10 +61,44 @@ pub(crate) fn extract_tenant(headers: &HeaderMap) -> Result<String, ApiError> {
 /// ASCII alphanumerics plus `-`, `_`, and `.` rules out `/` and any other
 /// path-sensitive byte.
 fn is_valid_tenant_format(s: &str) -> bool {
+    is_valid_identifier(s)
+}
+
+/// Identifier validator shared by tenant and key (name/namespace/tag) fields.
+/// All of these flow into the Plane key namespace which is later used as a
+/// path-like string in log lines, audit records, and database columns. Strict
+/// validation prevents log forgery (embedded newlines/CRs), path-prefix
+/// confusion (`/`, `\`, `..`), and unbounded-length DoS on Plane's key storage.
+fn is_valid_identifier(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 255
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// Validate a caller-supplied KeySpec. Empty namespace/tag are allowed (they
+/// match Plane's defaults); when present, the same identifier rules apply.
+fn validate_key_spec(key: &chamuka_common::ext::api::KeySpec) -> Result<(), ApiError> {
+    if !is_valid_identifier(&key.name) {
+        return Err(ApiError::invalid_request(
+            "key.name must be 1-255 ASCII alphanumerics or `-_.`",
+        ));
+    }
+    if let Some(ns) = key.namespace.as_deref() {
+        if !ns.is_empty() && !is_valid_identifier(ns) {
+            return Err(ApiError::invalid_request(
+                "key.namespace must be 1-255 ASCII alphanumerics or `-_.` (or omitted)",
+            ));
+        }
+    }
+    if let Some(tag) = key.tag.as_deref() {
+        if !tag.is_empty() && !is_valid_identifier(tag) {
+            return Err(ApiError::invalid_request(
+                "key.tag must be 1-255 ASCII alphanumerics or `-_.` (or omitted)",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Return the row's backend_id, or a 410 Gone error if the backend has
@@ -80,6 +114,10 @@ fn require_backend_id(row: &SandboxRow) -> Result<&str, ApiError> {
 /// shape-defining field. If anything disagrees, return 409 instead of
 /// silently returning a sandbox whose runtime/resources don't match what
 /// the caller asked for.
+///
+/// `env` and `tags` are not checked: the spawned container's environment is
+/// fixed at first spawn (Plane reuses the existing executable spec) and tags
+/// are descriptive metadata; both are documented as immutable across reuse.
 fn ensure_reuse_shape_matches(
     existing: &SandboxRow,
     request: &CreateSandboxRequest,
@@ -105,7 +143,15 @@ fn ensure_reuse_shape_matches(
     );
     check("trust", &existing.trust_tier, pool, &mut mismatches);
     check("arch", &existing.arch, &arch_str, &mut mismatches);
-    check("image", &existing.image, resolved_image, &mut mismatches);
+
+    // Image comparison only fires for `runtime: "custom"`. For known runtimes
+    // the `runtime` field above is the contract — the resolved image string
+    // carries the controller's `--sandbox-runtime-registry` prefix which is a
+    // deployment-time concern and can roll between calls. Comparing the full
+    // qualified image would 409 every keyed sandbox after a registry change.
+    if request.runtime == "custom" {
+        check("image", &existing.image, resolved_image, &mut mismatches);
+    }
 
     if existing.vcpus != request.resources.vcpus as i32
         || existing.memory_mb != request.resources.memory_mb() as i32
@@ -118,6 +164,30 @@ fn ensure_reuse_shape_matches(
             request.resources.memory_mb(),
         ));
     }
+
+    let existing_ports: Vec<u16> = existing
+        .ports
+        .iter()
+        .filter_map(|&p| u16::try_from(p).ok())
+        .collect();
+    if existing_ports != request.ports {
+        mismatches.push(format!(
+            "field `ports`: existing={existing_ports:?}, requested={:?}",
+            request.ports
+        ));
+    }
+
+    if existing.persistent != request.persistent {
+        mismatches.push(format!(
+            "field `persistent`: existing={}, requested={}",
+            existing.persistent, request.persistent
+        ));
+    }
+
+    // `use_static_token` is a spawn-time property that lives in Plane's
+    // SpawnConfig, not on our SandboxRow — we can't reconstruct it from the
+    // row. Like env/tags, it's documented as effectively immutable across
+    // reuse; the existing backend's token semantics win.
 
     if mismatches.is_empty() {
         Ok(())
@@ -165,6 +235,9 @@ pub async fn create_sandbox(
     // prefixing the namespace with the caller's tenant ensures one tenant's keys
     // can never collide with — or be reused by — another. Reuse without a
     // user-supplied key uses a random name (no reuse possible).
+    if let Some(k) = request.key.as_ref() {
+        validate_key_spec(k)?;
+    }
     let key_config = request
         .key
         .as_ref()

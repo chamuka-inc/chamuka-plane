@@ -245,9 +245,12 @@ async fn create_sandbox_reuse_extends_expires_at(env: TestEnvironment) {
     assert_eq!(r2.status(), 200);
     let b2: serde_json::Value = r2.json().await.unwrap();
     let exp2 = b2["sandbox"]["expires_at"].as_str().unwrap().to_string();
-    assert_ne!(
-        exp1, exp2,
-        "reuse with longer timeout_ms must extend expires_at, got identical {exp1}"
+
+    let exp1_t = chrono::DateTime::parse_from_rfc3339(&exp1).unwrap();
+    let exp2_t = chrono::DateTime::parse_from_rfc3339(&exp2).unwrap();
+    assert!(
+        exp2_t > exp1_t,
+        "reuse with longer timeout_ms must extend expires_at forward; exp1={exp1} exp2={exp2}"
     );
 
     let status = b2["sandbox"]["status"].as_str().unwrap();
@@ -255,6 +258,75 @@ async fn create_sandbox_reuse_extends_expires_at(env: TestEnvironment) {
         status, "terminated",
         "reuse must not report a live backend as terminated; got status={status}"
     );
+}
+
+#[plane_test]
+async fn create_sandbox_reuse_rejects_ports_mismatch(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+    let _drone = env
+        .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+    let original = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "ports": [8080],
+        "key": { "name": "ports-shape" }
+    });
+    let mismatched_ports = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "ports": [8080, 9090],
+        "key": { "name": "ports-shape" }
+    });
+
+    let r1 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&original)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status(), 201);
+
+    let r2 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&mismatched_ports)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r2.status(),
+        409,
+        "reuse with a different ports list than the existing backend must 409"
+    );
+}
+
+#[plane_test]
+async fn create_sandbox_rejects_key_namespace_with_newline(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+    let r = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&json!({
+            "runtime": "node22",
+            "key": { "name": "ok", "namespace": "x\n[FAKE LOG] hi" }
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVALID_REQUEST");
 }
 
 #[plane_test]
