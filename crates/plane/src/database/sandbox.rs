@@ -129,14 +129,21 @@ impl<'a> SandboxDatabase<'a> {
     }
 
     /// Push the sandbox's `expires_at` forward to `target` iff `target` is
-    /// later than the current value. Used on key reuse so a fresh request
-    /// can extend a sandbox's lifetime without ever shrinking it.
+    /// later than the current value, returning the (possibly updated) row.
+    /// Used on key reuse so a fresh request can extend a sandbox's lifetime
+    /// without ever shrinking it.
+    ///
+    /// Wrapped in a transaction so the conditional UPDATE and the follow-up
+    /// SELECT see a consistent snapshot. A concurrent DELETE happening between
+    /// the UPDATE and the SELECT in non-transactional code would silently
+    /// return a stale pre-UPDATE row.
     pub async fn set_expires_at_at_least(
         &self,
         id: &str,
         tenant: &str,
         target: DateTime<Utc>,
     ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query(
             r#"
             UPDATE sandbox
@@ -147,10 +154,17 @@ impl<'a> SandboxDatabase<'a> {
         .bind(id)
         .bind(tenant)
         .bind(target)
-        .execute(self.pool)
+        .execute(&mut *tx)
         .await?;
 
-        self.get_by_id(id, tenant).await
+        let sql = format!("{SANDBOX_SELECT} WHERE s.id = $1 AND s.tenant = $2");
+        let row = sqlx::query_as::<_, SandboxRow>(&sql)
+            .bind(id)
+            .bind(tenant)
+            .fetch_optional(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(row)
     }
 
     pub async fn update_network_policy(

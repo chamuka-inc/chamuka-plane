@@ -309,7 +309,7 @@ pub async fn create_sandbox(
     // sandbox row (200 OK) instead of inserting a duplicate, which would
     // violate sandbox_backend_id_key UNIQUE.
     if !connect_response.spawned {
-        let existing = controller
+        let existing_opt = controller
             .db
             .sandbox()
             .get_by_backend_id(&backend_id_str, &tenant)
@@ -317,15 +317,42 @@ pub async fn create_sandbox(
             .map_err(|e| {
                 tracing::error!(error = ?e, "Failed to look up sandbox for reused backend");
                 ApiError::internal("Failed to look up existing sandbox")
-            })?
-            .ok_or_else(|| {
-                tracing::error!(
-                    backend_id = %backend_id_str,
-                    tenant = %tenant,
-                    "Plane reused backend with no matching sandbox row for tenant",
-                );
-                ApiError::internal("Reused backend has no matching sandbox row")
             })?;
+
+        let Some(existing) = existing_opt else {
+            // Recovery path: Plane has the backend (so a prior create_sandbox
+            // succeeded at controller.connect()) but our sandbox row is gone.
+            // Most likely cause: the controller crashed between
+            // controller.connect() and db.sandbox().insert() on an earlier
+            // request, OR the row was hard-deleted while the backend was
+            // still alive. Without recovery this would 500 forever until
+            // Plane's lifetime expired and the key freed. Insert a fresh
+            // sandbox row pointing at the reused backend so subsequent
+            // operations work.
+            tracing::warn!(
+                backend_id = %backend_id_str,
+                tenant = %tenant,
+                "Plane reused a backend with no matching sandbox row — recovering by inserting fresh row",
+            );
+            let (sandbox, status) = insert_and_build_sandbox(
+                &controller,
+                &tenant,
+                &backend_id_str,
+                &request,
+                &image,
+                pool,
+                timeout_ms,
+                connect_response.drone.as_ref().map(|d| d.to_string()),
+            )
+            .await?;
+            return Ok((
+                status,
+                Json(CreateSandboxResponse {
+                    sandbox,
+                    connection,
+                }),
+            ));
+        };
 
         // The reuse-candidate must agree with the incoming request on the
         // immutable shape fields. Anything else would silently return a
@@ -341,16 +368,32 @@ pub async fn create_sandbox(
         let now = chrono::Utc::now();
         let new_expires_at = now + chrono::Duration::milliseconds(timeout_ms as i64);
         let refreshed = if new_expires_at > existing.expires_at {
-            controller
+            match controller
                 .db
                 .sandbox()
                 .set_expires_at_at_least(&existing.id, &tenant, new_expires_at)
                 .await
-                .map_err(|e| {
+            {
+                Ok(Some(row)) => row,
+                Ok(None) => {
+                    // The row vanished between our get_by_backend_id and the
+                    // atomic UPDATE. Don't return stale data — surface it.
+                    tracing::error!(
+                        sandbox_id = %existing.id,
+                        tenant = %tenant,
+                        "Sandbox row deleted concurrently with reuse-extend",
+                    );
+                    return Err(ApiError::internal(
+                        "Sandbox row was concurrently deleted during reuse",
+                    ));
+                }
+                Err(e) => {
                     tracing::error!(error = ?e, "Failed to extend expires_at on reuse");
-                    ApiError::internal("Failed to extend sandbox lifetime on reuse")
-                })?
-                .unwrap_or(existing)
+                    return Err(ApiError::internal(
+                        "Failed to extend sandbox lifetime on reuse",
+                    ));
+                }
+            }
         } else {
             existing
         };
@@ -365,6 +408,43 @@ pub async fn create_sandbox(
         ));
     }
 
+    let (sandbox, status) = insert_and_build_sandbox(
+        &controller,
+        &tenant,
+        &backend_id_str,
+        &request,
+        &image,
+        pool,
+        timeout_ms,
+        connect_response.drone.as_ref().map(|d| d.to_string()),
+    )
+    .await?;
+
+    Ok((
+        status,
+        Json(CreateSandboxResponse {
+            sandbox,
+            connection,
+        }),
+    ))
+}
+
+/// Materialise a fresh sandbox row for the given backend and build the
+/// response `Sandbox`. Used both on the normal spawn path and on the reuse
+/// recovery path when Plane reports a reused backend that has no matching
+/// sandbox row in our DB (e.g., the controller crashed previously between
+/// `controller.connect()` and `db.sandbox().insert()`).
+#[allow(clippy::too_many_arguments)]
+async fn insert_and_build_sandbox(
+    controller: &Controller,
+    tenant: &str,
+    backend_id: &str,
+    request: &CreateSandboxRequest,
+    image: &str,
+    pool: &str,
+    timeout_ms: u64,
+    drone_name: Option<String>,
+) -> Result<(Sandbox, StatusCode), ApiError> {
     let sandbox_id = SandboxId::new();
     let now = chrono::Utc::now();
     let expires_at = now + chrono::Duration::milliseconds(timeout_ms as i64);
@@ -375,7 +455,6 @@ pub async fn create_sandbox(
         .map(|c| c.to_string())
         .unwrap_or_default();
 
-    let trust_str = pool;
     let arch_str = request.arch.to_string();
     let ports_i32: Vec<i32> = request.ports.iter().map(|&p| i32::from(p)).collect();
     let tags_json = serde_json::to_value(&request.tags).unwrap_or_default();
@@ -385,14 +464,14 @@ pub async fn create_sandbox(
         .sandbox()
         .insert(
             sandbox_id.as_ref(),
-            &backend_id_str,
-            &tenant,
+            backend_id,
+            tenant,
             &request.runtime,
-            trust_str,
+            pool,
             &arch_str,
-            &image,
-            resources.vcpus as i32,
-            resources.memory_mb() as i32,
+            image,
+            request.resources.vcpus as i32,
+            request.resources.memory_mb() as i32,
             &ports_i32,
             &tags_json,
             request.persistent,
@@ -407,16 +486,16 @@ pub async fn create_sandbox(
 
     let sandbox = Sandbox {
         id: sandbox_id.to_string(),
-        backend_id: Some(backend_id_str),
-        tenant,
+        backend_id: Some(backend_id.to_string()),
+        tenant: tenant.to_string(),
         status: BackendStatus::Scheduled,
         runtime: request.runtime.clone(),
         trust: request.trust,
         arch: request.arch,
-        image: image.clone(),
+        image: image.to_string(),
         resources: SandboxResources {
-            vcpus: resources.vcpus,
-            memory_mb: resources.memory_mb(),
+            vcpus: request.resources.vcpus,
+            memory_mb: request.resources.memory_mb(),
         },
         ports: request.ports.clone(),
         tags: request.tags.clone(),
@@ -427,16 +506,11 @@ pub async fn create_sandbox(
         expires_at,
         ready_at: None,
         terminated_at: None,
-        drone_name: connect_response.drone.map(|d| d.to_string()),
+        drone_name,
         cluster,
     };
 
-    let response = CreateSandboxResponse {
-        sandbox,
-        connection,
-    };
-
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok((sandbox, StatusCode::CREATED))
 }
 
 pub async fn get_sandbox(
