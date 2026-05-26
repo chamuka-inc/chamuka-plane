@@ -132,12 +132,29 @@ async fn refresh_loop(inner: Arc<RwLock<Arc<EgressContext>>>, admin_url: Url, pr
         tokio::time::sleep(REFRESH_INTERVAL).await;
         match fetch_context(&admin_url, &proxy_addr).await {
             Ok(next) => {
-                let mut guard = inner.write().expect("egress context lock poisoned");
-                let changed = guard.ip != next.ip || guard.ca_pem != next.ca_pem;
-                *guard = Arc::new(next);
-                drop(guard);
-                if changed {
-                    tracing::info!("Egress refresh applied (IP or CA changed)");
+                let (ip_changed, ca_changed, prev_ip, next_ip) = {
+                    let mut guard = inner.write().expect("egress context lock poisoned");
+                    let ip_changed = guard.ip != next.ip;
+                    let ca_changed = guard.ca_pem != next.ca_pem;
+                    let prev_ip = guard.ip.clone();
+                    let next_ip = next.ip.clone();
+                    *guard = Arc::new(next);
+                    (ip_changed, ca_changed, prev_ip, next_ip)
+                };
+                if ip_changed || ca_changed {
+                    // Loud: the snapshot moved, but every sandbox already
+                    // running on this drone has its iptables rules + appended
+                    // CA frozen from sandbox-init time. New spawns will pick
+                    // up the new values; existing sandboxes will keep routing
+                    // to the previous IP / trusting the previous CA. Operators
+                    // need to know so they can restart affected workloads.
+                    tracing::warn!(
+                        ip_changed,
+                        ca_changed,
+                        previous_ip = %prev_ip,
+                        new_ip = %next_ip,
+                        "Egress refresh changed IP or CA — already-running sandboxes still hold the previous values and need to be restarted to pick up the change",
+                    );
                 }
             }
             Err(e) => {
