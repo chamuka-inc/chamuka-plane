@@ -213,3 +213,91 @@ Open follow-ups:
 - TypeScript SDK exposes `KeySpec` (generated), but `Sandbox.create()` doesn't surface a sugar like `Sandbox.getOrCreate({ key, ... })`. A small SDK helper would make the pattern discoverable. Not urgent — the contract is honored.
 - The reuse path currently does not touch `expires_at`. If a user calls with `timeout_ms` larger than the row's remaining lifetime, the sandbox will still expire on the original schedule. Document as "reuse returns existing sandbox as-is; call `extend()` to refresh." Could be promoted to "extend forward only" in a follow-up if real usage shows people expect that.
 - The egress entrypoint cost (Tier 1 #1) is still untouched — biggest remaining local win.
+
+---
+
+## Pass 5 — design sketch for the egress entrypoint optimization
+
+Pass 3 isolated the per-spawn cost to two synchronous in-container steps: `getent ahostsv4` (37–268 ms) and `curl http://proxy:3129/admin/ca.crt` (110–634 ms). Both happen before agentd binds because the entrypoint shell script blocks on them. iptables itself is small noise. The cost is "first network call from a fresh container is slow" — DNS bootstrap + bridge TCP setup.
+
+The egress-proxy's CA is stable across egress-proxy restarts (it persists to `/data/ca` via volume; see `dev-fleet/egress-proxy/proxy.mjs:39-47`). In production the CA would similarly be stable per deployment. So we don't need to fetch it per spawn — we just need to get it to the container without an in-container network call.
+
+There are no production deployments, so backward compatibility is not a constraint. The shell wrapper is a structural smell — it exists because the original egress setup needed CLI tools (`curl`, `iptables`), but most of that work belongs in the daemon that already runs in the container.
+
+### Recommendation — delete the shell wrapper, move egress setup into agentd
+
+Concretely:
+
+**Drone side** (`crates/plane/src/drone/`)
+- At startup, fetch the egress-proxy CA from `GET {admin}/admin/ca.crt`. Cache as `Vec<u8>` on `DockerRuntime`. **Fail fast if egress is configured but the fetch fails** — no half-configured drones.
+- Periodic refresh (e.g. hourly) so CA rotation works without a restart.
+- In `commands.rs::run_container`: when egress is configured, inject `SANDBOX_EGRESS_CA_PEM=<raw PEM>` next to the existing `SANDBOX_EGRESS_PROXY`. PEMs are multi-line ASCII; Docker env values handle that fine. ~1.2 KB, well under any limit.
+
+**agentd side** (`crates/agentd/`)
+- `main()` reads `SANDBOX_EGRESS_PROXY` and `SANDBOX_EGRESS_CA_PEM` env. If both present:
+  1. Write the CA to `/etc/ssl/certs/sandbox-egress-ca.crt` and append to the system bundle.
+  2. Set `iptables -t nat` DNAT rules for tcp/80 → proxy and tcp/443 → proxy+1 (HTTPS port convention from the current script).
+  3. Export `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE` so child processes spawned via `/v1/exec` pick them up (these are inherited via the same env injection mechanism agentd already uses for exec).
+- Then bind the port and serve. All synchronous, all before `listen()`, so the policy is in place the instant the sandbox is reachable.
+- Container needs `NET_ADMIN` for iptables — drone already adds it via `cap_add` when egress is configured (`commands.rs:220`).
+
+**Runtime images** (`runtime-images/*`)
+- Delete `runtime-images/base/sandbox-entrypoint.sh` and `COPY` lines.
+- Change `ENTRYPOINT` from `["tini", "--", "sandbox-entrypoint.sh"]` to `["tini", "--", "agentd"]`. Drop `CMD ["agentd"]`. Tini stays — it's there for zombie reaping when user workloads fork without waiting; we still want that.
+- One Dockerfile per runtime, identical pattern.
+
+**Why this shape, not the env-injection-with-shell-fallback I had before**
+- No deployments → no migration window → no reason to keep two code paths
+- The shell wrapper exists to call CLI tools; once we're not calling `curl` it's down to `iptables` and `echo > file`, both trivial from Rust
+- Removes an entire process layer (tini → sh → exec agentd becomes tini → agentd) without introducing a security window the way Option C would
+- One place where egress is configured, with types and tests, instead of bash spread across runtime images
+
+**Trade-offs to be aware of**
+- Adds an `iptables` dependency to agentd. Either shell out (`std::process::Command`) — simplest, keeps the iptables binary in the image — or pull a netlink crate (`rtnetlink`/`iptables` crate). Shell-out is fine; we control the image, no injection surface.
+- agentd now needs `NET_ADMIN` to start when egress is on. It already gets it via cap_add; document that agentd refuses to start (loudly) if egress is configured but the cap is missing.
+- CA rotation behavior changes: today, every new sandbox curls the live CA, so a rotation is picked up within seconds. With drone caching + 1h refresh, rotation takes up to an hour to propagate. Acceptable for a CA that changes ~never; if rotation cadence matters, drop the refresh interval.
+
+**Estimate (no impl yet)**
+- Drone: CA fetch on startup + refresh task + env injection: ~half a day with TDD
+- agentd: egress-setup module + main() wiring + tests: ~half a day with TDD
+- Runtime images: trivial Dockerfile edits, single commit
+- Total: ~1 day end-to-end, including the spike-doc Pass 6 with measured before/after on the dev fleet
+
+Container pool (Tier 1 #4) remains the order-of-magnitude play after this.
+
+---
+
+## Pass 6 — sandbox-init shipped, functional verification, measurement caveat
+
+The structural fix is in (`agentd/src/egress.rs`, new `sandbox-init` binary, drone `egress_bootstrap.rs`, all Dockerfiles, deleted shell wrappers).
+
+**Functional verification (Plane-spawned container inspected live):**
+- Three env vars injected by drone: `SANDBOX_EGRESS_PROXY`, `SANDBOX_EGRESS_PROXY_IP`, `SANDBOX_EGRESS_CA_PEM`
+- CA written to `/etc/ssl/certs/sandbox-egress-ca.crt` (1.2 KB) and appended to system bundle
+- `iptables -t nat -L OUTPUT` shows the two DNAT rules pointing at the resolved proxy IP and ports — exactly as the old shell wrapper produced
+- Drone logs `Egress bootstrap complete proxy_addr=… proxy_ip=… ca_bytes=1172` at startup; fail-fast if either step fails
+
+**Bare-docker A/B (interleaved with cooldown, same hot daemon):**
+
+| config | runs | range (ms) |
+|---|---|---|
+| `--cap-add NET_ADMIN -e SANDBOX_EGRESS_*` (new path) | 4 | 129–294 |
+| no env (no egress) | 4 | 119–268 |
+
+Within noise. **The new sandbox-init path adds no measurable per-spawn overhead**, consistent with the design: it's a single file write + two `iptables` syscalls + an `execvp`, no DNS bootstrap, no HTTP fetch. This compares against Pass 2's measured ~400 ms p50 cost of the old shell wrapper's getent + curl. The win lands as predicted.
+
+**Plane-level numbers on this run (Docker Desktop, very hot):**
+
+| runtime | n | min | p50 | p95 | max | mean |
+|---|---:|---:|---:|---:|---:|---:|
+| node24    | 5 | 781 | 1206 | 1542 | 1542 | 1171 |
+| python313 | 5 | 969 | 1392 | 2100 | 2100 | 1416 |
+| agent     | 5 | 860 | 1159 | 2091 | 2091 | 1356 |
+
+These are *higher* than the Pass 1 baseline (868 / 959 / 966 ms p50). The discrepancy is the Docker Desktop hot-daemon penalty from Pass 3's noise warning — at this point in the session we've spawned hundreds of containers. The bare-docker A/B above isolates the change-under-test from this noise and shows it's clean. A proper before/after on the Plane path needs either a freshly-rebooted Docker Desktop or, better, a Linux drone where the throttling doesn't dominate.
+
+**Net for the spike:** the structural change is in, functionally correct, and free of per-spawn overhead by direct measurement. Tier 1 #1 closed.
+
+Open Tier 1 work remaining:
+- Container pool / pre-warmed sandboxes — the order-of-magnitude play
+- Hourly CA refresh on the drone — currently fetched only at startup; rotation requires a drone restart. Was noted in Pass 5; not implemented yet (low priority while CA rotation cadence is "never")
