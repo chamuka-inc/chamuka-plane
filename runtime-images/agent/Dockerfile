@@ -21,6 +21,7 @@ WORKDIR /workspace
 COPY agentd /usr/local/bin/agentd
 COPY sandbox-init /usr/local/bin/sandbox-init
 
-ENTRYPOINT ["tini", "--", "sandbox-init", "agentd"]
+ENTRYPOINT ["tini", "--", "sandbox-init"]
+CMD ["agentd"]
 
 EXPOSE 8080

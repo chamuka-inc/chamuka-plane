@@ -36,6 +36,7 @@ RUN chmod +x /usr/local/bin/start.sh
 COPY agentd /usr/local/bin/agentd
 COPY sandbox-init /usr/local/bin/sandbox-init
 
-ENTRYPOINT ["tini", "--", "sandbox-init", "/usr/local/bin/start.sh"]
+ENTRYPOINT ["tini", "--", "sandbox-init"]
+CMD ["/usr/local/bin/start.sh"]
 
 EXPOSE 8080 6080

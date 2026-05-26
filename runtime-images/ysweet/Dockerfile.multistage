@@ -35,6 +35,7 @@ ENV YSWEET_HOST=0.0.0.0
 ENV YSWEET_PORT=3000
 ENV YSWEET_DATA_DIR=/data
 
-ENTRYPOINT ["tini", "--", "sandbox-init", "/usr/local/bin/start.sh"]
+ENTRYPOINT ["tini", "--", "sandbox-init"]
+CMD ["/usr/local/bin/start.sh"]
 
 EXPOSE 8080 3000

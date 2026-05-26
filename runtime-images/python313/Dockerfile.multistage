@@ -22,6 +22,7 @@ WORKDIR /workspace
 COPY --from=builder /build/crates/target/release/agentd /usr/local/bin/agentd
 COPY --from=builder /build/crates/target/release/sandbox-init /usr/local/bin/sandbox-init
 
-ENTRYPOINT ["tini", "--", "sandbox-init", "agentd"]
+ENTRYPOINT ["tini", "--", "sandbox-init"]
+CMD ["agentd"]
 
 EXPOSE 8080
