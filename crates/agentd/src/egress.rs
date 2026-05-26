@@ -141,16 +141,21 @@ impl Config {
         ]
     }
 
-    /// Set the env vars that downstream user processes use to pick up the CA
-    /// and HTTP_PROXY. Modifies the current process env so any exec'd child
+    /// Set the env vars that downstream user processes use to pick up the
+    /// proxy's CA. Modifies the current process env so any exec'd child
     /// inherits them.
+    ///
+    /// Deliberately does NOT set `HTTP_PROXY` / `HTTPS_PROXY`. The egress
+    /// proxy's `host:port` (`SANDBOX_EGRESS_PROXY`) points at the proxy's
+    /// transparent listener — not its explicit forward-proxy port. Iptables
+    /// DNAT is the contract; a proxy-aware client that sees `HTTP_PROXY`
+    /// would send `GET http://origin/...` to the transparent port, which
+    /// expects DNAT'd connections and would reject the explicit form.
     pub fn export_env_for_children(&self, ca_path: &Path) {
         // sandbox-init runs strictly before exec'ing the workload — single-threaded.
         std::env::set_var("NODE_EXTRA_CA_CERTS", ca_path);
         std::env::set_var("REQUESTS_CA_BUNDLE", SYSTEM_BUNDLE_PATH);
         std::env::set_var("SSL_CERT_FILE", SYSTEM_BUNDLE_PATH);
-        std::env::set_var("HTTP_PROXY", format!("http://{}", self.proxy_addr));
-        std::env::set_var("HTTPS_PROXY", format!("http://{}", self.proxy_addr));
     }
 
     /// Install the configuration: write the CA cert, append to the system
@@ -178,10 +183,16 @@ fn append_to_system_bundle(pem: &str) -> Result<(), EgressError> {
         .create(true)
         .append(true)
         .open(SYSTEM_BUNDLE_PATH)?;
+    // Always emit a separator newline. The existing bundle may or may not end
+    // in '\n' — we can't easily check via append-only, and a stray blank line
+    // is harmless to every PEM parser. The earlier `pem.ends_with('\n')` check
+    // was on the wrong end and would skip the separator when the bundle lacked
+    // a trailing newline, fusing the new BEGIN line onto the last cert.
+    file.write_all(b"\n")?;
+    file.write_all(pem.as_bytes())?;
     if !pem.ends_with('\n') {
         file.write_all(b"\n")?;
     }
-    file.write_all(pem.as_bytes())?;
     Ok(())
 }
 
