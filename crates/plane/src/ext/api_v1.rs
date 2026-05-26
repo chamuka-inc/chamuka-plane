@@ -50,9 +50,21 @@ pub(crate) fn extract_tenant(headers: &HeaderMap) -> Result<String, ApiError> {
     headers
         .get("x-auth-tenant")
         .and_then(|v| v.to_str().ok())
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty() && is_valid_tenant_format(s))
         .map(String::from)
         .ok_or_else(|| ApiError::unauthenticated("missing or invalid X-Auth-Tenant header"))
+}
+
+/// Tenant identifiers appear as a prefix inside the Plane key namespace
+/// (`t:{tenant}/{user_ns}`). The separator must not appear inside the tenant,
+/// or two distinct tenants can collide on the same Plane key. Restricting to
+/// ASCII alphanumerics plus `-`, `_`, and `.` rules out `/` and any other
+/// path-sensitive byte.
+fn is_valid_tenant_format(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 255
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
 /// Return the row's backend_id, or a 410 Gone error if the backend has
@@ -62,6 +74,59 @@ fn require_backend_id(row: &SandboxRow) -> Result<&str, ApiError> {
     row.backend_id
         .as_deref()
         .ok_or_else(|| ApiError::gone("Sandbox backend has been reaped; operation not available"))
+}
+
+/// Verify a reuse-candidate sandbox row matches the new request on every
+/// shape-defining field. If anything disagrees, return 409 instead of
+/// silently returning a sandbox whose runtime/resources don't match what
+/// the caller asked for.
+fn ensure_reuse_shape_matches(
+    existing: &SandboxRow,
+    request: &CreateSandboxRequest,
+    pool: &str,
+    resolved_image: &str,
+) -> Result<(), ApiError> {
+    let arch_str = request.arch.to_string();
+    let mut mismatches: Vec<String> = Vec::new();
+
+    let check = |field: &str, lhs: &str, rhs: &str, out: &mut Vec<String>| {
+        if lhs != rhs {
+            out.push(format!(
+                "field `{field}`: existing={lhs:?}, requested={rhs:?}"
+            ));
+        }
+    };
+
+    check(
+        "runtime",
+        &existing.runtime,
+        &request.runtime,
+        &mut mismatches,
+    );
+    check("trust", &existing.trust_tier, pool, &mut mismatches);
+    check("arch", &existing.arch, &arch_str, &mut mismatches);
+    check("image", &existing.image, resolved_image, &mut mismatches);
+
+    if existing.vcpus != request.resources.vcpus as i32
+        || existing.memory_mb != request.resources.memory_mb() as i32
+    {
+        mismatches.push(format!(
+            "field `resources`: existing={{vcpus: {}, memory_mb: {}}}, requested={{vcpus: {}, memory_mb: {}}}",
+            existing.vcpus,
+            existing.memory_mb,
+            request.resources.vcpus,
+            request.resources.memory_mb(),
+        ));
+    }
+
+    if mismatches.is_empty() {
+        Ok(())
+    } else {
+        Err(ApiError::key_conflict(format!(
+            "Reuse-candidate backend shape disagrees with request: {}",
+            mismatches.join("; ")
+        )))
+    }
 }
 
 async fn get_sandbox_row(
@@ -189,8 +254,35 @@ pub async fn create_sandbox(
                 ApiError::internal("Reused backend has no matching sandbox row")
             })?;
 
+        // The reuse-candidate must agree with the incoming request on the
+        // immutable shape fields. Anything else would silently return a
+        // sandbox whose runtime / resources don't match what the caller
+        // asked for.
+        ensure_reuse_shape_matches(&existing, &request, pool, &image)?;
+
+        // Plane has just refreshed the backend's lifetime on its side via
+        // `lifetime_limit_seconds`; align our row's `expires_at` so we don't
+        // report the sandbox as terminated before Plane actually expires it.
+        // Extends forward only — a shorter timeout_ms must not shrink the
+        // existing lifetime.
         let now = chrono::Utc::now();
-        let sandbox = sandbox_from_row(existing, &controller, now);
+        let new_expires_at = now + chrono::Duration::milliseconds(timeout_ms as i64);
+        let refreshed = if new_expires_at > existing.expires_at {
+            controller
+                .db
+                .sandbox()
+                .set_expires_at_at_least(&existing.id, &tenant, new_expires_at)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = ?e, "Failed to extend expires_at on reuse");
+                    ApiError::internal("Failed to extend sandbox lifetime on reuse")
+                })?
+                .unwrap_or(existing)
+        } else {
+            existing
+        };
+
+        let sandbox = sandbox_from_row(refreshed, &controller, now);
         return Ok((
             StatusCode::OK,
             Json(CreateSandboxResponse {

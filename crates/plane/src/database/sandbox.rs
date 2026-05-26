@@ -128,6 +128,31 @@ impl<'a> SandboxDatabase<'a> {
         self.get_by_id(id, tenant).await
     }
 
+    /// Push the sandbox's `expires_at` forward to `target` iff `target` is
+    /// later than the current value. Used on key reuse so a fresh request
+    /// can extend a sandbox's lifetime without ever shrinking it.
+    pub async fn set_expires_at_at_least(
+        &self,
+        id: &str,
+        tenant: &str,
+        target: DateTime<Utc>,
+    ) -> Result<Option<SandboxRow>, sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE sandbox
+            SET expires_at = $3, updated_at = NOW()
+            WHERE id = $1 AND tenant = $2 AND expires_at < $3
+            "#,
+        )
+        .bind(id)
+        .bind(tenant)
+        .bind(target)
+        .execute(self.pool)
+        .await?;
+
+        self.get_by_id(id, tenant).await
+    }
+
     pub async fn update_network_policy(
         &self,
         id: &str,

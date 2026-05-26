@@ -78,6 +78,18 @@ impl ApiError {
             details: None,
         }
     }
+
+    /// 409 Conflict — used when a reuse request collides on shape with the
+    /// existing backend associated with the same key (different runtime,
+    /// resources, trust, etc.).
+    pub fn key_conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            code: "KEY_CONFLICT",
+            message: message.into(),
+            details: None,
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

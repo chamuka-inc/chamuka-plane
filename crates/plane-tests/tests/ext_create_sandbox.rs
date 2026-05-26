@@ -203,6 +203,130 @@ async fn create_sandbox_key_is_tenant_scoped(env: TestEnvironment) {
 }
 
 #[plane_test]
+async fn create_sandbox_reuse_extends_expires_at(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+    let _drone = env
+        .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+
+    let body_short = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "key": { "name": "extend-on-reuse" }
+    });
+    let body_long = json!({
+        "runtime": "node22",
+        "timeout_ms": 300000,
+        "key": { "name": "extend-on-reuse" }
+    });
+
+    let r1 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&body_short)
+        .send()
+        .await
+        .unwrap();
+    let b1: serde_json::Value = r1.json().await.unwrap();
+    let exp1 = b1["sandbox"]["expires_at"].as_str().unwrap().to_string();
+
+    let r2 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&body_long)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r2.status(), 200);
+    let b2: serde_json::Value = r2.json().await.unwrap();
+    let exp2 = b2["sandbox"]["expires_at"].as_str().unwrap().to_string();
+    assert_ne!(
+        exp1, exp2,
+        "reuse with longer timeout_ms must extend expires_at, got identical {exp1}"
+    );
+
+    let status = b2["sandbox"]["status"].as_str().unwrap();
+    assert_ne!(
+        status, "terminated",
+        "reuse must not report a live backend as terminated; got status={status}"
+    );
+}
+
+#[plane_test]
+async fn create_sandbox_reuse_rejects_shape_mismatch(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+    let _drone = env
+        .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+
+    let original = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "resources": { "vcpus": 2 },
+        "key": { "name": "shape-key" }
+    });
+    let mismatched_runtime = json!({
+        "runtime": "python313",
+        "timeout_ms": 30000,
+        "resources": { "vcpus": 2 },
+        "key": { "name": "shape-key" }
+    });
+
+    let r1 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&original)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status(), 201);
+
+    let r2 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&mismatched_runtime)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r2.status(),
+        409,
+        "reuse with a different runtime than the existing backend must 409"
+    );
+    let body: serde_json::Value = r2.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "KEY_CONFLICT");
+}
+
+#[plane_test]
+async fn create_sandbox_rejects_tenant_with_slash(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("x-auth-tenant", "evil/tenant")
+        .json(&json!({ "runtime": "node22" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 401);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "UNAUTHENTICATED");
+}
+
+#[plane_test]
 async fn create_sandbox_no_drone_returns_503(env: TestEnvironment) {
     let db = env.db().await;
     let controller = controller_with_cluster(db).await;
