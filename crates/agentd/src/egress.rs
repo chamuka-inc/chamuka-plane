@@ -179,8 +179,11 @@ fn write_ca(path: &Path, pem: &str) -> Result<(), EgressError> {
 }
 
 fn append_to_system_bundle(pem: &str) -> Result<(), EgressError> {
+    // Refuse to create the file. If the base image is missing
+    // /etc/ssl/certs/ca-certificates.crt, silently synthesising one with only
+    // the egress CA would strip every other trust root from the sandbox.
+    // Bail loudly so the image-build problem surfaces immediately.
     let mut file = fs::OpenOptions::new()
-        .create(true)
         .append(true)
         .open(SYSTEM_BUNDLE_PATH)?;
     // Always emit a separator newline. The existing bundle may or may not end
