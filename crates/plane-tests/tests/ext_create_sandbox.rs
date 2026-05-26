@@ -106,6 +106,103 @@ async fn create_sandbox_custom_runtime_requires_image(env: TestEnvironment) {
 }
 
 #[plane_test]
+async fn create_sandbox_with_key_reuses_backend(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+    let _drone = env
+        .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+    let body = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "key": { "name": "reuse-me" }
+    });
+
+    let r1 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let s1 = r1.status();
+    let b1: serde_json::Value = r1.json().await.unwrap();
+    assert_eq!(s1, 201, "first create should be 201, got body: {b1}");
+    let sid1 = b1["sandbox"]["id"].as_str().unwrap().to_string();
+    let bid1 = b1["sandbox"]["backend_id"].as_str().unwrap().to_string();
+
+    let r2 = client
+        .post(&url)
+        .header("x-auth-tenant", "test-tenant")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let s2 = r2.status();
+    let b2: serde_json::Value = r2.json().await.unwrap();
+    assert_eq!(s2, 200, "reuse should be 200 OK, got body: {b2}");
+    assert_eq!(b2["sandbox"]["id"], sid1, "same sandbox id on reuse");
+    assert_eq!(
+        b2["sandbox"]["backend_id"], bid1,
+        "same backend_id on reuse"
+    );
+    assert!(b2["connection"]["token"].as_str().is_some());
+}
+
+#[plane_test]
+async fn create_sandbox_key_is_tenant_scoped(env: TestEnvironment) {
+    let db = env.db().await;
+    let controller = controller_with_cluster(db).await;
+    let _drone = env
+        .drone_in_pool(&controller, &DronePoolName::from("untrusted"))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let url = api_url(&controller.url(), "/sandboxes");
+    let client = reqwest::Client::new();
+    let body = json!({
+        "runtime": "node22",
+        "timeout_ms": 30000,
+        "key": { "name": "shared-key" }
+    });
+
+    let r_a = client
+        .post(&url)
+        .header("x-auth-tenant", "tenant-a")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let body_a: serde_json::Value = r_a.json().await.unwrap();
+    let bid_a = body_a["sandbox"]["backend_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let r_b = client
+        .post(&url)
+        .header("x-auth-tenant", "tenant-b")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let body_b: serde_json::Value = r_b.json().await.unwrap();
+    let bid_b = body_b["sandbox"]["backend_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    assert_ne!(
+        bid_a, bid_b,
+        "same key.name across tenants must not reuse the same backend"
+    );
+}
+
+#[plane_test]
 async fn create_sandbox_no_drone_returns_503(env: TestEnvironment) {
     let db = env.db().await;
     let controller = controller_with_cluster(db).await;
