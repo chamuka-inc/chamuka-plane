@@ -66,10 +66,11 @@ pub struct DockerRuntimeConfig {
 
 pub type MetricsCallback = Box<dyn Fn(BackendMetricsMessage) + Send + Sync + 'static>;
 
-/// Everything the drone needs to know about the egress proxy at spawn time.
-/// Populated once at drone startup so each spawn injects the values into the
-/// container environment without any per-spawn network I/O.
-#[derive(Debug, Clone)]
+/// Snapshot of egress-proxy info captured at drone startup (and refreshed
+/// periodically). Each sandbox spawn loads the latest snapshot from the
+/// [`EgressHandle`][crate::drone::egress_bootstrap::EgressHandle] held on
+/// `DockerRuntime` and injects its fields into the container environment.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EgressContext {
     /// `host:port` form, surfaced into sandbox env as `SANDBOX_EGRESS_PROXY`.
     pub addr: String,
@@ -77,14 +78,14 @@ pub struct EgressContext {
     /// so the container can skip its first-call DNS bootstrap.
     pub ip: String,
     /// PEM-encoded CA the proxy presents for HTTPS interception, surfaced as
-    /// `SANDBOX_EGRESS_CA_PEM`. Shared via `Arc` because every spawn reads it.
+    /// `SANDBOX_EGRESS_CA_PEM`.
     pub ca_pem: Arc<String>,
 }
 
 pub struct DockerRuntime {
     pub docker: Docker,
     config: DockerRuntimeConfig,
-    pub egress_context: Option<EgressContext>,
+    pub egress: Option<super::super::egress_bootstrap::EgressHandle>,
     metrics_callback: Arc<Mutex<Option<MetricsCallback>>>,
     events_sender: Sender<TerminateEvent>,
     port_allocator: AtomicU16,
@@ -213,13 +214,16 @@ impl Runtime for DockerRuntime {
     ) -> Result<SpawnResult> {
         let executable: DockerExecutorConfig = serde_json::from_value(executable.clone())?;
         let port = self.next_port();
+        // Snapshot the egress context for this spawn so the refresh task
+        // can swap a new one in without affecting an in-flight create_container.
+        let egress = self.egress.as_ref().map(|h| h.load());
         let container_id = run_container(
             self,
             backend_id,
             executable,
             acquired_key,
             static_token,
-            self.egress_context.as_ref(),
+            egress.as_deref(),
             Some(port),
         )
         .await?;
@@ -365,7 +369,7 @@ impl DockerRuntime {
         Ok(Self {
             docker,
             config,
-            egress_context: None,
+            egress: None,
             metrics_callback,
             events_sender,
             port_allocator: AtomicU16::new(0),

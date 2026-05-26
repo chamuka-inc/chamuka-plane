@@ -256,22 +256,31 @@ impl Drone {
         let runtime: Box<dyn Runtime> = match config.executor_config {
             ExecutorConfig::Docker(docker_config) => {
                 let mut rt = DockerRuntime::new(docker_config).await?;
-                // If egress is configured (both URL and addr present), fetch the CA
-                // and resolve the proxy IP once now so each spawn is a pure env-var
-                // injection — no in-container DNS or HTTP needed at bootstrap time.
-                if let (Some(admin_url), Some(addr)) = (
+                // Egress requires BOTH the admin URL (CA fetch) and the proxy
+                // address (env injection + iptables target). One without the
+                // other is a misconfiguration: refuse to start so the operator
+                // notices, instead of silently running sandboxes with no
+                // interception.
+                rt.egress = match (
                     config.egress_proxy_url.as_ref(),
                     config.egress_proxy_addr.as_ref(),
                 ) {
-                    let ctx = egress_bootstrap::bootstrap(admin_url, addr).await?;
-                    tracing::info!(
-                        proxy_addr = %ctx.addr,
-                        proxy_ip = %ctx.ip,
-                        ca_bytes = ctx.ca_pem.len(),
-                        "Egress bootstrap complete",
-                    );
-                    rt.egress_context = Some(ctx);
-                }
+                    (Some(admin_url), Some(addr)) => {
+                        let handle = egress_bootstrap::bootstrap(admin_url, addr).await?;
+                        Some(handle)
+                    }
+                    (None, None) => None,
+                    (Some(_), None) => {
+                        return Err(anyhow::anyhow!(
+                            "--egress-proxy-url is set but --egress-proxy-addr is not; both are required to enable egress interception (or neither, to disable it)",
+                        ));
+                    }
+                    (None, Some(_)) => {
+                        return Err(anyhow::anyhow!(
+                            "--egress-proxy-addr is set but --egress-proxy-url is not; both are required to enable egress interception (or neither, to disable it)",
+                        ));
+                    }
+                };
                 Box::new(rt)
             }
             ExecutorConfig::UnixSocket(unix_socket_config) => {
