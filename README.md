@@ -1,6 +1,6 @@
 # Chamuka Plane
 
-[![CI](https://github.com/chamuka-inc/chamuka-plane/actions/workflows/rust-workspace.yml/badge.svg)](https://github.com/chamuka-inc/chamuka-plane/actions/workflows/rust-workspace.yml)
+[![CI](https://github.com/chamuka-labs/chamuka-plane/actions/workflows/rust-workspace.yml/badge.svg)](https://github.com/chamuka-labs/chamuka-plane/actions/workflows/rust-workspace.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Ephemeral compute platform built on Plane and OCI containers, with tiered isolation.

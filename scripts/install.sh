@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="chamuka-inc/chamuka-plane"
+REPO="chamuka-labs/chamuka-plane"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 detect_platform() {
