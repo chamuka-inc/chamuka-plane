@@ -74,6 +74,6 @@ All design decisions live in `docs/`. The [discipline doc](./docs/sandbox-platfo
 
 ## License
 
-This repository is licensed under the MIT License. See [LICENSE](LICENSE).
+Chamuka's original work in this repository is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-It is a hard fork of [jamsocket/plane](https://github.com/jamsocket/plane). The upstream MIT copyright notice (Copyright (c) 2023 Drifting in Space Corp., plus the included hyperium/hyper-util notice) is preserved in LICENSE. Chamuka modifications are also licensed under MIT, Copyright (c) 2026 Chamuka Labs.
+This repository is a hard fork of [jamsocket/plane](https://github.com/jamsocket/plane). The crates `plane`, `plane-common`, and `plane-dynamic-proxy` (and the accompanying `plane-tests` and `plane-test-macro` crates) derive from that upstream MIT-licensed project (Copyright (c) 2023 Drifting in Space Corp., plus the included hyperium/hyper-util notice). The full upstream MIT text is preserved in [LICENSE-MIT-upstream](LICENSE-MIT-upstream). Those forked crates also contain Chamuka modifications licensed under Apache-2.0 (`MIT AND Apache-2.0`).
