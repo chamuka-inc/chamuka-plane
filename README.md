@@ -1,6 +1,11 @@
-# Sandbox Platform
+# Chamuka Plane
 
-Ephemeral compute platform built on [Plane](https://github.com/jamsocket/plane) + OCI containers with tiered isolation.
+[![CI](https://github.com/chamuka-inc/chamuka-plane/actions/workflows/rust-workspace.yml/badge.svg)](https://github.com/chamuka-inc/chamuka-plane/actions/workflows/rust-workspace.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+Ephemeral compute platform built on Plane and OCI containers, with tiered isolation.
+
+This repository is a hard fork of [jamsocket/plane](https://github.com/jamsocket/plane).
 
 ## Quick start
 
@@ -72,8 +77,20 @@ Run `./scripts/status.sh` — it reads the latest commit trailers to show the cu
 
 All design decisions live in `docs/`. The [discipline doc](./docs/sandbox-platform-discipline.md) governs how code arrives in the tree (TDD layers, code rules, commit discipline, session handoff). It is imported every session via [CLAUDE.md](./CLAUDE.md).
 
+## Contributing
+
+Issues and pull requests are welcome.
+
+## Security
+
+Report vulnerabilities to [security@chamuka.ai](mailto:security@chamuka.ai).
+
 ## License
 
 Chamuka's original work in this repository is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 This repository is a hard fork of [jamsocket/plane](https://github.com/jamsocket/plane). The crates `plane`, `plane-common`, and `plane-dynamic-proxy` (and the accompanying `plane-tests` and `plane-test-macro` crates) derive from that upstream MIT-licensed project (Copyright (c) 2023 Drifting in Space Corp., plus the included hyperium/hyper-util notice). The full upstream MIT text is preserved in [LICENSE-MIT-upstream](LICENSE-MIT-upstream). Those forked crates also contain Chamuka modifications licensed under Apache-2.0 (`MIT AND Apache-2.0`).
+
+---
+
+Part of [Chamuka Labs](https://chamuka.ai), an applied AI lab.
