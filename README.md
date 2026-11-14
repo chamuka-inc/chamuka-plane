@@ -72,8 +72,8 @@ Run `./scripts/status.sh` — it reads the latest commit trailers to show the cu
 
 All design decisions live in `docs/`. The [discipline doc](./docs/sandbox-platform-discipline.md) governs how code arrives in the tree (TDD layers, code rules, commit discipline, session handoff). It is imported every session via [CLAUDE.md](./CLAUDE.md).
 
-- [Build conversation](https://claude.ai/chat/fc9f54d0-62bc-48d6-a5d0-0c9936e7c1fa) — the Claude Code session that scaffolded this project
-
 ## License
 
-Not yet determined.
+Chamuka's original work in this repository is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+This repository is a hard fork of [jamsocket/plane](https://github.com/jamsocket/plane). The crates `plane`, `plane-common`, and `plane-dynamic-proxy` (and the accompanying `plane-tests` and `plane-test-macro` crates) derive from that upstream MIT-licensed project (Copyright (c) 2023 Drifting in Space Corp., plus the included hyperium/hyper-util notice). The full upstream MIT text is preserved in [LICENSE-MIT-upstream](LICENSE-MIT-upstream). Those forked crates also contain Chamuka modifications licensed under Apache-2.0 (`MIT AND Apache-2.0`).

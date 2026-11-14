@@ -1,0 +1,17 @@
+Copyright 2026 Chamuka Labs
+
+Chamuka's original work in this repository is licensed under the Apache
+License, Version 2.0. See the LICENSE file for the full license text.
+
+This repository includes a hard fork of jamsocket/plane
+(https://github.com/jamsocket/plane), originally licensed under the MIT
+License, Copyright (c) 2023 Drifting in Space Corp., and including code
+from hyperium/hyper-util, Copyright (c) 2023 Sean McArthur.
+
+The crates plane, plane-common, and plane-dynamic-proxy (and the
+accompanying plane-tests and plane-test-macro crates) derive from that
+upstream MIT-licensed project. The full upstream MIT license text and
+copyright notices are preserved in LICENSE-MIT-upstream.
+
+Those forked crates also contain Chamuka modifications licensed under
+Apache-2.0; their SPDX license expression is therefore MIT AND Apache-2.0.

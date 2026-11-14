@@ -3,7 +3,7 @@ name = "plane-common"
 version = "0.5.5"
 edition = "2021"
 description = "Client library and common utilities for the Plane session backend orchestrator."
-license = "MIT"
+license = "MIT AND Apache-2.0"
 repository = "https://github.com/chamuka-inc/chamuka-plane"
 publish = false
 
